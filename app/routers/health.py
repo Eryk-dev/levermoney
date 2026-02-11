@@ -73,3 +73,37 @@ async def debug_process_test():
         results["traceback"] = traceback.format_exc()
 
     return results
+
+
+@router.get("/debug/busca-parcela")
+async def debug_busca_parcela():
+    """Testa a busca de parcelas no CA para debug da baixa."""
+    results = {}
+    try:
+        import httpx as _httpx
+        from app.services.ca_api import _get_ca_token
+        token = await _get_ca_token()
+
+        # Testar endpoint de busca de parcelas
+        async with _httpx.AsyncClient(timeout=30.0) as _c:
+            _r = await _c.get(
+                "https://api-v2.contaazul.com/v1/financeiro/parcelas/contas-a-pagar",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                params={
+                    "descricao": "Comissão ML - Payment 144359445042",
+                    "data_vencimento_de": "2026-02-01",
+                    "data_vencimento_ate": "2026-02-01",
+                    "tamanho_pagina": 5,
+                },
+            )
+            results["status_code"] = _r.status_code
+            try:
+                results["response"] = _r.json()
+            except Exception:
+                results["response_text"] = _r.text
+
+    except Exception as e:
+        results["error"] = str(e)
+        results["traceback"] = traceback.format_exc()
+
+    return results
