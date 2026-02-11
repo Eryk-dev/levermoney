@@ -3,7 +3,7 @@ API Conciliador V2 - Sincronização ML/MP <-> Conta Azul
 """
 import logging
 from fastapi import FastAPI
-from app.routers import health, webhooks, auth_ml
+from app.routers import health, webhooks, auth_ml, backfill
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,3 +19,4 @@ app = FastAPI(
 app.include_router(health.router)
 app.include_router(webhooks.router)
 app.include_router(auth_ml.router)
+app.include_router(backfill.router)

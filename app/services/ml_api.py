@@ -23,7 +23,7 @@ async def _get_token(seller_slug: str) -> str:
 
     # Refresh token
     from app.config import settings
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(f"{MP_API}/oauth/token", json={
             "grant_type": "refresh_token",
             "client_id": settings.ml_app_id,
@@ -47,7 +47,7 @@ async def _get_token(seller_slug: str) -> str:
 async def get_payment(seller_slug: str, payment_id: int) -> dict:
     """GET /v1/payments/{id}"""
     token = await _get_token(seller_slug)
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
             f"{MP_API}/v1/payments/{payment_id}",
             headers={"Authorization": f"Bearer {token}"},
@@ -59,7 +59,7 @@ async def get_payment(seller_slug: str, payment_id: int) -> dict:
 async def get_order(seller_slug: str, order_id: int) -> dict:
     """GET /orders/{id}"""
     token = await _get_token(seller_slug)
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
             f"{ML_API}/orders/{order_id}",
             headers={"Authorization": f"Bearer {token}"},
@@ -71,7 +71,7 @@ async def get_order(seller_slug: str, order_id: int) -> dict:
 async def get_shipment_costs(seller_slug: str, shipment_id: int) -> dict:
     """GET /shipments/{id}/costs"""
     token = await _get_token(seller_slug)
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
             f"{ML_API}/shipments/{shipment_id}/costs",
             headers={"Authorization": f"Bearer {token}"},
@@ -80,10 +80,31 @@ async def get_shipment_costs(seller_slug: str, shipment_id: int) -> dict:
         return resp.json()
 
 
+async def search_payments(seller_slug: str, begin_date: str, end_date: str, offset: int = 0, limit: int = 50) -> dict:
+    """GET /v1/payments/search - busca payments por período."""
+    token = await _get_token(seller_slug)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(
+            f"{MP_API}/v1/payments/search",
+            headers={"Authorization": f"Bearer {token}"},
+            params={
+                "sort": "date_created",
+                "criteria": "asc",
+                "range": "date_created",
+                "begin_date": begin_date,
+                "end_date": end_date,
+                "offset": offset,
+                "limit": limit,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
 async def exchange_code(code: str) -> dict:
     """Troca authorization_code por access_token + refresh_token."""
     from app.config import settings
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(f"{MP_API}/oauth/token", json={
             "grant_type": "authorization_code",
             "client_id": settings.ml_app_id,

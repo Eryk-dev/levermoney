@@ -18,7 +18,7 @@ def _headers() -> dict:
 
 async def criar_conta_receber(payload: dict) -> dict:
     """POST /v1/financeiro/eventos-financeiros/contas-a-receber"""
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{CA_API}/v1/financeiro/eventos-financeiros/contas-a-receber",
             headers=_headers(),
@@ -30,7 +30,7 @@ async def criar_conta_receber(payload: dict) -> dict:
 
 async def criar_conta_pagar(payload: dict) -> dict:
     """POST /v1/financeiro/eventos-financeiros/contas-a-pagar"""
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{CA_API}/v1/financeiro/eventos-financeiros/contas-a-pagar",
             headers=_headers(),
@@ -42,7 +42,7 @@ async def criar_conta_pagar(payload: dict) -> dict:
 
 async def criar_baixa(parcela_id: str, payload: dict) -> dict:
     """POST /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa"""
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{CA_API}/v1/financeiro/eventos-financeiros/parcelas/{parcela_id}/baixa",
             headers=_headers(),
@@ -55,7 +55,7 @@ async def criar_baixa(parcela_id: str, payload: dict) -> dict:
 async def listar_parcelas_evento(evento_id: str) -> list:
     """GET /v1/financeiro/eventos-financeiros/{id}/parcelas - lista parcelas de um evento."""
     # A API usa query param no endpoint de parcelas
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(
             f"{CA_API}/v1/financeiro/eventos-financeiros/parcelas",
             headers=_headers(),
