@@ -2,6 +2,7 @@
 Processador de eventos ML/MP → Conta Azul.
 Implementa o mapeamento definido em PLANO.md Seção 13.
 """
+import asyncio
 import logging
 from datetime import datetime
 
@@ -65,18 +66,21 @@ async def _criar_despesa_com_baixa(seller: dict, data: str, valor: float, descri
                             categoria, seller.get("ca_centro_custo_variavel"), parcela)
 
     ca_evento = await ca_api.criar_conta_pagar(payload)
-    evento_id = ca_evento.get("id")
+    protocolo = ca_evento.get("protocolo")
+    logger.info(f"CA despesa created: protocolo={protocolo}, desc={descricao}")
 
-    # Tentar baixa automática
-    if evento_id:
-        try:
-            parcelas = await ca_api.listar_parcelas_evento(evento_id)
-            if parcelas:
-                parcela_id = parcelas[0].get("id") if isinstance(parcelas, list) else None
-                if parcela_id:
-                    await ca_api.criar_baixa(parcela_id, data, valor, conta)
-        except Exception as e:
-            logger.warning(f"Baixa failed for evento {evento_id}: {e}")
+    # API CA v2 é assíncrona - esperar processamento e buscar parcela
+    try:
+        await asyncio.sleep(3)
+        found = await ca_api.buscar_parcela_pagar(descricao, data, conta)
+        if found:
+            parcela_id = found["id"]
+            await ca_api.criar_baixa(parcela_id, data, valor, conta)
+            logger.info(f"Baixa created for parcela {parcela_id}")
+        else:
+            logger.warning(f"Parcela not found for baixa: {descricao}")
+    except Exception as e:
+        logger.warning(f"Baixa failed for despesa {descricao}: {e}")
 
     return ca_evento
 
@@ -185,7 +189,7 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     ca_receita = None
     try:
         ca_receita = await ca_api.criar_conta_receber(receita_payload)
-        logger.info(f"CA receita created for payment {payment_id}: {ca_receita.get('id')}")
+        logger.info(f"CA receita created for payment {payment_id}: protocolo={ca_receita.get('protocolo')}")
     except Exception as e:
         logger.error(f"CA receita failed for payment {payment_id}: {e}")
         _upsert_payment(db, seller_slug, payment, "error_ca_receita", str(e))
@@ -235,7 +239,7 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
 
     # Salva no Supabase como synced
     _upsert_payment(db, seller_slug, payment, "synced",
-                     ca_evento_id=ca_receita.get("id") if ca_receita else None)
+                     ca_evento_id=ca_receita.get("protocolo") if ca_receita else None)
 
     # Validação: transaction_amount - fees == net_received_amount
     calculated_net = amount - mp_fee - financing_fee - shipping_cost_seller

@@ -137,6 +137,26 @@ async def listar_parcelas_evento(evento_id: str) -> list:
         return [data] if data else []
 
 
+async def buscar_parcela_pagar(descricao: str, data_vencimento: str, conta_financeira: str) -> dict | None:
+    """Busca uma parcela de conta-a-pagar por descrição e data."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(
+            f"{CA_API}/v1/financeiro/parcelas/contas-a-pagar",
+            headers=await _headers(),
+            params={
+                "descricao": descricao,
+                "data_vencimento_de": data_vencimento,
+                "data_vencimento_ate": data_vencimento,
+                "ids_contas_financeiras": conta_financeira,
+                "tamanho_pagina": 1,
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        itens = data.get("itens", [])
+        return itens[0] if itens else None
+
+
 async def criar_baixa(parcela_id: str, data_pagamento: str, valor: float, conta_financeira: str) -> dict:
     """POST /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa"""
     payload = {
