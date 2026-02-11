@@ -21,6 +21,7 @@ def _build_parcela(descricao: str, data_vencimento: str, conta_financeira: str, 
         "conta_financeira": conta_financeira,
         "detalhe_valor": {
             "valor_bruto": valor,
+            "valor_liquido": valor,
         },
     }
 
