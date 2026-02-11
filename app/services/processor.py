@@ -55,9 +55,9 @@ def _build_evento(data_competencia: str, valor: float, descricao: str, observaca
     }
 
 
-async def _criar_despesa_com_baixa(seller: dict, data: str, valor: float, descricao: str,
-                                    observacao: str, categoria: str, nota_parcela: str = ""):
-    """Cria conta-a-pagar no CA e tenta fazer baixa automática."""
+async def _criar_despesa(seller: dict, data: str, valor: float, descricao: str,
+                          observacao: str, categoria: str, nota_parcela: str = ""):
+    """Cria conta-a-pagar no CA (sem baixa - feita depois em batch)."""
     conta = seller["ca_conta_mp_retido"]
     contato = seller.get("ca_contato_ml")
 
@@ -66,23 +66,31 @@ async def _criar_despesa_com_baixa(seller: dict, data: str, valor: float, descri
                             categoria, seller.get("ca_centro_custo_variavel"), parcela)
 
     ca_evento = await ca_api.criar_conta_pagar(payload)
-    protocolo = ca_evento.get("protocolo")
-    logger.info(f"CA despesa created: protocolo={protocolo}, desc={descricao}")
+    logger.info(f"CA despesa created: protocolo={ca_evento.get('protocolo')}, desc={descricao}")
+    return {"descricao": descricao, "data": data, "valor": valor, "conta": conta}
 
-    # API CA v2 é assíncrona - esperar processamento e buscar parcela
-    try:
-        await asyncio.sleep(3)
-        found = await ca_api.buscar_parcela_pagar(descricao, data, conta)
-        if found:
-            parcela_id = found["id"]
-            await ca_api.criar_baixa(parcela_id, data, valor, conta)
-            logger.info(f"Baixa created for parcela {parcela_id}")
-        else:
-            logger.warning(f"Parcela not found for baixa: {descricao}")
-    except Exception as e:
-        logger.warning(f"Baixa failed for despesa {descricao}: {e}")
 
-    return ca_evento
+async def _fazer_baixas(despesas: list):
+    """Espera processamento async do CA e faz baixas nas despesas."""
+    await asyncio.sleep(5)
+    for desp in despesas:
+        try:
+            parcelas = await ca_api.buscar_parcelas_pagar(
+                desp["descricao"], desp["data"], desp["data"],
+            )
+            # Filtrar pela descrição exata e valor
+            match = None
+            for p in parcelas:
+                if p.get("descricao") == desp["descricao"] and p.get("status") != "ACQUITTED":
+                    match = p
+                    break
+            if match:
+                await ca_api.criar_baixa(match["id"], desp["data"], desp["valor"], desp["conta"])
+                logger.info(f"Baixa OK: {desp['descricao']} (parcela {match['id']})")
+            else:
+                logger.warning(f"Parcela not found for baixa: {desp['descricao']}")
+        except Exception as e:
+            logger.warning(f"Baixa failed: {desp['descricao']}: {e}")
 
 
 async def process_payment_webhook(seller_slug: str, payment_id: int):
@@ -196,46 +204,51 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
         return
 
     # B) DESPESA - Comissão ML (se > 0)
+    despesas_para_baixa = []
     if mp_fee > 0:
         try:
-            await _criar_despesa_com_baixa(
+            info = await _criar_despesa(
                 seller, date_approved, mp_fee,
                 f"Comissão ML - Payment {payment_id}",
                 f"Venda #{order_id} | fee={mp_fee}",
                 CA_CATEGORIES["comissao_ml"],
                 f"Comissão ML #{payment_id}",
             )
-            logger.info(f"CA comissão created for payment {payment_id}: R${mp_fee}")
+            despesas_para_baixa.append(info)
         except Exception as e:
             logger.error(f"CA comissão failed for payment {payment_id}: {e}")
 
     # C) DESPESA - Frete (se > 0)
     if shipping_cost_seller > 0:
         try:
-            await _criar_despesa_com_baixa(
+            info = await _criar_despesa(
                 seller, date_approved, shipping_cost_seller,
                 f"Frete MercadoEnvios - Payment {payment_id}",
                 f"Shipment #{shipping_id}",
                 CA_CATEGORIES["frete_mercadoenvios"],
                 f"Frete ML #{payment_id}",
             )
-            logger.info(f"CA frete created for payment {payment_id}: R${shipping_cost_seller}")
+            despesas_para_baixa.append(info)
         except Exception as e:
             logger.error(f"CA frete failed for payment {payment_id}: {e}")
 
     # D) DESPESA - Financing fee / parcelamento (se > 0)
     if financing_fee > 0:
         try:
-            await _criar_despesa_com_baixa(
+            info = await _criar_despesa(
                 seller, date_approved, financing_fee,
                 f"Taxa parcelamento ML - Payment {payment_id}",
                 f"Financing fee #{payment_id}",
                 CA_CATEGORIES["tarifa_pagamento"],
                 f"Financing fee ML #{payment_id}",
             )
-            logger.info(f"CA financing fee created for payment {payment_id}: R${financing_fee}")
+            despesas_para_baixa.append(info)
         except Exception as e:
             logger.error(f"CA financing fee failed for payment {payment_id}: {e}")
+
+    # E) BAIXAS - Esperar API async e dar baixa nas despesas
+    if despesas_para_baixa:
+        await _fazer_baixas(despesas_para_baixa)
 
     # Salva no Supabase como synced
     _upsert_payment(db, seller_slug, payment, "synced",
