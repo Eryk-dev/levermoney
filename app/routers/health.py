@@ -53,9 +53,20 @@ async def debug_process_test():
         )
         results["payload"] = payload
 
-        from app.services import ca_api
-        ca_result = await ca_api.criar_conta_receber(payload)
-        results["ca_create"] = {"status": "ok", "id": ca_result.get("id")}
+        import httpx as _httpx
+        from app.services.ca_api import _get_ca_token as _gct
+        _tk = await _gct()
+        async with _httpx.AsyncClient(timeout=30.0) as _c:
+            _r = await _c.post(
+                "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/contas-a-receber",
+                headers={"Authorization": f"Bearer {_tk}", "Content-Type": "application/json"},
+                json=payload,
+            )
+            results["ca_status"] = _r.status_code
+            try:
+                results["ca_response"] = _r.json()
+            except Exception:
+                results["ca_response"] = _r.text
 
     except Exception as e:
         results["error"] = str(e)
