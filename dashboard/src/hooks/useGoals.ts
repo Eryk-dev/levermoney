@@ -4,7 +4,6 @@ import { DEFAULT_YEARLY_GOALS, toMonthlyGoals, type CompanyYearlyGoal, type Comp
 
 export function useGoals() {
   const [yearlyGoals, setYearlyGoals] = useState<CompanyYearlyGoal[]>(DEFAULT_YEARLY_GOALS);
-  const [loaded, setLoaded] = useState(false);
 
   // Load goals from Supabase on mount
   useEffect(() => {
@@ -46,7 +45,7 @@ export function useGoals() {
         console.error('Failed to load goals from Supabase:', e);
         // Fallback to defaults already set
       }
-      setLoaded(true);
+      // loaded
     };
 
     loadGoals();
