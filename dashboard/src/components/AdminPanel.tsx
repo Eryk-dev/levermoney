@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { formatBRL } from '../utils/dataParser';
-import { LogOut, RefreshCw, Check, X, Zap } from 'lucide-react';
+import { LogOut, RefreshCw, Check, X, Zap, Settings } from 'lucide-react';
 import type { CaAccount, CaCostCenter } from '../hooks/useAdmin';
 import type { RevenueLine } from '../types';
 import styles from './AdminPanel.module.css';
@@ -15,6 +15,8 @@ interface Seller {
   dashboard_empresa?: string;
   dashboard_grupo?: string;
   dashboard_segmento?: string;
+  ca_conta_bancaria?: string;
+  ca_centro_custo_variavel?: string;
   ml_user_id?: number;
   source?: string;
   created_at: string;
@@ -39,6 +41,13 @@ interface AdminPanelProps {
     ca_conta_bancaria?: string;
     ca_centro_custo_variavel?: string;
   }) => Promise<void>;
+  updateSellerConfig: (id: string, config: {
+    dashboard_empresa?: string;
+    dashboard_grupo?: string;
+    dashboard_segmento?: string;
+    ca_conta_bancaria?: string;
+    ca_centro_custo_variavel?: string;
+  }) => Promise<void>;
   rejectSeller: (id: string) => Promise<void>;
   syncStatus: { last_sync: string | null; results: SyncResult[] };
   triggerSync: () => Promise<void>;
@@ -50,8 +59,9 @@ interface AdminPanelProps {
 
 const NEW_LINE_VALUE = '__new__';
 
-interface ApproveForm {
+interface ConfigForm {
   id: string;
+  mode: 'approve' | 'edit';
   selectedLine: string; // empresa name or '__new__'
   empresa: string;
   grupo: string;
@@ -65,6 +75,7 @@ export function AdminPanel({
   pendingSellers,
   activeSellers,
   approveSeller,
+  updateSellerConfig,
   rejectSeller,
   syncStatus,
   triggerSync,
@@ -74,7 +85,7 @@ export function AdminPanel({
   onLogout,
 }: AdminPanelProps) {
   const [syncing, setSyncing] = useState(false);
-  const [approveForm, setApproveForm] = useState<ApproveForm | null>(null);
+  const [configForm, setConfigForm] = useState<ConfigForm | null>(null);
 
   const existingGrupos = useMemo(() => {
     const set = new Set(revenueLines.map((l) => l.grupo));
@@ -93,20 +104,20 @@ export function AdminPanel({
   };
 
   const handleLineSelect = (value: string) => {
-    if (!approveForm) return;
+    if (!configForm) return;
     if (value === NEW_LINE_VALUE) {
-      setApproveForm({
-        ...approveForm,
+      setConfigForm({
+        ...configForm,
         selectedLine: NEW_LINE_VALUE,
-        empresa: approveForm.id ? sellers.find((s) => s.id === approveForm.id)?.name || '' : '',
+        empresa: configForm.id ? sellers.find((s) => s.id === configForm.id)?.name || '' : '',
         grupo: 'OUTROS',
         segmento: 'OUTROS',
       });
     } else {
       const line = revenueLines.find((l) => l.empresa === value);
       if (line) {
-        setApproveForm({
-          ...approveForm,
+        setConfigForm({
+          ...configForm,
           selectedLine: value,
           empresa: line.empresa,
           grupo: line.grupo,
@@ -116,21 +127,27 @@ export function AdminPanel({
     }
   };
 
-  const handleApprove = async () => {
-    if (!approveForm) return;
-    await approveSeller(approveForm.id, {
-      dashboard_empresa: approveForm.empresa,
-      dashboard_grupo: approveForm.grupo,
-      dashboard_segmento: approveForm.segmento,
-      ca_conta_bancaria: approveForm.ca_conta_bancaria || undefined,
-      ca_centro_custo_variavel: approveForm.ca_centro_custo_variavel || undefined,
-    });
-    setApproveForm(null);
+  const handleSubmit = async () => {
+    if (!configForm) return;
+    const config = {
+      dashboard_empresa: configForm.empresa,
+      dashboard_grupo: configForm.grupo,
+      dashboard_segmento: configForm.segmento,
+      ca_conta_bancaria: configForm.ca_conta_bancaria || undefined,
+      ca_centro_custo_variavel: configForm.ca_centro_custo_variavel || undefined,
+    };
+    if (configForm.mode === 'approve') {
+      await approveSeller(configForm.id, config);
+    } else {
+      await updateSellerConfig(configForm.id, config);
+    }
+    setConfigForm(null);
   };
 
   const openApproveForm = (s: Seller) => {
-    setApproveForm({
+    setConfigForm({
       id: s.id,
+      mode: 'approve',
       selectedLine: NEW_LINE_VALUE,
       empresa: s.name,
       grupo: 'OUTROS',
@@ -140,7 +157,23 @@ export function AdminPanel({
     });
   };
 
-  const isNewLine = approveForm?.selectedLine === NEW_LINE_VALUE;
+  const openEditForm = (s: Seller) => {
+    const matchedLine = s.dashboard_empresa
+      ? revenueLines.find((l) => l.empresa === s.dashboard_empresa)
+      : null;
+    setConfigForm({
+      id: s.id,
+      mode: 'edit',
+      selectedLine: matchedLine ? matchedLine.empresa : NEW_LINE_VALUE,
+      empresa: s.dashboard_empresa || s.name,
+      grupo: s.dashboard_grupo || 'OUTROS',
+      segmento: s.dashboard_segmento || 'OUTROS',
+      ca_conta_bancaria: s.ca_conta_bancaria || '',
+      ca_centro_custo_variavel: s.ca_centro_custo_variavel || '',
+    });
+  };
+
+  const isNewLine = configForm?.selectedLine === NEW_LINE_VALUE;
 
   return (
     <div className={styles.container}>
@@ -220,18 +253,18 @@ export function AdminPanel({
         </section>
       )}
 
-      {/* Approve Form Modal */}
-      {approveForm && (
+      {/* Config Form Modal (approve or edit) */}
+      {configForm && (
         <div className={styles.modal}>
           <div className={styles.modalContent}>
-            <h3>Aprovar Seller</h3>
+            <h3>{configForm.mode === 'approve' ? 'Aprovar Seller' : 'Configurar Seller'}</h3>
 
             {/* Revenue Line selector */}
             <label className={styles.formLabel}>
               Linha de Receita
               <select
                 className={styles.formSelect}
-                value={approveForm.selectedLine}
+                value={configForm.selectedLine}
                 onChange={(e) => handleLineSelect(e.target.value)}
               >
                 <option value={NEW_LINE_VALUE}>+ Criar nova linha</option>
@@ -249,14 +282,14 @@ export function AdminPanel({
               {isNewLine ? (
                 <input
                   className={styles.formInput}
-                  value={approveForm.empresa}
-                  onChange={e => setApproveForm({ ...approveForm, empresa: e.target.value })}
+                  value={configForm.empresa}
+                  onChange={e => setConfigForm({ ...configForm, empresa: e.target.value })}
                   placeholder="Nome da empresa no dashboard"
                 />
               ) : (
                 <input
                   className={styles.formInput}
-                  value={approveForm.empresa}
+                  value={configForm.empresa}
                   disabled
                 />
               )}
@@ -269,10 +302,10 @@ export function AdminPanel({
                 <div className={styles.comboRow}>
                   <select
                     className={styles.formSelect}
-                    value={existingGrupos.includes(approveForm.grupo) ? approveForm.grupo : '__custom__'}
+                    value={existingGrupos.includes(configForm.grupo) ? configForm.grupo : '__custom__'}
                     onChange={(e) => {
                       if (e.target.value !== '__custom__') {
-                        setApproveForm({ ...approveForm, grupo: e.target.value });
+                        setConfigForm({ ...configForm, grupo: e.target.value });
                       }
                     }}
                   >
@@ -281,17 +314,17 @@ export function AdminPanel({
                     ))}
                     <option value="__custom__">Outro...</option>
                   </select>
-                  {!existingGrupos.includes(approveForm.grupo) && (
+                  {!existingGrupos.includes(configForm.grupo) && (
                     <input
                       className={styles.formInput}
-                      value={approveForm.grupo}
-                      onChange={e => setApproveForm({ ...approveForm, grupo: e.target.value })}
+                      value={configForm.grupo}
+                      onChange={e => setConfigForm({ ...configForm, grupo: e.target.value })}
                       placeholder="Nome do grupo"
                     />
                   )}
                 </div>
               ) : (
-                <input className={styles.formInput} value={approveForm.grupo} disabled />
+                <input className={styles.formInput} value={configForm.grupo} disabled />
               )}
             </label>
 
@@ -302,10 +335,10 @@ export function AdminPanel({
                 <div className={styles.comboRow}>
                   <select
                     className={styles.formSelect}
-                    value={existingSegmentos.includes(approveForm.segmento) ? approveForm.segmento : '__custom__'}
+                    value={existingSegmentos.includes(configForm.segmento) ? configForm.segmento : '__custom__'}
                     onChange={(e) => {
                       if (e.target.value !== '__custom__') {
-                        setApproveForm({ ...approveForm, segmento: e.target.value });
+                        setConfigForm({ ...configForm, segmento: e.target.value });
                       }
                     }}
                   >
@@ -314,17 +347,17 @@ export function AdminPanel({
                     ))}
                     <option value="__custom__">Outro...</option>
                   </select>
-                  {!existingSegmentos.includes(approveForm.segmento) && (
+                  {!existingSegmentos.includes(configForm.segmento) && (
                     <input
                       className={styles.formInput}
-                      value={approveForm.segmento}
-                      onChange={e => setApproveForm({ ...approveForm, segmento: e.target.value })}
+                      value={configForm.segmento}
+                      onChange={e => setConfigForm({ ...configForm, segmento: e.target.value })}
                       placeholder="Nome do segmento"
                     />
                   )}
                 </div>
               ) : (
-                <input className={styles.formInput} value={approveForm.segmento} disabled />
+                <input className={styles.formInput} value={configForm.segmento} disabled />
               )}
             </label>
 
@@ -333,8 +366,8 @@ export function AdminPanel({
               Conta Bancaria CA
               <select
                 className={styles.formSelect}
-                value={approveForm.ca_conta_bancaria}
-                onChange={e => setApproveForm({ ...approveForm, ca_conta_bancaria: e.target.value })}
+                value={configForm.ca_conta_bancaria}
+                onChange={e => setConfigForm({ ...configForm, ca_conta_bancaria: e.target.value })}
               >
                 <option value="">Selecione...</option>
                 {caAccounts.map((acc) => (
@@ -350,8 +383,8 @@ export function AdminPanel({
               Centro de Custo CA
               <select
                 className={styles.formSelect}
-                value={approveForm.ca_centro_custo_variavel}
-                onChange={e => setApproveForm({ ...approveForm, ca_centro_custo_variavel: e.target.value })}
+                value={configForm.ca_centro_custo_variavel}
+                onChange={e => setConfigForm({ ...configForm, ca_centro_custo_variavel: e.target.value })}
               >
                 <option value="">Selecione...</option>
                 {caCostCenters.map((cc) => (
@@ -363,8 +396,10 @@ export function AdminPanel({
             </label>
 
             <div className={styles.modalActions}>
-              <button type="button" className={styles.approveBtn} onClick={handleApprove}>Confirmar</button>
-              <button type="button" className={styles.rejectBtn} onClick={() => setApproveForm(null)}>Cancelar</button>
+              <button type="button" className={styles.approveBtn} onClick={handleSubmit}>
+                {configForm.mode === 'approve' ? 'Aprovar' : 'Salvar'}
+              </button>
+              <button type="button" className={styles.rejectBtn} onClick={() => setConfigForm(null)}>Cancelar</button>
             </div>
           </div>
         </div>
@@ -384,8 +419,17 @@ export function AdminPanel({
                   {s.ml_user_id && ` | ML: ${s.ml_user_id}`}
                 </span>
               </div>
-              <div className={styles.sellerBadge}>
-                <Zap size={12} /> {s.source || 'ml'}
+              <div className={styles.sellerActions}>
+                <button
+                  type="button"
+                  className={styles.editBtn}
+                  onClick={() => openEditForm(s)}
+                >
+                  <Settings size={14} /> Configurar
+                </button>
+                <div className={styles.sellerBadge}>
+                  <Zap size={12} /> {s.source || 'ml'}
+                </div>
               </div>
             </div>
           ))}

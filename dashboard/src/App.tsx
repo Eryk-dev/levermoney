@@ -674,6 +674,7 @@ function App() {
             pendingSellers={admin.pendingSellers}
             activeSellers={admin.activeSellers}
             approveSeller={admin.approveSeller}
+            updateSellerConfig={admin.updateSellerConfig}
             rejectSeller={admin.rejectSeller}
             syncStatus={admin.syncStatus}
             triggerSync={admin.triggerSync}

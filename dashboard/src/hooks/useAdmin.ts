@@ -116,6 +116,16 @@ export function useAdmin() {
     await loadSellers();
   }, [token, headers, loadSellers]);
 
+  const updateSellerConfig = useCallback(async (id: string, config: Partial<SellerConfig>) => {
+    if (!token) return;
+    await fetch(`${API_BASE}/admin/sellers/${id}`, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify(config),
+    });
+    await loadSellers();
+  }, [token, headers, loadSellers]);
+
   const rejectSeller = useCallback(async (id: string) => {
     if (!token) return;
     await fetch(`${API_BASE}/admin/sellers/${id}/reject`, {
@@ -259,6 +269,7 @@ export function useAdmin() {
     pendingSellers,
     activeSellers,
     approveSeller,
+    updateSellerConfig,
     rejectSeller,
     syncStatus,
     triggerSync,

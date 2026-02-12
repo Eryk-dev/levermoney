@@ -178,7 +178,25 @@
 
 .sellerActions {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
+}
+
+.editBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--space-1);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.editBtn:hover {
+  background: var(--surface);
 }
 
 .approveBtn {
