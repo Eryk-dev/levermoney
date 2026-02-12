@@ -7,8 +7,8 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIU
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// API base URL for admin/dashboard backend endpoints
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// API base URL - same origin in production, localhost in dev
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export interface FaturamentoRow {
   id?: number;

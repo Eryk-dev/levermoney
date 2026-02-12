@@ -7,8 +7,13 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.routers import health, webhooks, auth_ml, backfill, baixas, queue, admin, dashboard_api
@@ -122,3 +127,16 @@ app.include_router(queue.router)
 # New routers
 app.include_router(admin.router)
 app.include_router(dashboard_api.router)
+
+# Serve dashboard static files (built React SPA)
+DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard-dist"
+if DASHBOARD_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=DASHBOARD_DIR / "assets"), name="dashboard-assets")
+
+    @app.get("/{path:path}")
+    async def serve_dashboard(request: Request, path: str):
+        """Serve dashboard SPA - fallback to index.html for client-side routing."""
+        file = DASHBOARD_DIR / path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(DASHBOARD_DIR / "index.html")
