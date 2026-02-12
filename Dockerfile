@@ -1,5 +1,5 @@
 ## Stage 1: Build dashboard
-FROM node:20-alpine AS dashboard-build
+FROM node:22-alpine AS dashboard-build
 WORKDIR /dashboard
 COPY dashboard/package*.json ./
 RUN npm ci
