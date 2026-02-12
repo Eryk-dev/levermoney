@@ -1,39 +1,53 @@
 """
 Cliente para APIs do Mercado Livre e Mercado Pago.
+Supports per-seller ML app credentials with fallback to global settings.
 """
+import logging
+from datetime import datetime, timedelta, timezone
+
 import httpx
+
 from app.db.supabase import get_db
 
 ML_API = "https://api.mercadolibre.com"
 MP_API = "https://api.mercadopago.com"
 
+logger = logging.getLogger(__name__)
+
+
+def _get_seller_credentials(seller: dict) -> tuple[str, str]:
+    """Get ML app_id and secret_key for a seller.
+    Uses per-seller credentials if available, falls back to global settings."""
+    from app.config import settings
+    app_id = seller.get("ml_app_id") or settings.ml_app_id
+    secret = seller.get("ml_secret_key") or settings.ml_secret_key
+    return app_id, secret
+
 
 async def _get_token(seller_slug: str) -> str:
     """Pega access_token do seller. Se expirado, faz refresh."""
     db = get_db()
-    seller = db.table("sellers").select("ml_access_token, ml_refresh_token, ml_token_expires_at").eq(
-        "slug", seller_slug
-    ).single().execute()
+    seller = db.table("sellers").select(
+        "ml_access_token, ml_refresh_token, ml_token_expires_at, ml_app_id, ml_secret_key"
+    ).eq("slug", seller_slug).single().execute()
     s = seller.data
 
-    from datetime import datetime, timezone
     expires_at = datetime.fromisoformat(s["ml_token_expires_at"]) if s.get("ml_token_expires_at") else None
     if expires_at and expires_at > datetime.now(timezone.utc):
         return s["ml_access_token"]
 
-    # Refresh token
-    from app.config import settings
+    # Refresh token using per-seller or global credentials
+    app_id, secret = _get_seller_credentials(s)
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(f"{MP_API}/oauth/token", json={
             "grant_type": "refresh_token",
-            "client_id": settings.ml_app_id,
-            "client_secret": settings.ml_secret_key,
+            "client_id": app_id,
+            "client_secret": secret,
             "refresh_token": s["ml_refresh_token"],
         })
         resp.raise_for_status()
         data = resp.json()
 
-    from datetime import timedelta
     new_expires = datetime.now(timezone.utc) + timedelta(seconds=data["expires_in"])
     db.table("sellers").update({
         "ml_access_token": data["access_token"],
@@ -114,3 +128,63 @@ async def exchange_code(code: str) -> dict:
         })
         resp.raise_for_status()
         return resp.json()
+
+
+async def fetch_paid_orders(seller_slug: str, date_str: str) -> dict:
+    """Fetch paid orders total for a seller on a given date.
+    Used by faturamento_sync. Returns {valor, order_count, fraud_skipped}."""
+    token = await _get_token(seller_slug)
+    date_from = f"{date_str}T00:00:00.000-03:00"
+    date_to = f"{date_str}T23:59:59.999-03:00"
+
+    total_valor = 0.0
+    order_count = 0
+    fraud_count = 0
+    offset = 0
+    limit = 50
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while True:
+            resp = await client.get(
+                f"{ML_API}/orders/search",
+                params={
+                    "seller": (await _get_ml_user_id(seller_slug)),
+                    "order.status": "paid",
+                    "order.date_created.from": date_from,
+                    "order.date_created.to": date_to,
+                    "sort": "date_desc",
+                    "limit": limit,
+                    "offset": offset,
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            if resp.status_code != 200:
+                logger.error("[%s] Orders search failed at offset %d: %s", seller_slug, offset, resp.text)
+                break
+
+            data = resp.json()
+            for order in data.get("results", []):
+                if "fraud_risk_detected" in (order.get("tags") or []):
+                    fraud_count += 1
+                    continue
+                total_valor += order.get("paid_amount", 0) or order.get("total_amount", 0)
+                order_count += 1
+
+            total_results = data.get("paging", {}).get("total", 0)
+            offset += limit
+            if offset >= total_results or offset > 500:
+                break
+
+    return {
+        "valor": round(total_valor, 2),
+        "order_count": order_count,
+        "fraud_skipped": fraud_count,
+    }
+
+
+async def _get_ml_user_id(seller_slug: str) -> int:
+    """Get the ML user_id for a seller from the database."""
+    db = get_db()
+    result = db.table("sellers").select("ml_user_id").eq("slug", seller_slug).single().execute()
+    return result.data["ml_user_id"]

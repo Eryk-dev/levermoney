@@ -1,6 +1,6 @@
 # API Conciliador V2 - Plano de Desenvolvimento
 
-**Versão do plano:** 1.6
+**Versão do plano:** 1.8
 **Última atualização:** 2026-02-11
 
 ---
@@ -53,25 +53,40 @@ VENDA                    LIBERAÇÃO                  SAQUE
 
 ### 3.1 Venda aprovada
 
-Competência = **data da venda**. Conta = **MP Retido**.
+Competência = **data da venda (date_approved)**. Conta = **MP Retido**.
+
+**IMPORTANTE:** Comissão e frete NÃO são descontados na data da venda. O ML desconta
+essas taxas somente no dia da liberação do dinheiro (`money_release_date`). Por isso:
+- `data_competencia` das despesas = `date_approved` (quando a obrigacao surgiu)
+- `data_vencimento` e `data_pagamento` (baixa) das despesas = `money_release_date` (quando o ML efetivamente desconta)
 
 ```
 RECEITA:
   Conta: MP Retido
   Categoria: 1.1.1 MercadoLibre (ou 1.1.2 Loja, 1.1.5 Balcão)
   Valor: +R$ 100,00 (transaction_amount EXATO da API)
+  Competencia: date_approved
+  Vencimento: money_release_date
 
-COMISSÃO:
+COMISSÃO (fórmula infalível):
   Conta: MP Retido
   Categoria: 2.8.2 Comissões de Marketplace
-  Valor: -R$ 12,00 (fee_details EXATO da API)
+  Valor: -R$ 12,00 (amount - net - shipping = comissão)
+  Competencia: date_approved
+  Vencimento/Baixa: money_release_date (descontado na liberacao)
+  NOTA: Captura automaticamente ml_sale_fee + mp_processing_fee + outros
 
-FRETE (se vendedor paga):
+FRETE (de charges_details, type=shipping, from=collector):
   Conta: MP Retido
   Categoria: 2.9.4 MercadoEnvios
-  Valor: -R$ 6,00 (shipping_fee EXATO da API)
+  Valor: -R$ 6,00 (charges_details ou shipments/costs API fallback)
+  Competencia: date_approved
+  Vencimento/Baixa: money_release_date (descontado na liberacao)
 
 → Saldo MP Retido: +R$ 82,00
+
+NOTA: financing_fee NÃO gera despesa (é net-neutral:
+  financing_fee collector→mp = financing_transfer payer→collector)
 ```
 
 ### 3.2 Dinheiro liberado
@@ -98,15 +113,11 @@ ESTORNO RECEITA:
   Categoria: 1.2.1 Devoluções e Cancelamentos
   Valor: -R$ 100,00
 
-ESTORNO COMISSÃO:
+ESTORNO TAXAS (comissão + frete):
   Conta: MP Retido
   Categoria: 1.3.4 Estornos de Taxas
-  Valor: +R$ 12,00
-
-ESTORNO FRETE:
-  Conta: MP Retido
-  Categoria: 1.3.7 Estorno de Frete
-  Valor: +R$ 6,00
+  Valor: +R$ 18,00 (amount - net = total taxas descontadas)
+  Só se refund total >= transaction_amount
 
 → MP Retido: -R$ 82,00 (zera a operação)
 ```
@@ -255,7 +266,7 @@ Após antecipação em 16/01:
            ├── money_release_date = 2025-01-22
            ├── transaction_amount = R$ 100,00
            ├── net_received_amount = R$ 82,00
-           └── fee_details = [comissão R$ 12, frete R$ 6]
+           └── charges_details = [shipping, ml_sale_fee, mp_processing_fee...]
        └─▶ Busca GET /orders/{order_id}
            ├── order_items = ["Produto X"]
            └── shipping.cost = R$ 15,00
@@ -314,7 +325,8 @@ Após antecipação em 16/01:
   "date_approved": "2025-01-15T10:30:05.000Z",
   "money_release_date": "2025-01-22T10:30:00.000Z",
   "transaction_amount": 100.00,
-  "fee_details": [...],
+  "charges_details": [...],  // SOURCE OF TRUTH (fee_details é unreliável!)
+  "fee_details": [...],      // Vazio em ~86% dos cases - NÃO usar
   "transaction_details": {
     "net_received_amount": 82.00,
     "total_paid_amount": 115.00,
@@ -377,8 +389,9 @@ Base URL: `https://api-v2.contaazul.com`
 ```
 
 **Autenticação Conta Azul:**
-- OAuth2 com Bearer Token
-- Refresh Token automático
+- Bearer Token via AWS Cognito (`cognito-idp.sa-east-1.amazonaws.com`)
+- Refresh via `REFRESH_TOKEN_AUTH` flow (Client ID: `6ri07ptg5k2u7dubdlttg3a7t8`)
+- Access token expira ~1h, refresh automático via Cognito
 - Rate limit: 600 req/min, 10 req/seg por conta ERP
 
 ### 5.3 MCP Server Conta Azul (Desenvolvimento/Testes)
@@ -414,25 +427,43 @@ Existe um MCP Server local (`/Volumes/SSD Eryk/financeiro/contaazul-mcp-server/`
 | | `contaazul_buscar_cobranca` | GET cobrança por ID |
 | | `contaazul_deletar_cobranca` | DELETE cobrança |
 
-**Endpoints da API Conta Azul descobertos via MCP:**
+**Endpoints da API Conta Azul descobertos via MCP + testes:**
 
 ```
 Base: https://api-v2.contaazul.com
 
-Financeiro:
+IMPORTANTE - API v2 é ASSÍNCRONA:
+  - POST de eventos retorna {"protocolo": "...", "status": "PENDING"}, NÃO retorna "id"
+  - Parcelas são criadas assincronamente (~3s após criação do evento)
+  - Usar "protocolo" como identificador do evento criado
+
+Financeiro - Criação:
   POST /v1/financeiro/eventos-financeiros/contas-a-receber
   POST /v1/financeiro/eventos-financeiros/contas-a-pagar
-  GET  /v1/financeiro/eventos-financeiros/contas-a-receber/parcelas (busca com filtros)
-  GET  /v1/financeiro/eventos-financeiros/contas-a-pagar/parcelas (busca com filtros)
+
+Financeiro - Busca (ATENÇÃO: é POST com JSON body, NÃO GET):
+  POST /v1/financeiro/eventos-financeiros/contas-a-receber/buscar
+  POST /v1/financeiro/eventos-financeiros/contas-a-pagar/buscar
+    Body: { "descricao": "...", "data_vencimento_de": "...", "data_vencimento_ate": "...",
+            "status": ["ATRASADO", "EM_DIA"], "tamanho_pagina": 5 }
+    Retorna: { "itens": [...] }
+
+Financeiro - Parcelas:
+  GET  /v1/financeiro/eventos-financeiros/{evento_id}/parcelas
   GET  /v1/financeiro/eventos-financeiros/parcelas/{id}
   PATCH /v1/financeiro/eventos-financeiros/parcelas/{id}
 
 Baixas:
-  POST   /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa
+  POST   /v1/financeiro/eventos-financeiros/parcelas/{parcela_id}/baixa
+    Body: { "data_pagamento": "...", "composicao_valor": { "valor_bruto": N }, "conta_financeira": "UUID" }
   GET    /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa
   GET    /v1/financeiro/eventos-financeiros/parcelas/baixa/{id}
   PATCH  /v1/financeiro/eventos-financeiros/parcelas/baixa/{id}
   DELETE /v1/financeiro/eventos-financeiros/parcelas/baixa/{id}
+
+Parcela - detalhe_valor OBRIGATÓRIO:
+  "detalhe_valor": { "valor_bruto": N, "valor_liquido": N }
+  (sem valor_liquido a API retorna 400: "O valor líquido deve ser informado")
 
 Cobranças:
   POST   /v1/financeiro/eventos-financeiros/contas-a-receber/gerar-cobranca
@@ -452,6 +483,13 @@ Centros de Custo:
   POST /v1/centro-de-custo
 ```
 
+**Autenticação CA v2:**
+- Bearer Token via AWS Cognito (NÃO é OAuth2 tradicional)
+- Cognito URL: `https://cognito-idp.sa-east-1.amazonaws.com/`
+- Client ID: `6ri07ptg5k2u7dubdlttg3a7t8`
+- Refresh via `REFRESH_TOKEN_AUTH` flow
+- Tokens expiram ~1h, refresh token dura mais (mas pode expirar)
+
 ---
 
 ## 6. Garantia de 100% de Precisão
@@ -460,9 +498,12 @@ Centros de Custo:
 
 Cada pagamento capturado via API com campos exatos:
 - `transaction_amount` = bruto exato
-- `fee_details` = taxas exatas
+- `charges_details` = breakdown completo de taxas (source of truth)
 - `net_received_amount` = líquido exato
 - `money_release_date` = data exata
+
+Fórmula infalível: `comissão = amount - net - shipping`
+(fee_details é unreliável: vazio em ~86% dos payments)
 
 Sem arredondamento. Sem estimativa. Valores EXATOS do ML/MP.
 
@@ -473,8 +514,8 @@ Cada transação gera lançamentos via API com valores exatos:
 | Evento | Ação no Conta Azul | Valor |
 |--------|-------------------|-------|
 | Venda aprovada | POST contas-a-receber | `transaction_amount` (exato) |
-| Comissão | POST contas-a-pagar | `fee_details.amount` (exato) |
-| Frete vendedor | POST contas-a-pagar | `shipping_fee` (exato) |
+| Comissão | POST contas-a-pagar | `amount - net - shipping` (fórmula infalível) |
+| Frete vendedor | POST contas-a-pagar | `charges_details[shipping]` ou `shipments/costs` API |
 | Devolução | POST contas-a-pagar | `refund_amount` (exato) |
 | Estorno taxa | POST contas-a-receber | `fee_refund` (exato) |
 | Liberação | Transferência entre contas | `net_received` (exato) |
@@ -1125,34 +1166,63 @@ Lançamentos no Conta Azul:
   │   observacao: "Payment: {payment_id} | Liberação: {release_date}" │
   └─────────────────────────────────────────────────────────────────────┘
   ┌─────────────────────────────────────────────────────────────────────┐
-  │ DESPESA - COMISSÃO (contas-a-pagar)                                │
+  │ DESPESA - COMISSÃO (contas-a-pagar) [se comissão > 0]             │
   │   data_competencia: payment.date_approved                          │
-  │   valor: fee_details[type=mercadopago_fee].amount                  │
+  │   valor: amount - net - shipping (FÓRMULA INFALÍVEL)               │
   │   categoria: 2.8.2 Comissões de Marketplace                       │
   │   conta_financeira: MP Retido - {seller}                           │
   │   centro_custo: {seller} - VARIÁVEL                                │
-  │   data_vencimento: payment.date_approved (deduzido na hora)        │
-  │   baixa automática: sim (já pago pelo MP)                          │
+  │   data_vencimento: payment.money_release_date                      │
+  │   baixa automática: sim, data_pagamento = money_release_date       │
+  │   (ML desconta comissão somente no dia da liberação do dinheiro)   │
+  │                                                                     │
+  │   NOTA: Esta fórmula captura TODAS as taxas ML automaticamente:   │
+  │   ml_sale_fee + mp_processing_fee + mp_financing_1x_fee +         │
+  │   cashback-crypto + coupon_code + iof_fee + subsídios             │
+  │   NÃO usar fee_details (vazio em 86% dos payments!)               │
   └─────────────────────────────────────────────────────────────────────┘
   ┌─────────────────────────────────────────────────────────────────────┐
-  │ DESPESA - FRETE (contas-a-pagar) [se senders[].cost > 0]          │
+  │ DESPESA - FRETE (contas-a-pagar) [se shipping > 0]                │
   │   data_competencia: payment.date_approved                          │
-  │   valor: senders[0].cost (de /shipments/{id}/costs)                │
+  │   valor: charges_details[type=shipping, from=collector]            │
+  │     Fallback: senders[0].cost (de /shipments/{id}/costs)           │
   │   categoria: 2.9.4 MercadoEnvios                                  │
   │   conta_financeira: MP Retido - {seller}                           │
   │   centro_custo: {seller} - VARIÁVEL                                │
-  │   baixa automática: sim                                            │
+  │   data_vencimento: payment.money_release_date                      │
+  │   baixa automática: sim, data_pagamento = money_release_date       │
+  │   (ML desconta frete somente no dia da liberação do dinheiro)      │
+  │                                                                     │
+  │   NOTA: charges_details é SOURCE OF TRUTH para shipping.           │
+  │   Inclui shp_cross_docking, shp_fulfillment, shp_adjustment.      │
+  │   API /shipments/{id}/costs é fallback se charges vazio.           │
   └─────────────────────────────────────────────────────────────────────┘
   ┌─────────────────────────────────────────────────────────────────────┐
-  │ DESPESA - PARCELAMENTO (contas-a-pagar) [se financing_fee > 0]    │
-  │   data_competencia: payment.date_approved                          │
-  │   valor: fee_details[type=financing_fee].amount                    │
-  │   categoria: 2.8.2 Comissões de Marketplace (ou subcategoria)      │
-  │   conta_financeira: MP Retido - {seller}                           │
-  │   baixa automática: sim                                            │
+  │ financing_fee: NÃO GERA DESPESA (net-neutral)                     │
+  │                                                                     │
+  │   charges_details mostra que financing_fee (collector→mp) é        │
+  │   SEMPRE cancelado por financing_transfer (payer→collector)        │
+  │   de mesmo valor. O comprador paga o custo de parcelamento como   │
+  │   pass-through. O net_received_amount já exclui isso.              │
+  │   Verificado em 100% dos 22 payments com financing no período.    │
   └─────────────────────────────────────────────────────────────────────┘
 
-Validação: transaction_amount - TODAS as taxas == net_received_amount
+Validação: amount - net = shipping + comissão (por definição da fórmula, SEMPRE bate)
+
+Fluxo de baixa automática para despesas:
+  1. POST contas-a-pagar (cria evento com parcela, vencimento = money_release_date)
+  2. Aguardar ~3s (API CA v2 é assíncrona, parcela é criada em background)
+  3. POST /contas-a-pagar/buscar (busca parcela por descricao + data_vencimento)
+     Status filtro: ["ATRASADO", "EM_DIA"]
+  4. POST /parcelas/{id}/baixa (data_pagamento = money_release_date)
+
+REGRA DE DATAS (CRÍTICO):
+  - data_competencia de TODOS os lançamentos = date_approved (data da venda)
+  - data_vencimento da RECEITA = money_release_date (quando ML libera)
+  - data_vencimento das DESPESAS = money_release_date (quando ML desconta)
+  - data_pagamento das BAIXAS = money_release_date (quando efetivamente ocorre)
+  - NUNCA usar date_approved como data de baixa/vencimento de despesas!
+    O ML desconta comissão/frete/taxas SOMENTE no dia da liberação.
 ```
 
 #### EVENTO 2: Dinheiro Liberado (Release)
@@ -1214,18 +1284,16 @@ Lançamentos no Conta Azul (ESTORNOS):
   │   conta_financeira: MP Retido - {seller}                           │
   └─────────────────────────────────────────────────────────────────────┘
   ┌─────────────────────────────────────────────────────────────────────┐
-  │ ESTORNO COMISSÃO (contas-a-receber ou estorno de contas-a-pagar)   │
-  │   valor: +fee_details[mercadopago_fee].amount (devolvido pelo MP) │
+  │ ESTORNO TAXAS (contas-a-receber) [se refund total >= amount]      │
+  │   valor: amount - net (total taxas: comissão + frete)              │
   │   categoria: 1.3.4 Estornos de Taxas                              │
-  └─────────────────────────────────────────────────────────────────────┘
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │ ESTORNO FRETE (se aplicável)                                       │
-  │   valor: +shipping_fee (devolvido pelo MP)                         │
-  │   categoria: 1.3.7 Estorno de Frete                               │
+  │   NOTA: ML devolve TODAS as taxas em refund total.                 │
+  │   Lançamento único (não separa comissão/frete no estorno).        │
   └─────────────────────────────────────────────────────────────────────┘
 
 Nota: Devolução PARCIAL → status permanece "approved" com status_detail =
-      "partially_refunded". Estornar proporcionalmente.
+      "partially_refunded". Criar contas-a-pagar para cada refund
+      encontrado no array refunds[] do payment.
 ```
 
 #### EVENTO 5: Chargeback
@@ -1376,16 +1444,19 @@ Lançamento no Conta Azul:
 | API | Campo | Uso no V2 |
 |-----|-------|-----------|
 | `GET /v1/payments/{id}` | `transaction_amount` | Valor bruto da RECEITA |
-| | `fee_details[].amount` | Valor de cada DESPESA (comissão, frete, parcelamento) |
+| | `charges_details[]` | SOURCE OF TRUTH: breakdown completo de taxas com from/to |
+| | `charges_details[type=shipping, from=collector]` | Frete pago pelo vendedor (primário) |
 | | `transaction_details.net_received_amount` | Valor da TRANSFERÊNCIA (liberação) |
-| | `money_release_date` | Data vencimento da transferência |
-| | `date_approved` | Data competência dos lançamentos |
-| | `status` / `status_detail` | Determina tipo do evento |
+| | `money_release_date` | Data vencimento da receita + vencimento/baixa das despesas |
+| | `date_approved` | Data competência de todos os lançamentos (receita e despesas) |
+| | `status` / `status_detail` | Determina tipo do evento (incl. `partially_refunded`) |
+| | `refunds[]` | Array de refunds parciais (amount, date_created, id) |
 | | `collector_id` | Identifica o seller |
 | | `external_reference` | Cruza com order_id |
+| | ~~`fee_details[].amount`~~ | ~~UNRELIÁVEL: vazio em 86% dos payments, NÃO usar~~ |
 | `GET /orders/{id}` | `order_items[].title` | Descrição do lançamento |
 | | `pack_id` | Agrupa orders do mesmo carrinho |
-| `GET /shipments/{id}/costs` | `senders[].cost` | Valor frete pago pelo vendedor |
+| `GET /shipments/{id}/costs` | `senders[].cost` | Frete pago pelo vendedor (FALLBACK se charges vazio) |
 | | `receiver.cost` | Valor frete pago pelo comprador |
 | Released Money Report | `SOURCE_ID` | Cruza com payment_id |
 | | `DESCRIPTION` | Tipo do evento financeiro |

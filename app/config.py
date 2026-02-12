@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # Mercado Livre App
+    # Mercado Livre App (global defaults, overridden by per-seller credentials)
     ml_app_id: str = ""
     ml_secret_key: str = ""
     ml_redirect_uri: str = ""
@@ -17,6 +17,12 @@ class Settings(BaseSettings):
 
     # Server
     base_url: str = "http://localhost:8000"
+
+    # Dashboard CORS origins (comma-separated)
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    # Faturamento sync interval in minutes
+    sync_interval_minutes: int = 5
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

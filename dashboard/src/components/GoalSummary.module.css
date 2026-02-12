@@ -1,0 +1,148 @@
+.container {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  background: var(--paper-subtle);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.progressBlock {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.progressHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.label {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.percentage {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.progressBar {
+  position: relative;
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: visible;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--ink);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.expectedMarker {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 12px;
+  background: var(--ink-faint);
+  border-radius: 1px;
+  transform: translateX(-50%);
+}
+
+.progressFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.metaValue {
+  color: var(--ink-faint);
+}
+
+.divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  flex-shrink: 0;
+  min-height: 60px;
+}
+
+.gapRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--line);
+}
+
+.gapLabel {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
+.gapValue {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.positive {
+  color: var(--positive);
+}
+
+.negative {
+  color: #dc2626;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: var(--space-4);
+    gap: var(--space-4);
+  }
+
+  .progressBlock {
+    min-width: 150px;
+  }
+
+  .progressFooter {
+    font-size: var(--text-xs);
+  }
+
+  .gapValue {
+    font-size: var(--text-xs);
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .progressBlock {
+    min-width: auto;
+  }
+
+  .divider {
+    width: 100%;
+    height: 1px;
+    min-height: auto;
+  }
+}

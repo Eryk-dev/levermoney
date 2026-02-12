@@ -84,15 +84,17 @@ async def debug_busca_parcela():
         from app.services.ca_api import _get_ca_token
         token = await _get_ca_token()
 
-        # Testar endpoint de busca de parcelas
+        # Testar endpoint de busca de parcelas (contas a pagar)
         async with _httpx.AsyncClient(timeout=30.0) as _c:
             _r = await _c.get(
-                "https://api-v2.contaazul.com/v1/financeiro/parcelas/contas-a-pagar",
+                "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/contas-a-pagar/buscar",
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
                 params={
                     "descricao": "Comissão ML - Payment 144359445042",
                     "data_vencimento_de": "2026-02-01",
-                    "data_vencimento_ate": "2026-02-01",
+                    "data_vencimento_ate": "2026-02-28",
+                    "status": ["ATRASADO", "EM_ABERTO"],
+                    "pagina": 1,
                     "tamanho_pagina": 5,
                 },
             )

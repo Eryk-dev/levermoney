@@ -23,11 +23,17 @@ async def connect(seller: str):
     """
     Redireciona o seller para autorizar no ML.
     Uso: GET /auth/ml/connect?seller=141air
+    Accepts sellers with onboarding_status in ('approved', 'active', None).
     """
     db = get_db()
-    existing = db.table("sellers").select("slug").eq("slug", seller).execute()
+    existing = db.table("sellers").select("slug, onboarding_status").eq("slug", seller).execute()
     if not existing.data:
         raise HTTPException(status_code=404, detail=f"Seller '{seller}' not found in database")
+
+    status = existing.data[0].get("onboarding_status")
+    allowed = (None, "approved", "active")
+    if status not in allowed:
+        raise HTTPException(status_code=403, detail=f"Seller '{seller}' is not approved (status={status})")
 
     params = urlencode({
         "response_type": "code",
@@ -42,6 +48,7 @@ async def connect(seller: str):
 async def callback(code: str, state: str = ""):
     """
     Callback do OAuth ML. Troca code por tokens e salva no Supabase.
+    After successful OAuth, activates the seller via onboarding.
     """
     seller_slug = state
     if not seller_slug:
@@ -63,6 +70,10 @@ async def callback(code: str, state: str = ""):
         "ml_token_expires_at": expires_at.isoformat(),
         "active": True,
     }).eq("slug", seller_slug).execute()
+
+    # Activate seller via onboarding service
+    from app.services.onboarding import activate_seller
+    await activate_seller(seller_slug)
 
     logger.info(f"OAuth success for {seller_slug}, ml_user_id={token_data.get('user_id')}")
 

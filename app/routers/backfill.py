@@ -1,6 +1,6 @@
 """
 Backfill: puxa payments ML retroativos e processa no CA.
-GET /backfill/{seller_slug}?begin_date=2026-02-01&end_date=2026-02-11&dry_run=true
+GET /backfill/{seller_slug}?begin_date=2026-01-01&end_date=2026-02-11&dry_run=true
 """
 import asyncio
 import logging
@@ -22,11 +22,14 @@ async def backfill_payments(
     end_date: str = Query(..., description="Data fim YYYY-MM-DD"),
     dry_run: bool = Query(True, description="Se True, apenas lista sem processar"),
     max_process: int = Query(0, description="Máximo de payments a processar (0=todos)"),
+    concurrency: int = Query(10, description="Payments processados em paralelo"),
 ):
     """
     Puxa payments do ML por período e processa no CA.
     Use dry_run=true primeiro para ver o que será processado.
     """
+    concurrency = max(1, min(20, concurrency))
+
     db = get_db()
     seller = get_seller_config(db, seller_slug)
     if not seller:
@@ -54,7 +57,7 @@ async def backfill_payments(
         if offset >= total or not payments:
             break
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.3)
 
     # Summary by status
     status_counts = {}
@@ -64,17 +67,21 @@ async def backfill_payments(
 
     total_amount = sum(p.get("transaction_amount", 0) for p in all_payments)
 
-    # Check which are already synced in Supabase
-    already_synced = set()
-    synced_result = db.table("payments").select("ml_payment_id").eq(
+    # Check which are already processed in Supabase (terminal statuses)
+    already_done = set()
+    done_result = db.table("payments").select("ml_payment_id, status").eq(
         "seller_slug", seller_slug
-    ).eq("status", "synced").execute()
-    if synced_result.data:
-        already_synced = {r["ml_payment_id"] for r in synced_result.data}
+    ).in_("status", ["synced", "queued", "refunded", "skipped", "skipped_non_sale"]).execute()
+    if done_result.data:
+        already_done = {r["ml_payment_id"] for r in done_result.data}
 
     processable = [
         p for p in all_payments
-        if p.get("status") in ("approved", "refunded") and p["id"] not in already_synced
+        if p.get("status") in ("approved", "refunded", "in_mediation", "charged_back")
+        and p["id"] not in already_done
+        and (p.get("order") or {}).get("id")  # filter non-sale payments
+        and p.get("description") != "marketplace_shipment"  # skip buyer-paid shipping
+        and (p.get("collector") or {}).get("id") is None  # skip purchases (seller is buyer)
     ]
 
     if dry_run:
@@ -85,8 +92,9 @@ async def backfill_payments(
             "total_payments": len(all_payments),
             "total_amount": round(total_amount, 2),
             "by_status": status_counts,
-            "already_synced": len(already_synced),
+            "already_done": len(already_done),
             "to_process": len(processable),
+            "concurrency": concurrency,
             "sample": [
                 {
                     "id": p["id"],
@@ -94,10 +102,9 @@ async def backfill_payments(
                     "amount": p["transaction_amount"],
                     "date": (p.get("date_approved") or p.get("date_created", ""))[:19],
                     "order_id": p.get("order", {}).get("id") if p.get("order") else None,
-                    "fees": sum(f.get("amount", 0) for f in p.get("fee_details", [])),
                     "net": p.get("transaction_details", {}).get("net_received_amount"),
                 }
-                for p in all_payments[:20]
+                for p in processable[:20]
             ],
         }
 
@@ -110,27 +117,40 @@ async def backfill_payments(
     errors = 0
     results = []
 
-    for p in to_process:
-        payment_id = p["id"]
-        try:
-            await process_payment_webhook(seller_slug, payment_id)
-            processed += 1
-            results.append({"id": payment_id, "status": "ok"})
-            logger.info(f"Backfill processed payment {payment_id} ({processed}/{len(to_process)})")
-        except Exception as e:
-            errors += 1
-            results.append({"id": payment_id, "status": "error", "error": str(e)})
-            logger.error(f"Backfill error for payment {payment_id}: {e}")
+    # Process in concurrent batches
+    for i in range(0, len(to_process), concurrency):
+        batch = to_process[i:i + concurrency]
 
-        # Rate limit: ~1 payment per 2 seconds (each payment makes ~10 API calls)
-        await asyncio.sleep(2.0)
+        async def _process_one(p):
+            pid = p["id"]
+            try:
+                await process_payment_webhook(seller_slug, pid)
+                return {"id": pid, "status": "ok"}
+            except Exception as e:
+                logger.error(f"Backfill error for payment {pid}: {e}")
+                return {"id": pid, "status": "error", "error": str(e)}
+
+        batch_results = await asyncio.gather(*[_process_one(p) for p in batch])
+
+        for r in batch_results:
+            results.append(r)
+            if r["status"] == "ok":
+                processed += 1
+            else:
+                errors += 1
+
+        done = i + len(batch)
+        logger.info(f"Backfill progress: {done}/{len(to_process)} ({processed} ok, {errors} err)")
+
+        if done < len(to_process):
+            await asyncio.sleep(0.3)
 
     return {
         "mode": "process",
         "seller": seller_slug,
         "period": f"{begin_date} to {end_date}",
         "total_found": len(all_payments),
-        "already_synced": len(already_synced),
+        "already_done": len(already_done),
         "processed": processed,
         "errors": errors,
         "remaining": len(processable) - len(to_process),
