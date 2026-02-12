@@ -680,6 +680,8 @@ function App() {
             triggerSync={admin.triggerSync}
             caAccounts={admin.caAccounts}
             caCostCenters={admin.caCostCenters}
+            caContatos={admin.caContatos}
+            createContatoForSeller={admin.createContatoForSeller}
             revenueLines={lines}
             onLogout={() => {
               admin.logout();

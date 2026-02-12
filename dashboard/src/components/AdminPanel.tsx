@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { formatBRL } from '../utils/dataParser';
 import { LogOut, RefreshCw, Check, X, Zap, Settings } from 'lucide-react';
-import type { CaAccount, CaCostCenter } from '../hooks/useAdmin';
+import type { CaAccount, CaCostCenter, CaContato } from '../hooks/useAdmin';
 import type { RevenueLine } from '../types';
 import styles from './AdminPanel.module.css';
 
@@ -17,6 +17,7 @@ interface Seller {
   dashboard_segmento?: string;
   ca_conta_bancaria?: string;
   ca_centro_custo_variavel?: string;
+  ca_contato_ml?: string;
   ml_user_id?: number;
   source?: string;
   created_at: string;
@@ -40,6 +41,7 @@ interface AdminPanelProps {
     dashboard_segmento: string;
     ca_conta_bancaria?: string;
     ca_centro_custo_variavel?: string;
+    ca_contato_ml?: string;
   }) => Promise<void>;
   updateSellerConfig: (id: string, config: {
     dashboard_empresa?: string;
@@ -47,12 +49,15 @@ interface AdminPanelProps {
     dashboard_segmento?: string;
     ca_conta_bancaria?: string;
     ca_centro_custo_variavel?: string;
+    ca_contato_ml?: string;
   }) => Promise<void>;
   rejectSeller: (id: string) => Promise<void>;
   syncStatus: { last_sync: string | null; results: SyncResult[] };
   triggerSync: () => Promise<void>;
   caAccounts: CaAccount[];
   caCostCenters: CaCostCenter[];
+  caContatos: CaContato[];
+  createContatoForSeller: (sellerId: string) => Promise<unknown>;
   revenueLines: RevenueLine[];
   onLogout: () => void;
 }
@@ -68,6 +73,7 @@ interface ConfigForm {
   segmento: string;
   ca_conta_bancaria: string;
   ca_centro_custo_variavel: string;
+  ca_contato_ml: string;
 }
 
 export function AdminPanel({
@@ -81,6 +87,8 @@ export function AdminPanel({
   triggerSync,
   caAccounts,
   caCostCenters,
+  caContatos,
+  createContatoForSeller,
   revenueLines,
   onLogout,
 }: AdminPanelProps) {
@@ -135,6 +143,7 @@ export function AdminPanel({
       dashboard_segmento: configForm.segmento,
       ca_conta_bancaria: configForm.ca_conta_bancaria || undefined,
       ca_centro_custo_variavel: configForm.ca_centro_custo_variavel || undefined,
+      ca_contato_ml: configForm.ca_contato_ml || undefined,
     };
     if (configForm.mode === 'approve') {
       await approveSeller(configForm.id, config);
@@ -154,6 +163,7 @@ export function AdminPanel({
       segmento: 'OUTROS',
       ca_conta_bancaria: '',
       ca_centro_custo_variavel: '',
+      ca_contato_ml: '',
     });
   };
 
@@ -170,6 +180,7 @@ export function AdminPanel({
       segmento: s.dashboard_segmento || 'OUTROS',
       ca_conta_bancaria: s.ca_conta_bancaria || '',
       ca_centro_custo_variavel: s.ca_centro_custo_variavel || '',
+      ca_contato_ml: s.ca_contato_ml || '',
     });
   };
 
@@ -390,6 +401,23 @@ export function AdminPanel({
                 {caCostCenters.map((cc) => (
                   <option key={cc.id} value={cc.id}>
                     {cc.descricao}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* CA Contato dropdown */}
+            <label className={styles.formLabel}>
+              Contato CA
+              <select
+                className={styles.formSelect}
+                value={configForm.ca_contato_ml}
+                onChange={e => setConfigForm({ ...configForm, ca_contato_ml: e.target.value })}
+              >
+                <option value="">(Auto-criar ao aprovar)</option>
+                {caContatos.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
                   </option>
                 ))}
               </select>
