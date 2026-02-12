@@ -26,8 +26,8 @@ async def create_signup(slug: str, name: str, email: str | None = None) -> dict:
 
 async def approve_seller(seller_id: str, config: dict) -> dict:
     """Approve a pending seller with full config.
-    config: {dashboard_empresa, dashboard_grupo, dashboard_segmento, ca_conta_mp_retido,
-             ca_conta_mp_disponivel, ca_centro_custo_variavel, ca_contato_ml, ml_app_id, ml_secret_key}
+    config: {dashboard_empresa, dashboard_grupo, dashboard_segmento, ca_conta_bancaria,
+             ca_centro_custo_variavel, ca_contato_ml, ml_app_id, ml_secret_key}
     Also creates a revenue_line and 12 empty goals."""
     db = get_db()
 
@@ -38,7 +38,7 @@ async def approve_seller(seller_id: str, config: dict) -> dict:
     # Map config fields to seller columns
     for field in [
         "dashboard_empresa", "dashboard_grupo", "dashboard_segmento",
-        "ca_conta_mp_retido", "ca_conta_mp_disponivel", "ca_centro_custo_variavel",
+        "ca_conta_bancaria", "ca_centro_custo_variavel",
         "ca_contato_ml", "ml_app_id", "ml_secret_key",
     ]:
         if field in config and config[field] is not None:
@@ -72,6 +72,11 @@ async def approve_seller(seller_id: str, config: dict) -> dict:
             for m in range(1, 13)
         ]
         db.table("goals").upsert(goals, on_conflict="empresa,year,month").execute()
+
+    # Auto-activate if seller already has ML tokens from install flow
+    if seller.get("ml_access_token"):
+        await activate_seller(seller["slug"])
+        logger.info("Seller auto-activated: %s (had ML tokens)", seller_id)
 
     logger.info("Seller approved: %s -> empresa=%s", seller_id, empresa)
     return seller

@@ -30,7 +30,7 @@ interface AdminPanelProps {
   sellers: Seller[];
   pendingSellers: Seller[];
   activeSellers: Seller[];
-  approveSeller: (id: string, config: { dashboard_empresa: string; dashboard_grupo: string; dashboard_segmento: string }) => Promise<void>;
+  approveSeller: (id: string, config: { dashboard_empresa: string; dashboard_grupo: string; dashboard_segmento: string; ca_conta_bancaria?: string; ca_centro_custo_variavel?: string }) => Promise<void>;
   rejectSeller: (id: string) => Promise<void>;
   syncStatus: { last_sync: string | null; results: SyncResult[] };
   triggerSync: () => Promise<void>;
@@ -48,7 +48,7 @@ export function AdminPanel({
   onLogout,
 }: AdminPanelProps) {
   const [syncing, setSyncing] = useState(false);
-  const [approveForm, setApproveForm] = useState<{ id: string; empresa: string; grupo: string; segmento: string } | null>(null);
+  const [approveForm, setApproveForm] = useState<{ id: string; empresa: string; grupo: string; segmento: string; ca_conta_bancaria: string; ca_centro_custo_variavel: string } | null>(null);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -58,11 +58,14 @@ export function AdminPanel({
 
   const handleApprove = async () => {
     if (!approveForm) return;
-    await approveSeller(approveForm.id, {
+    const config: Record<string, string> = {
       dashboard_empresa: approveForm.empresa,
       dashboard_grupo: approveForm.grupo,
       dashboard_segmento: approveForm.segmento,
-    });
+    };
+    if (approveForm.ca_conta_bancaria) config.ca_conta_bancaria = approveForm.ca_conta_bancaria;
+    if (approveForm.ca_centro_custo_variavel) config.ca_centro_custo_variavel = approveForm.ca_centro_custo_variavel;
+    await approveSeller(approveForm.id, config);
     setApproveForm(null);
   };
 
@@ -126,7 +129,7 @@ export function AdminPanel({
                   <button
                     type="button"
                     className={styles.approveBtn}
-                    onClick={() => setApproveForm({ id: s.id, empresa: s.name, grupo: 'OUTROS', segmento: 'OUTROS' })}
+                    onClick={() => setApproveForm({ id: s.id, empresa: s.name, grupo: 'OUTROS', segmento: 'OUTROS', ca_conta_bancaria: '', ca_centro_custo_variavel: '' })}
                   >
                     <Check size={14} /> Aprovar
                   </button>
@@ -171,6 +174,24 @@ export function AdminPanel({
                 className={styles.formInput}
                 value={approveForm.segmento}
                 onChange={e => setApproveForm({ ...approveForm, segmento: e.target.value })}
+              />
+            </label>
+            <label className={styles.formLabel}>
+              Conta Bancária CA (UUID)
+              <input
+                className={styles.formInput}
+                value={approveForm.ca_conta_bancaria}
+                onChange={e => setApproveForm({ ...approveForm, ca_conta_bancaria: e.target.value })}
+                placeholder="UUID da conta financeira no Conta Azul"
+              />
+            </label>
+            <label className={styles.formLabel}>
+              Centro de Custo CA (UUID)
+              <input
+                className={styles.formInput}
+                value={approveForm.ca_centro_custo_variavel}
+                onChange={e => setApproveForm({ ...approveForm, ca_centro_custo_variavel: e.target.value })}
+                placeholder="UUID do centro de custo no Conta Azul"
               />
             </label>
             <div className={styles.modalActions}>

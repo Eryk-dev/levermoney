@@ -38,7 +38,7 @@ async def processar_baixas(
 ):
     """
     Busca parcelas abertas (EM_ABERTO/ATRASADO) com vencimento <= data_ate
-    na conta MP Retido do seller e cria baixa para cada uma.
+    na conta bancária do seller e cria baixa para cada uma.
 
     Com verify_release=true (default), verifica no ML se o dinheiro foi
     realmente liberado antes de dar baixa. Parcelas cujo payment ainda está
@@ -52,14 +52,14 @@ async def processar_baixas(
     today = datetime.now().strftime("%Y-%m-%d")
     data_ate = data_ate or today
     data_de = (datetime.now() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
-    conta_mp_retido = seller["ca_conta_mp_retido"]
+    conta_bancaria = seller["ca_conta_bancaria"]
 
     # Fetch all open parcelas (paginate if needed)
     parcelas_pagar = await _fetch_all_parcelas(
-        ca_api.buscar_parcelas_abertas_pagar, conta_mp_retido, data_de, data_ate
+        ca_api.buscar_parcelas_abertas_pagar, conta_bancaria, data_de, data_ate
     )
     parcelas_receber = await _fetch_all_parcelas(
-        ca_api.buscar_parcelas_abertas_receber, conta_mp_retido, data_de, data_ate
+        ca_api.buscar_parcelas_abertas_receber, conta_bancaria, data_de, data_ate
     )
 
     # Release verification
@@ -80,7 +80,7 @@ async def processar_baixas(
             "seller": seller_slug,
             "data_de": data_de,
             "data_ate": data_ate,
-            "conta_mp_retido": conta_mp_retido,
+            "conta_bancaria": conta_bancaria,
             "verify_release": verify_release,
             "parcelas_pagar": {
                 "total": len(parcelas_pagar),
@@ -105,8 +105,8 @@ async def processar_baixas(
         return resp
 
     # === PROCESS MODE ===
-    results_pagar = await _processar_baixas_lista(parcelas_pagar, seller_slug, conta_mp_retido, "pagar")
-    results_receber = await _processar_baixas_lista(parcelas_receber, seller_slug, conta_mp_retido, "receber")
+    results_pagar = await _processar_baixas_lista(parcelas_pagar, seller_slug, conta_bancaria, "pagar")
+    results_receber = await _processar_baixas_lista(parcelas_receber, seller_slug, conta_bancaria, "receber")
 
     resp = {
         "mode": "process",
@@ -231,13 +231,13 @@ async def processar_baixas_auto(seller_slug: str) -> dict:
 
     today = datetime.now().strftime("%Y-%m-%d")
     data_de = (datetime.now() - timedelta(days=DEFAULT_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
-    conta_mp_retido = seller["ca_conta_mp_retido"]
+    conta_bancaria = seller["ca_conta_bancaria"]
 
     parcelas_pagar = await _fetch_all_parcelas(
-        ca_api.buscar_parcelas_abertas_pagar, conta_mp_retido, data_de, today
+        ca_api.buscar_parcelas_abertas_pagar, conta_bancaria, data_de, today
     )
     parcelas_receber = await _fetch_all_parcelas(
-        ca_api.buscar_parcelas_abertas_receber, conta_mp_retido, data_de, today
+        ca_api.buscar_parcelas_abertas_receber, conta_bancaria, data_de, today
     )
 
     # Release verification
@@ -251,8 +251,8 @@ async def processar_baixas_auto(seller_slug: str) -> dict:
     if skipped_total:
         logger.info(f"processar_baixas_auto({seller_slug}): skipped {skipped_total} parcelas (not released)")
 
-    results_pagar = await _processar_baixas_lista(parcelas_pagar, seller_slug, conta_mp_retido, "pagar")
-    results_receber = await _processar_baixas_lista(parcelas_receber, seller_slug, conta_mp_retido, "receber")
+    results_pagar = await _processar_baixas_lista(parcelas_pagar, seller_slug, conta_bancaria, "pagar")
+    results_receber = await _processar_baixas_lista(parcelas_receber, seller_slug, conta_bancaria, "receber")
 
     total_queued = (
         sum(1 for r in results_pagar if r["status"] == "queued") +

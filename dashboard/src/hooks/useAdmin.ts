@@ -20,8 +20,7 @@ interface SellerConfig {
   dashboard_empresa: string;
   dashboard_grupo: string;
   dashboard_segmento: string;
-  ca_conta_mp_retido?: string;
-  ca_conta_mp_disponivel?: string;
+  ca_conta_bancaria?: string;
   ca_centro_custo_variavel?: string;
   ca_contato_ml?: string;
   ml_app_id?: string;

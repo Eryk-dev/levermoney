@@ -90,8 +90,7 @@ class ApproveRequest(BaseModel):
     dashboard_empresa: str
     dashboard_grupo: str = "OUTROS"
     dashboard_segmento: str = "OUTROS"
-    ca_conta_mp_retido: str | None = None
-    ca_conta_mp_disponivel: str | None = None
+    ca_conta_bancaria: str | None = None
     ca_centro_custo_variavel: str | None = None
     ca_contato_ml: str | None = None
     ml_app_id: str | None = None
@@ -116,8 +115,7 @@ class SellerUpdate(BaseModel):
     dashboard_empresa: str | None = None
     dashboard_grupo: str | None = None
     dashboard_segmento: str | None = None
-    ca_conta_mp_retido: str | None = None
-    ca_conta_mp_disponivel: str | None = None
+    ca_conta_bancaria: str | None = None
     ca_centro_custo_variavel: str | None = None
     ca_contato_ml: str | None = None
     ml_app_id: str | None = None

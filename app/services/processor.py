@@ -63,7 +63,7 @@ def _build_despesa_payload(seller: dict, data_competencia: str, data_vencimento:
     data_competencia: quando a despesa ocorreu (date_approved)
     data_vencimento: quando o ML desconta (money_release_date)
     """
-    conta = seller["ca_conta_mp_retido"]
+    conta = seller["ca_conta_bancaria"]
     contato = seller.get("ca_contato_ml")
 
     parcela = _build_parcela(descricao, data_vencimento, conta, valor, nota_parcela)
@@ -192,7 +192,7 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     obs = f"Payment: {payment_id} | Liberação: {money_release_date}"
 
     contato = seller.get("ca_contato_ml")
-    conta = seller["ca_conta_mp_retido"]
+    conta = seller["ca_conta_bancaria"]
     cc = seller.get("ca_centro_custo_variavel")
 
     # === ENQUEUE JOBS FOR CONTA AZUL ===
@@ -256,7 +256,7 @@ async def _process_partial_refund(db, seller: dict, payment: dict):
     processed_count = len(existing_refunds.data) if existing_refunds.data else 0
 
     contato = seller.get("ca_contato_ml")
-    conta = seller["ca_conta_mp_retido"]
+    conta = seller["ca_conta_bancaria"]
     cc = seller.get("ca_centro_custo_variavel")
 
     for i, refund in enumerate(refunds):
@@ -325,7 +325,7 @@ async def _process_refunded(db, seller: dict, payment: dict, existing: list):
     estorno_receita = min(total_refunded_raw, amount)
 
     contato = seller.get("ca_contato_ml")
-    conta = seller["ca_conta_mp_retido"]
+    conta = seller["ca_conta_bancaria"]
     cc = seller.get("ca_centro_custo_variavel")
 
     # A) Estorno da receita (contas-a-pagar)

@@ -115,6 +115,17 @@ async def search_payments(seller_slug: str, begin_date: str, end_date: str, offs
         return resp.json()
 
 
+async def fetch_user_info(access_token: str) -> dict:
+    """GET /users/me — returns ML user profile {id, nickname, ...}."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(
+            f"{ML_API}/users/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
 async def exchange_code(code: str) -> dict:
     """Troca authorization_code por access_token + refresh_token."""
     from app.config import settings

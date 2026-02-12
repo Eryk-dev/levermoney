@@ -45,10 +45,10 @@ async def debug_process_test():
         from app.services.processor import _build_parcela, _build_evento
         from app.models.sellers import CA_CATEGORIES
 
-        parcela = _build_parcela("TEST", "2026-02-15", seller["ca_conta_mp_retido"], 0.01)
+        parcela = _build_parcela("TEST", "2026-02-15", seller["ca_conta_bancaria"], 0.01)
         payload = _build_evento(
             "2026-02-01", 0.01, "TEST - DELETAR", "teste debug",
-            seller.get("ca_contato_ml"), seller["ca_conta_mp_retido"],
+            seller.get("ca_contato_ml"), seller["ca_conta_bancaria"],
             CA_CATEGORIES["venda_ml"], seller.get("ca_centro_custo_variavel"), parcela,
         )
         results["payload"] = payload

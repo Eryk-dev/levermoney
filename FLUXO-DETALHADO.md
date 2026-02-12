@@ -1,6 +1,6 @@
 # Fluxo Detalhado - Lever Money Platform
 
-**Versão:** 3.0 | **Data:** 2026-02-12
+**Versão:** 3.2 | **Data:** 2026-02-12
 
 ---
 
@@ -20,7 +20,7 @@ Plataforma unificada que integra:
 │  Webhooks           │     │    /webhooks, /backfill, /baixas│     │  API v2 (Cognito)   │
 │  Orders API         │     │    /admin, /dashboard           │     │                     │
 │  Payments API       │     │    /connect, /queue, /health    │     │                     │
-│  OAuth2             │     │                                 │     │                     │
+│  OAuth2             │     │    /install (self-service)      │     │                     │
 └─────────────────────┘     │  Services:                      │     └─────────────────────┘
                             │    processor.py (CA sync)       │               ▲
                             │    faturamento_sync.py (polling)│               │
@@ -153,7 +153,7 @@ Plataforma unificada que integra:
 │  │  valor: 284.74                    ← transaction_amount        │      │
 │  │  descricao: "Venda ML #46410008520 - Filtro de Ar XPTO"      │      │
 │  │  contato: UUID MERCADO LIVRE                                   │      │
-│  │  conta_financeira: UUID MP Retido - 141AIR                    │      │
+│  │  conta_financeira: UUID conta bancária do seller                    │      │
 │  │  categoria: 1.1.1 MercadoLibre                                │      │
 │  │  centro_custo: 141AIR - VARIÁVEL                              │      │
 │  │  parcela:                                                      │      │
@@ -174,7 +174,7 @@ Plataforma unificada que integra:
 │  │  data_competencia: "2026-02-01"  ← date_approved              │      │
 │  │  valor: 25.44                     ← amount - net - shipping   │      │
 │  │  descricao: "Comissão ML - Payment 144370799868"              │      │
-│  │  conta_financeira: UUID MP Retido - 141AIR                    │      │
+│  │  conta_financeira: UUID conta bancária do seller                    │      │
 │  │  categoria: 2.8.2 Comissões de Marketplace                   │      │
 │  │  parcela:                                                      │      │
 │  │    data_vencimento: "2026-02-15"  ← money_release_date        │      │
@@ -334,7 +334,7 @@ Plataforma unificada que integra:
     │  Venda aconteceu aqui.                    │  ML libera o dinheiro aqui.
     │  Obrigações nasceram aqui.                │  Scheduler enfileira baixas.
     │  Parcelas ficam EM_ABERTO.                │  CaWorker executa via rate limit.
-    │                                           │  Saldo MP Retido nesta data:
+    │                                           │  Saldo na conta bancária:
     │                                           │  +284,74 - 25,44 - 23,45 = R$ 235,85
     │                                           │  (= net_received_amount ✓)
 ```
@@ -370,7 +370,7 @@ Plataforma unificada que integra:
 │  │    O estorno da receita nunca pode ser > receita.       │             │
 │  │  Categoria: 1.2.1 Devoluções e Cancelamentos          │             │
 │  │  Data: data do refund                                  │             │
-│  │  Conta: MP Retido                                      │             │
+│  │  Conta: conta bancária do seller                        │             │
 │  └───────────────────────────────────────────────────────┘             │
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────┐             │
@@ -437,34 +437,33 @@ Plataforma unificada que integra:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                         CONTA AZUL - 141AIR                            │
+│                         CONTA AZUL - SELLER                            │
+│                                                                        │
+│  Modelo simplificado: conta bancária única por seller.                │
+│  Sem contas-trânsito (MP Retido/MP Disponível foram removidas).      │
+│  Parcelas ficam EM_ABERTO até a liberação pelo ML.                   │
 │                                                                        │
 │  ┌──────────────────────┐                                             │
-│  │   MP RETIDO - 141AIR │   Conta virtual (tipo OUTROS)               │
-│  │                      │   Representa dinheiro retido pelo ML        │
-│  │   Saldo = quanto     │                                             │
-│  │   falta liberar      │                                             │
+│  │  CONTA BANCÁRIA      │   Configurada em sellers.ca_conta_bancaria  │
+│  │  (ex: MP - 141AIR)   │   Única conta para todos os lançamentos    │
 │  └──────────┬───────────┘                                             │
 │             │                                                          │
 │   Venda:    │  +R$ 284,74  (receita, vencimento=money_release_date)   │
-│   Comissão: │  -R$  25,44  (despesa com baixa em money_release_date)  │
-│   Frete:    │  -R$  23,45  (despesa com baixa em money_release_date)  │
+│   Comissão: │  -R$  25,44  (despesa, vencimento=money_release_date)   │
+│   Frete:    │  -R$  23,45  (despesa, vencimento=money_release_date)   │
 │             │  ─────────                                               │
 │   Líquido:  │  =R$ 235,85  (= net_received_amount)                   │
 │             │                                                          │
-│             │  Liberação (EVENTO 2 - futuro)                          │
+│   Status:   │  EM_ABERTO até money_release_date                       │
+│             │  Scheduler verifica release_status no ML                │
+│             │  Baixa automática quando ML confirma liberação          │
 │             ▼                                                          │
-│  ┌──────────────────────┐                                             │
-│  │ 141AIR - MP          │   Conta real (CC Mercado Pago)              │
-│  │ (MP Disponível)      │   Saldo disponível na conta MP              │
-│  └──────────┬───────────┘                                             │
-│             │                                                          │
-│             │  Saque / PIX / TED (EVENTO 3 - futuro)                  │
-│             ▼                                                          │
-│  ┌──────────────────────┐                                             │
-│  │ SICREDI - 141AIR     │   Conta bancária real                       │
-│  │ (Banco)              │                                             │
-│  └──────────────────────┘                                             │
+│   Parcelas baixadas ficam RECEBIDO/PAGO na mesma conta.              │
+│                                                                        │
+│  Config por seller (tabela sellers):                                  │
+│    ca_conta_bancaria:        UUID da conta financeira no CA           │
+│    ca_centro_custo_variavel: UUID do centro de custo no CA           │
+│    ca_contato_ml:            UUID do contato MERCADO LIVRE no CA     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -559,11 +558,11 @@ GET /baixas/processar/{seller_slug}?dry_run=false  (enfileira)
 │                                                                          │
 │  FLUXO:                                                                  │
 │                                                                          │
-│  1. Buscar parcelas abertas na conta MP Retido do seller                │
+│  1. Buscar parcelas abertas na conta bancária do seller                 │
 │     GET /v1/financeiro/eventos-financeiros/contas-a-pagar/buscar        │
 │     GET /v1/financeiro/eventos-financeiros/contas-a-receber/buscar      │
 │     Params:                                                              │
-│       ids_contas_financeiras=[UUID MP Retido]  (filtra só ML)           │
+│       ids_contas_financeiras=[UUID conta bancária]  (filtra só ML)      │
 │       data_vencimento_de=hoje-90d                                        │
 │       data_vencimento_ate=hoje                                           │
 │       status=ATRASADO&status=EM_ABERTO                                  │
@@ -575,7 +574,7 @@ GET /baixas/processar/{seller_slug}?dry_run=false  (enfileira)
 │     payload: {                                                           │
 │       "data_pagamento": parcela.data_vencimento,                        │
 │       "composicao_valor": { "valor_bruto": parcela.nao_pago },          │
-│       "conta_financeira": "UUID MP Retido"                              │
+│       "conta_financeira": "UUID conta bancária"                         │
 │     }                                                                    │
 │                                                                          │
 │  3. CaWorker processa os jobs de baixa respeitando rate limit global.   │
@@ -595,7 +594,7 @@ GET /baixas/processar/{seller_slug}?dry_run=false  (enfileira)
 │                                                                          │
 │  SEGURANÇA:                                                              │
 │  - dry_run=true por padrão (preview sem executar)                       │
-│  - Filtra por ids_contas_financeiras (só toca parcelas ML)              │
+│  - Filtra por ids_contas_financeiras (só toca parcelas do seller)       │
 │  - Só baixa parcelas com vencimento <= hoje (API CA garante isso)       │
 │  - idempotency_key impede baixa dupla da mesma parcela                  │
 │  - Rate limit global via TokenBucket (9 req/s compartilhado)            │
@@ -857,9 +856,72 @@ com valor 0, o default `amount` não era usado. Resultado: estorno com valor R$ 
 **Correção:** `payment.get("transaction_amount_refunded") or amount` — usa `amount` como
 fallback quando o valor é 0 ou None (operador `or` trata falsy values).
 
+### Feature 13: Landing page de instalação self-service (2026-02-12)
+
+**Arquivos novos:** `app/static/install.html`
+**Arquivos editados:** `auth_ml.py`, `ml_api.py`, `main.py`, `onboarding.py`
+
+**Problema:** Para cadastrar um novo seller, o admin precisava criar manualmente o registro
+no banco antes do seller poder conectar o ML. Isso era um gargalo operacional — cada novo
+seller dependia de intervenção manual do admin antes de qualquer passo.
+
+**Solução: Fluxo self-service invertido**
+1. Seller visita `/install` (landing page estática)
+2. Clica "Conectar Mercado Livre" → redireciona para OAuth ML (`/auth/ml/install`)
+3. Após autorizar, callback auto-cria seller com `pending_approval`:
+   - `fetch_user_info(access_token)` busca `GET /users/me` para pegar nickname
+   - `create_signup(slug=nickname, name=nickname)` cria o seller
+   - Salva tokens ML (access_token, refresh_token, ml_user_id)
+   - Retorna HTMLResponse com mensagem de sucesso
+4. Seller aparece em "Pendentes" no admin panel
+5. Admin configura CA (conta bancaria, centro custo, contato, empresa)
+6. Admin aprova → `approve_seller()` detecta tokens ML existentes → auto-ativa
+
+**Detalhes técnicos:**
+- `state="_new_install"` diferencia o fluxo self-service do fluxo admin no callback
+- Proteção contra duplicatas: verifica `ml_user_id` e `slug` antes de criar
+- Se seller já existe, apenas atualiza tokens e mostra mensagem apropriada
+- `approve_seller()` agora chama `activate_seller()` automaticamente se seller
+  já tem `ml_access_token` — elimina o passo extra de reconectar ML
+- `/install` adicionado a `API_PREFIXES` para não ser interceptado pelo dashboard SPA
+
+**Impacto:**
+- Admin não precisa mais pré-criar sellers no banco
+- Seller pode iniciar o processo sozinho, a qualquer momento
+- Admin só precisa configurar CA e aprovar (1 passo vs 3 passos)
+
+### Feature 14: Simplificação do modelo de contas CA (2026-02-12)
+
+**Arquivos editados:** `processor.py`, `baixas.py`, `admin.py`, `onboarding.py`, `health.py`,
+`dashboard/src/hooks/useAdmin.ts`, `dashboard/src/components/AdminPanel.tsx`
+
+**Problema:** O modelo usava duas contas-trânsito no Conta Azul:
+- `ca_conta_mp_retido` — dinheiro retido pelo ML
+- `ca_conta_mp_disponivel` — dinheiro disponível na conta MP
+
+Na prática, `ca_conta_mp_disponivel` nunca era usada no código (campo morto).
+`ca_conta_mp_retido` era a única conta em todos os lançamentos e baixas.
+A existência de duas contas-trânsito adicionava complexidade desnecessária.
+
+**Solução: Conta bancária única**
+- Substituído `ca_conta_mp_retido` + `ca_conta_mp_disponivel` por campo único `ca_conta_bancaria`
+- Lógica inalterada: parcelas criadas EM_ABERTO com `vencimento = money_release_date`
+- Baixas continuam respeitando `release_status == released` antes de liquidar
+- Migration Supabase: criou coluna, migrou dados, dropou colunas antigas
+
+**Admin Panel (frontend):**
+- Formulário de aprovação agora inclui campos "Conta Bancária CA" e "Centro de Custo CA"
+- Admin pode configurar `ca_conta_bancaria` e `ca_centro_custo_variavel` diretamente na UI
+- Campos aceitem UUID da conta/centro no Conta Azul
+
+**Config por seller (aprovação):**
+- `dashboard_empresa` → linha de receita no dashboard (já existia)
+- `ca_conta_bancaria` → conta financeira para lançamentos no CA (novo na UI)
+- `ca_centro_custo_variavel` → centro de custo para rateio no CA (novo na UI)
+
 ---
 
-## Plataforma Unificada (v3.0 - 2026-02-12)
+## Plataforma Unificada (v3.1 - 2026-02-12)
 
 ### Contexto
 
@@ -918,15 +980,79 @@ Tudo agora reside em um único repo (`Eryk-dev/levermoney`) e um único Supabase
 
 ## Fluxo: Onboarding de Sellers
 
+Dois caminhos para onboarding:
+- **Fluxo Admin** (original): admin cria seller manualmente, depois seller conecta ML
+- **Fluxo Self-Service** (novo): seller se cadastra sozinho via landing page
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                    ONBOARDING (onboarding.py)                            │
+│                    ONBOARDING (onboarding.py + auth_ml.py)               │
 │                                                                          │
-│  FLUXO HÍBRIDO: seller se cadastra → admin aprova → OAuth ML ativa      │
+│  ══════════════════════════════════════════════════════════════════       │
+│  ║ FLUXO A: Self-Service (landing page)                          ║       │
+│  ══════════════════════════════════════════════════════════════════       │
+│                                                                          │
+│  Seller visita /install → clica "Conectar ML" → OAuth ML                │
+│  → callback auto-cria seller → admin configura CA → aprova → sync       │
+│                                                                          │
+│  ┌─────────────┐     ┌──────────────┐     ┌───────────────┐             │
+│  │  LANDING     │────▶│  OAuth ML    │────▶│  PENDENTE     │             │
+│  │  /install    │     │  /auth/ml/   │     │  (aguarda     │             │
+│  │  (HTML)      │     │   install    │     │   aprovação)  │             │
+│  └─────────────┘     └──────────────┘     └──────┬────────┘             │
+│                                                    │                     │
+│                                              Admin aprova                │
+│                                              /admin/sellers              │
+│                                              /{id}/approve               │
+│                                                    │                     │
+│                                                    ▼                     │
+│                                           ┌───────────────┐             │
+│                                           │  ATIVO         │  ← auto!   │
+│                                           │  (syncing)     │  (já tem   │
+│                                           └───────────────┘   tokens)   │
+│                                                                          │
+│  DETALHES DO FLUXO SELF-SERVICE:                                         │
+│                                                                          │
+│  1. GET /install                                                         │
+│     Serve install.html (landing page estática com branding Lever Money) │
+│     Botão "Conectar Mercado Livre" → /auth/ml/install                   │
+│                                                                          │
+│  2. GET /auth/ml/install                                                 │
+│     Redirect → OAuth ML com state="_new_install"                        │
+│     NÃO exige seller pré-existente no banco                            │
+│                                                                          │
+│  3. GET /auth/ml/callback?code=...&state=_new_install                    │
+│     a) exchange_code(code) → access_token + refresh_token               │
+│     b) fetch_user_info(access_token) → GET /users/me (ML API)          │
+│        Retorna {id, nickname, ...} do seller ML                         │
+│     c) Verifica se seller já existe (por ml_user_id ou slug):           │
+│        - SIM: atualiza tokens, mostra "Tokens atualizados"             │
+│        - NÃO: create_signup(slug=nickname, name=nickname)              │
+│          Status = "pending_approval", active=false                      │
+│          Salva ml_user_id + tokens ML no seller criado                  │
+│     d) Retorna HTMLResponse com mensagem de sucesso                     │
+│     e) NÃO chama activate_seller() — fica pendente                     │
+│                                                                          │
+│  4. Admin vê seller em /admin/sellers/pending                            │
+│     Configura: dashboard_empresa, ca_conta_bancaria,                    │
+│       ca_centro_custo_variavel, ca_contato_ml, etc.                     │
+│     POST /admin/sellers/{id}/approve                                    │
+│                                                                          │
+│  5. approve_seller() detecta que seller já tem ml_access_token           │
+│     → chama activate_seller() AUTOMATICAMENTE                           │
+│     → seller fica active sem precisar reconectar ML                     │
+│                                                                          │
+│  6. Seller aparece no FaturamentoSyncer e processor.py                   │
+│                                                                          │
+│  ══════════════════════════════════════════════════════════════════       │
+│  ║ FLUXO B: Admin-First (original)                               ║       │
+│  ══════════════════════════════════════════════════════════════════       │
+│                                                                          │
+│  Admin cria seller → admin aprova → seller conecta ML → ativo           │
 │                                                                          │
 │  ┌─────────────┐     ┌──────────────┐     ┌───────────────┐             │
 │  │  SIGNUP      │────▶│  PENDENTE    │────▶│  APROVADO     │             │
-│  │  (seller)    │     │  (aguarda)   │     │  (admin)      │             │
+│  │  (admin)     │     │  (aguarda)   │     │  (admin)      │             │
 │  └─────────────┘     └──────────────┘     └──────┬────────┘             │
 │                                                    │                     │
 │                                              OAuth ML                    │
@@ -938,7 +1064,9 @@ Tudo agora reside em um único repo (`Eryk-dev/levermoney`) e um único Supabase
 │                                           │  (syncing)     │             │
 │                                           └───────────────┘             │
 │                                                                          │
-│  ETAPAS:                                                                 │
+│  ══════════════════════════════════════════════════════════════════       │
+│  ║ FUNÇÕES (onboarding.py)                                       ║       │
+│  ══════════════════════════════════════════════════════════════════       │
 │                                                                          │
 │  1. create_signup(slug, name, email):                                    │
 │     INSERT INTO sellers (slug, name, email, onboarding_status)           │
@@ -947,20 +1075,50 @@ Tudo agora reside em um único repo (`Eryk-dev/levermoney`) e um único Supabase
 │                                                                          │
 │  2. approve_seller(id, config):                                          │
 │     UPDATE sellers SET dashboard_empresa, dashboard_grupo,               │
-│       dashboard_segmento, onboarding_status='approved'                   │
+│       dashboard_segmento, ca_conta_bancaria, ca_centro_custo_variavel, │
+│       onboarding_status='approved'                                       │
 │     INSERT INTO revenue_lines (empresa, grupo, segmento, seller_id)     │
 │     INSERT INTO goals (empresa, grupo, year, month, valor=0) x12        │
+│     ⚡ AUTO-ACTIVATE: se seller já tem ml_access_token (self-service),  │
+│       chama activate_seller(slug) automaticamente                        │
 │                                                                          │
-│  3. OAuth /connect → /callback:                                          │
+│  3. activate_seller(slug):                                               │
+│     UPDATE sellers SET active=true, onboarding_status='active'          │
+│     Chamado de: approve_seller (auto) ou auth_ml callback (manual)      │
+│                                                                          │
+│  4. OAuth /connect → /callback (fluxo B):                                │
 │     auth_ml.py verifica onboarding_status IN (approved, active, NULL)   │
-│     Salva tokens ML → activate_seller(slug):                             │
-│       UPDATE sellers SET active=true, onboarding_status='active'        │
+│     Salva tokens ML → activate_seller(slug)                              │
 │                                                                          │
-│  4. Seller agora aparece no FaturamentoSyncer (tem dashboard_empresa     │
+│  5. Seller agora aparece no FaturamentoSyncer (tem dashboard_empresa     │
 │     + ml_user_id) e no processor.py (has CA config after admin setup)    │
 │                                                                          │
 │  REJECT:                                                                 │
 │  reject_seller(id) → onboarding_status='suspended', active=false        │
+│                                                                          │
+│  ══════════════════════════════════════════════════════════════════       │
+│  ║ ENDPOINTS AUTH ML (auth_ml.py)                                ║       │
+│  ══════════════════════════════════════════════════════════════════       │
+│                                                                          │
+│  GET /auth/ml/connect?seller=xxx                                         │
+│    Fluxo B: redireciona seller existente para OAuth ML                  │
+│    Exige seller no banco com status IN (approved, active, NULL)         │
+│                                                                          │
+│  GET /auth/ml/install                                                    │
+│    Fluxo A: redireciona para OAuth ML com state="_new_install"          │
+│    NÃO exige seller no banco (qualquer pessoa pode iniciar)            │
+│                                                                          │
+│  GET /auth/ml/callback?code=...&state=...                                │
+│    state="_new_install" → auto-cria seller (fluxo A)                    │
+│    state=slug → salva tokens + ativa (fluxo B)                          │
+│                                                                          │
+│  ══════════════════════════════════════════════════════════════════       │
+│  ║ ML API: fetch_user_info (ml_api.py)                           ║       │
+│  ══════════════════════════════════════════════════════════════════       │
+│                                                                          │
+│  GET /users/me com Bearer {access_token}                                 │
+│  Retorna: { id: 1963376627, nickname: "141AIR", ... }                   │
+│  Usado no fluxo self-service para derivar slug e name do seller         │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1023,9 +1181,8 @@ Tudo agora reside em um único repo (`Eryk-dev/levermoney`) e um único Supabase
 │    + email, onboarding_status, approved_at                               │
 │    + dashboard_empresa, dashboard_grupo, dashboard_segmento              │
 │    + source ('ml'|'manual'), ml_app_id, ml_secret_key                   │
-│    + ca_contato_ml                                                       │
-│    - ca_conta_mp_disponivel: NOW NULLABLE (pending sellers)              │
-│    - ca_centro_custo_variavel: NOW NULLABLE (pending sellers)            │
+│    + ca_contato_ml, ca_conta_bancaria, ca_centro_custo_variavel         │
+│    (campos CA são NULLABLE para pending sellers)                         │
 │                                                                          │
 │  faturamento (nova - migrada do Supabase antigo):                        │
 │    empresa TEXT, data DATE, valor NUMERIC, source TEXT                    │
@@ -1065,11 +1222,13 @@ levermoney/
 │   ├── config.py                     # Settings (cors_origins, sync_interval)
 │   ├── db/supabase.py                # Singleton Supabase client
 │   ├── models/sellers.py             # CA_CATEGORIES, get_seller_config
+│   ├── static/
+│   │   └── install.html              # Self-service landing page
 │   ├── routers/
 │   │   ├── webhooks.py               # ML webhook receiver
 │   │   ├── backfill.py               # Batch reprocessing
 │   │   ├── baixas.py                 # Settlement job
-│   │   ├── auth_ml.py                # ML OAuth + onboarding activation
+│   │   ├── auth_ml.py                # ML OAuth + install + onboarding
 │   │   ├── admin.py                  # Admin CRUD (password-protected)
 │   │   ├── dashboard_api.py          # Public dashboard endpoints
 │   │   ├── queue.py                  # Queue monitoring
@@ -1078,7 +1237,7 @@ levermoney/
 │       ├── processor.py              # Payment → CA entries (via queue)
 │       ├── ca_api.py                 # Conta Azul API client
 │       ├── ca_queue.py               # CaWorker (persistent queue)
-│       ├── ml_api.py                 # ML API (per-seller credentials)
+│       ├── ml_api.py                 # ML API (per-seller creds + fetch_user_info)
 │       ├── rate_limiter.py           # TokenBucket (9 req/s)
 │       ├── faturamento_sync.py       # ML orders polling → faturamento
 │       └── onboarding.py             # Seller lifecycle management

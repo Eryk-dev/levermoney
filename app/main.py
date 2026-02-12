@@ -135,7 +135,17 @@ DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard-dist"
 API_PREFIXES = (
     "admin", "dashboard", "auth", "health", "webhooks",
     "backfill", "baixas", "queue", "docs", "openapi.json", "redoc",
+    "install",
 )
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@app.get("/install")
+async def serve_install():
+    """Serve the self-service install landing page."""
+    return FileResponse(STATIC_DIR / "install.html")
+
 
 if DASHBOARD_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=DASHBOARD_DIR / "assets"), name="dashboard-assets")
