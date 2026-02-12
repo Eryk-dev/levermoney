@@ -239,10 +239,12 @@ async def sync_status():
 @router.get("/ca/contas-financeiras", dependencies=[Depends(require_admin)])
 async def list_ca_accounts():
     from app.services.ca_api import listar_contas_financeiras
-    return await listar_contas_financeiras()
+    raw = await listar_contas_financeiras()
+    return [{"id": acc["id"], "nome": acc.get("nome", ""), "tipo": acc.get("tipo", "")} for acc in raw]
 
 
 @router.get("/ca/centros-custo", dependencies=[Depends(require_admin)])
 async def list_ca_cost_centers():
     from app.services.ca_api import listar_centros_custo
-    return await listar_centros_custo()
+    raw = await listar_centros_custo()
+    return [{"id": cc["id"], "descricao": cc.get("nome", "")} for cc in raw]
