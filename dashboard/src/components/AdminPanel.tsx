@@ -94,6 +94,7 @@ export function AdminPanel({
 }: AdminPanelProps) {
   const [syncing, setSyncing] = useState(false);
   const [configForm, setConfigForm] = useState<ConfigForm | null>(null);
+  const [creatingContato, setCreatingContato] = useState(false);
 
   const existingGrupos = useMemo(() => {
     const set = new Set(revenueLines.map((l) => l.grupo));
@@ -409,18 +410,37 @@ export function AdminPanel({
             {/* CA Contato dropdown */}
             <label className={styles.formLabel}>
               Contato CA
-              <select
-                className={styles.formSelect}
-                value={configForm.ca_contato_ml}
-                onChange={e => setConfigForm({ ...configForm, ca_contato_ml: e.target.value })}
-              >
-                <option value="">(Auto-criar ao aprovar)</option>
-                {caContatos.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nome}
-                  </option>
-                ))}
-              </select>
+              <div className={styles.comboRow}>
+                <select
+                  className={styles.formSelect}
+                  value={configForm.ca_contato_ml}
+                  onChange={e => setConfigForm({ ...configForm, ca_contato_ml: e.target.value })}
+                >
+                  <option value="">(Auto-criar ao aprovar)</option>
+                  {caContatos.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+                </select>
+                {configForm.mode === 'edit' && !configForm.ca_contato_ml && (
+                  <button
+                    type="button"
+                    className={styles.approveBtn}
+                    disabled={creatingContato}
+                    onClick={async () => {
+                      setCreatingContato(true);
+                      const result = await createContatoForSeller(configForm.id);
+                      if (result && typeof result === 'object' && 'ca_contato_ml' in result) {
+                        setConfigForm({ ...configForm, ca_contato_ml: (result as { ca_contato_ml: string }).ca_contato_ml });
+                      }
+                      setCreatingContato(false);
+                    }}
+                  >
+                    {creatingContato ? 'Criando...' : 'Criar agora'}
+                  </button>
+                )}
+              </div>
             </label>
 
             <div className={styles.modalActions}>
