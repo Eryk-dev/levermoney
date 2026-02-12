@@ -172,6 +172,13 @@ async def update_revenue_line(empresa: str, req: RevenueLineUpdate):
     return result.data[0] if result.data else {}
 
 
+@router.delete("/revenue-lines/{empresa}", dependencies=[Depends(require_admin)])
+async def delete_revenue_line(empresa: str):
+    db = get_db()
+    result = db.table("revenue_lines").update({"active": False}).eq("empresa", empresa).execute()
+    return result.data[0] if result.data else {}
+
+
 # ── Goals ─────────────────────────────────────────────────────
 
 @router.get("/goals", dependencies=[Depends(require_admin)])
@@ -225,3 +232,17 @@ async def sync_status():
     if not _syncer:
         return {"last_sync": None, "results": []}
     return {"last_sync": _syncer.last_sync, "results": _syncer.last_results}
+
+
+# ── Conta Azul Resources ─────────────────────────────────────
+
+@router.get("/ca/contas-financeiras", dependencies=[Depends(require_admin)])
+async def list_ca_accounts():
+    from app.services.ca_api import listar_contas_financeiras
+    return await listar_contas_financeiras()
+
+
+@router.get("/ca/centros-custo", dependencies=[Depends(require_admin)])
+async def list_ca_cost_centers():
+    from app.services.ca_api import listar_centros_custo
+    return await listar_centros_custo()

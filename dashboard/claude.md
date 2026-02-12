@@ -153,15 +153,15 @@ VITE_SUPABASE_ANON_KEY=<anon key embedado em src/lib/supabase.ts>
 ┌──────────────────────────────────────────────────────────┐
 │                    FONTES DE DADOS                        │
 ├──────────────────────────────────────────────────────────┤
-│  Supabase (remoto)           localStorage (local)         │
-│  └─ tabela faturamento       ├─ yearly-goals              │
-│  └─ realtime subscription    └─ revenue-lines             │
+│  Supabase (remoto)                                        │
+│  ├─ tabela faturamento       ├─ tabela goals              │
+│  ├─ tabela revenue_lines     └─ realtime subscriptions    │
 └──────────┬───────────────────────────┬───────────────────┘
            │                           │
            ▼                           ▼
     useSupabaseFaturamento         useGoals + useRevenueLines
-    ├─ data: FaturamentoRecord[]   ├─ yearlyGoals
-    ├─ upsertEntry()               ├─ lines: RevenueLine[]
+    ├─ data: FaturamentoRecord[]   ├─ yearlyGoals (Supabase read + admin API write)
+    ├─ upsertEntry()               ├─ lines: RevenueLine[] (Supabase read + admin API write)
     ├─ deleteEntry()               └─ updateYearlyGoals()
     └─ realtime refetch
            │
@@ -312,10 +312,12 @@ Motor central de calculos. Recebe dados brutos e retorna tudo calculado.
 
 ### 7.3 `useGoals` (`src/hooks/useGoals.ts`)
 
-Gerencia metas anuais persistidas em localStorage.
+Gerencia metas anuais. Leitura do Supabase (tabela `goals`) + realtime subscription.
+Persistencia de escrita via admin API (`POST /admin/goals/bulk`) chamada pelo App.tsx.
 
 ```typescript
-// Storage: 'faturamento-dashboard-yearly-goals'
+// Source: Supabase `goals` table + realtime
+// Write: via useAdmin.saveGoalsBulk() (admin API)
 // Default: DEFAULT_YEARLY_GOALS (src/data/goals.ts)
 
 {
@@ -331,10 +333,12 @@ Gerencia metas anuais persistidas em localStorage.
 
 ### 7.4 `useRevenueLines` (`src/hooks/useRevenueLines.ts`)
 
-Gerencia lista de linhas de receita (empresas).
+Gerencia lista de linhas de receita (empresas). Leitura do Supabase (tabela `revenue_lines`) + realtime.
+Persistencia de escrita via admin API chamada pelo App.tsx.
 
 ```typescript
-// Storage: 'faturamento-dashboard-revenue-lines'
+// Source: Supabase `revenue_lines` table + realtime
+// Write: via useAdmin.createRevenueLine/updateRevenueLine/removeRevenueLine
 // Default: COMPANIES (src/data/fallbackData.ts)
 
 {
@@ -345,8 +349,8 @@ Gerencia lista de linhas de receita (empresas).
 ```
 
 **Regras:**
-- Adicionar linha → entra nos filtros imediatamente
-- Remover linha → sai dos filtros, meta removida, dados historicos permanecem no banco
+- Adicionar linha → entra nos filtros imediatamente, persiste via admin API se autenticado
+- Remover linha → desativada no banco (active=false), dados historicos permanecem
 - Sincroniza com `yearlyGoals`: se existe meta sem linha, cria linha automaticamente
 
 ### 7.5 `useIsMobile` (`src/hooks/useIsMobile.ts`)
@@ -725,12 +729,15 @@ EXPOSE 80
 
 ---
 
-## 17. localStorage Keys
+## 17. Persistencia de Dados
 
-| Key | Conteudo | Default |
-|-----|----------|---------|
-| `faturamento-dashboard-yearly-goals` | Metas anuais editadas | `DEFAULT_YEARLY_GOALS` |
-| `faturamento-dashboard-revenue-lines` | Lista de linhas de receita | `COMPANIES` |
+| Dado | Leitura | Escrita | Tabela |
+|------|---------|---------|--------|
+| Faturamento | Supabase (anon) + realtime | Supabase (anon) via upsert | `faturamento` |
+| Metas (goals) | Supabase (anon) + realtime | Admin API `POST /admin/goals/bulk` | `goals` |
+| Linhas de receita | Supabase (anon) + realtime | Admin API `POST/PATCH/DELETE /admin/revenue-lines` | `revenue_lines` |
+
+Escrita de metas e linhas requer autenticacao admin. Sem admin, edits sao efemeros.
 
 ---
 

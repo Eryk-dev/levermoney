@@ -289,6 +289,33 @@
   font-size: var(--text-sm);
 }
 
+.formInput:disabled {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.formSelect {
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--space-1);
+  font-size: var(--text-sm);
+  background: var(--paper);
+  width: 100%;
+}
+
+.comboRow {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.comboRow .formSelect {
+  flex: 1;
+}
+
+.comboRow .formInput {
+  flex: 1;
+}
+
 .modalActions {
   display: flex;
   gap: var(--space-2);

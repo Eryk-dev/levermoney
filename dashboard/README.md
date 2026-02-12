@@ -39,9 +39,10 @@ As credenciais podem ser configuradas via:
 - `VITE_SUPABASE_ANON_KEY`
 
 ## Linhas de Receita
-- A lista de linhas é salva em **localStorage**.
+- A lista de linhas é carregada do **Supabase** (tabela `revenue_lines`).
+- Edições persistem via API admin e são sincronizadas em tempo real.
 - Ao adicionar uma linha, cria meta anual com 12 meses = 0.
-- Ao remover, ela sai de filtros e metas (dados históricos continuam no banco).
+- Ao remover, ela é desativada no banco (dados históricos continuam).
 
 ## Fonte única de metas
 Toda a lógica de metas e esperado está documentada em:

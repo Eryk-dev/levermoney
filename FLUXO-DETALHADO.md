@@ -1262,7 +1262,7 @@ levermoney/
 │   ├── Dockerfile                    # node:20 build + nginx serve
 │   └── nginx.conf
 ├── migrations/
-│   ├── 001_initial.sql               # sellers, payments, ca_jobs, ca_tokens
+│   ├── 001_initial.sql               # sellers, payments, webhook_events, sync_log
 │   └── 002_unified_platform.sql      # faturamento, revenue_lines, goals, etc.
 ├── docker-compose.yml                # api (8000) + dashboard (3000)
 ├── Dockerfile                        # Python 3.12 + uvicorn

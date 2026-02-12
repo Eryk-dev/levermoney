@@ -232,17 +232,15 @@ function App() {
     for (let m = 1; m <= 12; m += 1) {
       metas[m] = 0;
     }
-    if (!yearlyGoals.some((g) => g.empresa === line.empresa)) {
-      updateYearlyGoals([
-        ...yearlyGoals,
-        {
-          empresa: line.empresa,
-          grupo: line.grupo,
-          metas,
-        },
-      ]);
+    const newGoals = !yearlyGoals.some((g) => g.empresa === line.empresa)
+      ? [...yearlyGoals, { empresa: line.empresa, grupo: line.grupo, metas }]
+      : yearlyGoals;
+    updateYearlyGoals(newGoals);
+    if (admin.isAuthenticated) {
+      admin.createRevenueLine(line);
+      admin.saveGoalsBulk(newGoals);
     }
-  }, [addLine, updateYearlyGoals, yearlyGoals]);
+  }, [addLine, updateYearlyGoals, yearlyGoals, admin]);
 
   const handleUpdateLine = useCallback((empresa: string, updates: { grupo?: string; segmento?: string }) => {
     updateLine(empresa, updates);
@@ -251,12 +249,18 @@ function App() {
         g.empresa === empresa ? { ...g, grupo: updates.grupo! } : g
       ));
     }
-  }, [updateLine, updateYearlyGoals, yearlyGoals]);
+    if (admin.isAuthenticated) {
+      admin.updateRevenueLine(empresa, updates);
+    }
+  }, [updateLine, updateYearlyGoals, yearlyGoals, admin]);
 
   const handleRemoveLine = useCallback((empresa: string) => {
     removeLine(empresa);
     updateYearlyGoals(yearlyGoals.filter((g) => g.empresa !== empresa));
-  }, [removeLine, updateYearlyGoals, yearlyGoals]);
+    if (admin.isAuthenticated) {
+      admin.removeRevenueLine(empresa);
+    }
+  }, [removeLine, updateYearlyGoals, yearlyGoals, admin]);
 
   const handleSaveEntry = useCallback(async (empresa: string, date: string, valor: number | null) => {
     if (valor === null) {
@@ -673,6 +677,9 @@ function App() {
             rejectSeller={admin.rejectSeller}
             syncStatus={admin.syncStatus}
             triggerSync={admin.triggerSync}
+            caAccounts={admin.caAccounts}
+            caCostCenters={admin.caCostCenters}
+            revenueLines={lines}
             onLogout={() => {
               admin.logout();
               setCurrentView('geral');
@@ -686,7 +693,12 @@ function App() {
       {showGoalEditor && (
         <GoalEditor
           yearlyGoals={yearlyGoals}
-          onSave={updateYearlyGoals}
+          onSave={(goals) => {
+            updateYearlyGoals(goals);
+            if (admin.isAuthenticated) {
+              admin.saveGoalsBulk(goals);
+            }
+          }}
           onClose={() => setShowGoalEditor(false)}
         />
       )}

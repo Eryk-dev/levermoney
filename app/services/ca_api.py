@@ -227,6 +227,50 @@ async def buscar_parcelas_abertas_receber(conta_financeira_id: str, data_venc_de
     return data.get("itens", []), data.get("itens_totais", 0)
 
 
+async def listar_contas_financeiras() -> list:
+    """GET /v1/conta-financeira — list all financial accounts (paginated)."""
+    items = []
+    page = 1
+    while True:
+        resp = await _request_with_retry(
+            "get", f"{CA_API}/v1/conta-financeira",
+            headers=await _headers(),
+            params={"pagina": page, "tamanho_pagina": 50},
+        )
+        data = resp.json()
+        batch = data.get("itens", data if isinstance(data, list) else [])
+        if not batch:
+            break
+        items.extend(batch)
+        total = data.get("itens_totais", len(items))
+        if len(items) >= total:
+            break
+        page += 1
+    return items
+
+
+async def listar_centros_custo() -> list:
+    """GET /v1/centro-de-custo — list all cost centers (paginated)."""
+    items = []
+    page = 1
+    while True:
+        resp = await _request_with_retry(
+            "get", f"{CA_API}/v1/centro-de-custo",
+            headers=await _headers(),
+            params={"pagina": page, "tamanho_pagina": 50},
+        )
+        data = resp.json()
+        batch = data.get("itens", data if isinstance(data, list) else [])
+        if not batch:
+            break
+        items.extend(batch)
+        total = data.get("itens_totais", len(items))
+        if len(items) >= total:
+            break
+        page += 1
+    return items
+
+
 async def criar_baixa(parcela_id: str, data_pagamento: str, valor: float, conta_financeira: str) -> dict:
     """POST /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa"""
     payload = {

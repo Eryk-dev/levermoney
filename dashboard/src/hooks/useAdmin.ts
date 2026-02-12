@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { API_BASE } from '../lib/supabase';
+import type { CompanyYearlyGoal } from '../data/goals';
 
 interface Seller {
   id: string;
@@ -37,6 +38,17 @@ interface SyncResult {
   error?: string;
 }
 
+export interface CaAccount {
+  id: string;
+  nome: string;
+  tipo?: string;
+}
+
+export interface CaCostCenter {
+  id: string;
+  descricao: string;
+}
+
 const TOKEN_KEY = 'lever-admin-token';
 
 export function useAdmin() {
@@ -48,6 +60,8 @@ export function useAdmin() {
     last_sync: null,
     results: [],
   });
+  const [caAccounts, setCaAccounts] = useState<CaAccount[]>([]);
+  const [caCostCenters, setCaCostCenters] = useState<CaCostCenter[]>([]);
 
   const isAuthenticated = !!token;
 
@@ -136,13 +150,103 @@ export function useAdmin() {
     }
   }, [token, headers]);
 
+  // ── CA Resources ──────────────────────────────────────────
+
+  const loadCaAccounts = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/admin/ca/contas-financeiras`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setCaAccounts(data);
+      }
+    } catch (e) {
+      console.error('Failed to load CA accounts:', e);
+    }
+  }, [token, headers]);
+
+  const loadCaCostCenters = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/admin/ca/centros-custo`, { headers: headers() });
+      if (res.ok) {
+        const data = await res.json();
+        setCaCostCenters(data);
+      }
+    } catch (e) {
+      console.error('Failed to load CA cost centers:', e);
+    }
+  }, [token, headers]);
+
+  // ── Persistence: Goals & Revenue Lines ────────────────────
+
+  const saveGoalsBulk = useCallback(async (goals: CompanyYearlyGoal[]) => {
+    if (!token) return;
+    const year = new Date().getFullYear();
+    const rows: { empresa: string; grupo: string; year: number; month: number; valor: number }[] = [];
+    goals.forEach((g) => {
+      Object.entries(g.metas).forEach(([month, valor]) => {
+        rows.push({ empresa: g.empresa, grupo: g.grupo, year, month: Number(month), valor });
+      });
+    });
+    try {
+      await fetch(`${API_BASE}/admin/goals/bulk`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ goals: rows }),
+      });
+    } catch (e) {
+      console.error('Failed to save goals:', e);
+    }
+  }, [token, headers]);
+
+  const createRevenueLine = useCallback(async (line: { empresa: string; grupo: string; segmento: string }) => {
+    if (!token) return;
+    try {
+      await fetch(`${API_BASE}/admin/revenue-lines`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(line),
+      });
+    } catch (e) {
+      console.error('Failed to create revenue line:', e);
+    }
+  }, [token, headers]);
+
+  const updateRevenueLine = useCallback(async (empresa: string, updates: { grupo?: string; segmento?: string }) => {
+    if (!token) return;
+    try {
+      await fetch(`${API_BASE}/admin/revenue-lines/${encodeURIComponent(empresa)}`, {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify(updates),
+      });
+    } catch (e) {
+      console.error('Failed to update revenue line:', e);
+    }
+  }, [token, headers]);
+
+  const removeRevenueLine = useCallback(async (empresa: string) => {
+    if (!token) return;
+    try {
+      await fetch(`${API_BASE}/admin/revenue-lines/${encodeURIComponent(empresa)}`, {
+        method: 'DELETE',
+        headers: headers(),
+      });
+    } catch (e) {
+      console.error('Failed to remove revenue line:', e);
+    }
+  }, [token, headers]);
+
   // Load data when authenticated
   useEffect(() => {
     if (isAuthenticated) {
       loadSellers();
       loadSyncStatus();
+      loadCaAccounts();
+      loadCaCostCenters();
     }
-  }, [isAuthenticated, loadSellers, loadSyncStatus]);
+  }, [isAuthenticated, loadSellers, loadSyncStatus, loadCaAccounts, loadCaCostCenters]);
 
   const pendingSellers = sellers.filter(s => s.onboarding_status === 'pending_approval');
   const activeSellers = sellers.filter(s => s.onboarding_status === 'active');
@@ -159,5 +263,11 @@ export function useAdmin() {
     syncStatus,
     triggerSync,
     loadSellers,
+    caAccounts,
+    caCostCenters,
+    saveGoalsBulk,
+    createRevenueLine,
+    updateRevenueLine,
+    removeRevenueLine,
   };
 }

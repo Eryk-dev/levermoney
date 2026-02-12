@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { formatBRL } from '../utils/dataParser';
 import { LogOut, RefreshCw, Check, X, Zap } from 'lucide-react';
+import type { CaAccount, CaCostCenter } from '../hooks/useAdmin';
+import type { RevenueLine } from '../types';
 import styles from './AdminPanel.module.css';
 
 interface Seller {
@@ -30,11 +32,32 @@ interface AdminPanelProps {
   sellers: Seller[];
   pendingSellers: Seller[];
   activeSellers: Seller[];
-  approveSeller: (id: string, config: { dashboard_empresa: string; dashboard_grupo: string; dashboard_segmento: string; ca_conta_bancaria?: string; ca_centro_custo_variavel?: string }) => Promise<void>;
+  approveSeller: (id: string, config: {
+    dashboard_empresa: string;
+    dashboard_grupo: string;
+    dashboard_segmento: string;
+    ca_conta_bancaria?: string;
+    ca_centro_custo_variavel?: string;
+  }) => Promise<void>;
   rejectSeller: (id: string) => Promise<void>;
   syncStatus: { last_sync: string | null; results: SyncResult[] };
   triggerSync: () => Promise<void>;
+  caAccounts: CaAccount[];
+  caCostCenters: CaCostCenter[];
+  revenueLines: RevenueLine[];
   onLogout: () => void;
+}
+
+const NEW_LINE_VALUE = '__new__';
+
+interface ApproveForm {
+  id: string;
+  selectedLine: string; // empresa name or '__new__'
+  empresa: string;
+  grupo: string;
+  segmento: string;
+  ca_conta_bancaria: string;
+  ca_centro_custo_variavel: string;
 }
 
 export function AdminPanel({
@@ -45,15 +68,52 @@ export function AdminPanel({
   rejectSeller,
   syncStatus,
   triggerSync,
+  caAccounts,
+  caCostCenters,
+  revenueLines,
   onLogout,
 }: AdminPanelProps) {
   const [syncing, setSyncing] = useState(false);
-  const [approveForm, setApproveForm] = useState<{ id: string; empresa: string; grupo: string; segmento: string; ca_conta_bancaria: string; ca_centro_custo_variavel: string } | null>(null);
+  const [approveForm, setApproveForm] = useState<ApproveForm | null>(null);
+
+  const existingGrupos = useMemo(() => {
+    const set = new Set(revenueLines.map((l) => l.grupo));
+    return [...set].sort();
+  }, [revenueLines]);
+
+  const existingSegmentos = useMemo(() => {
+    const set = new Set(revenueLines.map((l) => l.segmento));
+    return [...set].sort();
+  }, [revenueLines]);
 
   const handleSync = async () => {
     setSyncing(true);
     await triggerSync();
     setSyncing(false);
+  };
+
+  const handleLineSelect = (value: string) => {
+    if (!approveForm) return;
+    if (value === NEW_LINE_VALUE) {
+      setApproveForm({
+        ...approveForm,
+        selectedLine: NEW_LINE_VALUE,
+        empresa: approveForm.id ? sellers.find((s) => s.id === approveForm.id)?.name || '' : '',
+        grupo: 'OUTROS',
+        segmento: 'OUTROS',
+      });
+    } else {
+      const line = revenueLines.find((l) => l.empresa === value);
+      if (line) {
+        setApproveForm({
+          ...approveForm,
+          selectedLine: value,
+          empresa: line.empresa,
+          grupo: line.grupo,
+          segmento: line.segmento,
+        });
+      }
+    }
   };
 
   const handleApprove = async () => {
@@ -67,6 +127,20 @@ export function AdminPanel({
     });
     setApproveForm(null);
   };
+
+  const openApproveForm = (s: Seller) => {
+    setApproveForm({
+      id: s.id,
+      selectedLine: NEW_LINE_VALUE,
+      empresa: s.name,
+      grupo: 'OUTROS',
+      segmento: 'OUTROS',
+      ca_conta_bancaria: '',
+      ca_centro_custo_variavel: '',
+    });
+  };
+
+  const isNewLine = approveForm?.selectedLine === NEW_LINE_VALUE;
 
   return (
     <div className={styles.container}>
@@ -128,7 +202,7 @@ export function AdminPanel({
                   <button
                     type="button"
                     className={styles.approveBtn}
-                    onClick={() => setApproveForm({ id: s.id, empresa: s.name, grupo: 'OUTROS', segmento: 'OUTROS', ca_conta_bancaria: '', ca_centro_custo_variavel: '' })}
+                    onClick={() => openApproveForm(s)}
                   >
                     <Check size={14} /> Aprovar
                   </button>
@@ -151,48 +225,143 @@ export function AdminPanel({
         <div className={styles.modal}>
           <div className={styles.modalContent}>
             <h3>Aprovar Seller</h3>
+
+            {/* Revenue Line selector */}
+            <label className={styles.formLabel}>
+              Linha de Receita
+              <select
+                className={styles.formSelect}
+                value={approveForm.selectedLine}
+                onChange={(e) => handleLineSelect(e.target.value)}
+              >
+                <option value={NEW_LINE_VALUE}>+ Criar nova linha</option>
+                {revenueLines.map((l) => (
+                  <option key={l.empresa} value={l.empresa}>
+                    {l.empresa} ({l.grupo} / {l.segmento})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* Empresa - editable only for new lines */}
             <label className={styles.formLabel}>
               Empresa (dashboard)
-              <input
-                className={styles.formInput}
-                value={approveForm.empresa}
-                onChange={e => setApproveForm({ ...approveForm, empresa: e.target.value })}
-              />
+              {isNewLine ? (
+                <input
+                  className={styles.formInput}
+                  value={approveForm.empresa}
+                  onChange={e => setApproveForm({ ...approveForm, empresa: e.target.value })}
+                  placeholder="Nome da empresa no dashboard"
+                />
+              ) : (
+                <input
+                  className={styles.formInput}
+                  value={approveForm.empresa}
+                  disabled
+                />
+              )}
             </label>
+
+            {/* Grupo dropdown */}
             <label className={styles.formLabel}>
               Grupo
-              <input
-                className={styles.formInput}
-                value={approveForm.grupo}
-                onChange={e => setApproveForm({ ...approveForm, grupo: e.target.value })}
-              />
+              {isNewLine ? (
+                <div className={styles.comboRow}>
+                  <select
+                    className={styles.formSelect}
+                    value={existingGrupos.includes(approveForm.grupo) ? approveForm.grupo : '__custom__'}
+                    onChange={(e) => {
+                      if (e.target.value !== '__custom__') {
+                        setApproveForm({ ...approveForm, grupo: e.target.value });
+                      }
+                    }}
+                  >
+                    {existingGrupos.map((g) => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                    <option value="__custom__">Outro...</option>
+                  </select>
+                  {!existingGrupos.includes(approveForm.grupo) && (
+                    <input
+                      className={styles.formInput}
+                      value={approveForm.grupo}
+                      onChange={e => setApproveForm({ ...approveForm, grupo: e.target.value })}
+                      placeholder="Nome do grupo"
+                    />
+                  )}
+                </div>
+              ) : (
+                <input className={styles.formInput} value={approveForm.grupo} disabled />
+              )}
             </label>
+
+            {/* Segmento dropdown */}
             <label className={styles.formLabel}>
               Segmento
-              <input
-                className={styles.formInput}
-                value={approveForm.segmento}
-                onChange={e => setApproveForm({ ...approveForm, segmento: e.target.value })}
-              />
+              {isNewLine ? (
+                <div className={styles.comboRow}>
+                  <select
+                    className={styles.formSelect}
+                    value={existingSegmentos.includes(approveForm.segmento) ? approveForm.segmento : '__custom__'}
+                    onChange={(e) => {
+                      if (e.target.value !== '__custom__') {
+                        setApproveForm({ ...approveForm, segmento: e.target.value });
+                      }
+                    }}
+                  >
+                    {existingSegmentos.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                    <option value="__custom__">Outro...</option>
+                  </select>
+                  {!existingSegmentos.includes(approveForm.segmento) && (
+                    <input
+                      className={styles.formInput}
+                      value={approveForm.segmento}
+                      onChange={e => setApproveForm({ ...approveForm, segmento: e.target.value })}
+                      placeholder="Nome do segmento"
+                    />
+                  )}
+                </div>
+              ) : (
+                <input className={styles.formInput} value={approveForm.segmento} disabled />
+              )}
             </label>
+
+            {/* CA Conta Bancária dropdown */}
             <label className={styles.formLabel}>
-              Conta Bancária CA (UUID)
-              <input
-                className={styles.formInput}
+              Conta Bancaria CA
+              <select
+                className={styles.formSelect}
                 value={approveForm.ca_conta_bancaria}
                 onChange={e => setApproveForm({ ...approveForm, ca_conta_bancaria: e.target.value })}
-                placeholder="UUID da conta financeira no Conta Azul"
-              />
+              >
+                <option value="">Selecione...</option>
+                {caAccounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.nome}{acc.tipo ? ` (${acc.tipo})` : ''}
+                  </option>
+                ))}
+              </select>
             </label>
+
+            {/* CA Centro de Custo dropdown */}
             <label className={styles.formLabel}>
-              Centro de Custo CA (UUID)
-              <input
-                className={styles.formInput}
+              Centro de Custo CA
+              <select
+                className={styles.formSelect}
                 value={approveForm.ca_centro_custo_variavel}
                 onChange={e => setApproveForm({ ...approveForm, ca_centro_custo_variavel: e.target.value })}
-                placeholder="UUID do centro de custo no Conta Azul"
-              />
+              >
+                <option value="">Selecione...</option>
+                {caCostCenters.map((cc) => (
+                  <option key={cc.id} value={cc.id}>
+                    {cc.descricao}
+                  </option>
+                ))}
+              </select>
             </label>
+
             <div className={styles.modalActions}>
               <button type="button" className={styles.approveBtn} onClick={handleApprove}>Confirmar</button>
               <button type="button" className={styles.rejectBtn} onClick={() => setApproveForm(null)}>Cancelar</button>
