@@ -4,9 +4,6 @@ WORKDIR /dashboard
 COPY dashboard/package*.json ./
 RUN npm ci
 COPY dashboard/ .
-ARG VITE_SUPABASE_URL
-ARG VITE_SUPABASE_ANON_KEY
-ARG VITE_API_BASE_URL
 RUN npm run build
 
 ## Stage 2: Python API + static dashboard
