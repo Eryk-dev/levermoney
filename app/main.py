@@ -130,12 +130,25 @@ app.include_router(dashboard_api.router)
 
 # Serve dashboard static files (built React SPA)
 DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard-dist"
+
+# API prefixes - these should NOT be handled by the dashboard catch-all
+API_PREFIXES = (
+    "admin", "dashboard", "auth", "health", "webhooks",
+    "backfill", "baixas", "queue", "docs", "openapi.json", "redoc",
+)
+
 if DASHBOARD_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=DASHBOARD_DIR / "assets"), name="dashboard-assets")
 
     @app.get("/{path:path}")
     async def serve_dashboard(request: Request, path: str):
-        """Serve dashboard SPA - fallback to index.html for client-side routing."""
+        """Serve dashboard SPA - skip API routes, fallback to index.html."""
+        # Don't intercept API routes
+        first_segment = path.split("/")[0] if path else ""
+        if first_segment in API_PREFIXES:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+
         file = DASHBOARD_DIR / path
         if file.is_file():
             return FileResponse(file)
