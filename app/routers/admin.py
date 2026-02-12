@@ -258,3 +258,45 @@ async def list_ca_cost_centers():
     except Exception as e:
         logger.error(f"CA centros-custo error: {e}")
         raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.get("/ca/contatos", dependencies=[Depends(require_admin)])
+async def list_ca_contatos():
+    """List CA contacts that start with 'ML -' (seller contacts)."""
+    from app.services.ca_api import buscar_pessoas
+    try:
+        raw = await buscar_pessoas("ML -")
+        contatos = [
+            {"id": p["id"], "nome": p.get("nome", "")}
+            for p in raw if p.get("nome", "").startswith("ML -")
+        ]
+        return contatos
+    except Exception as e:
+        logger.error(f"CA contatos error: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/ca/contatos/create-for-seller/{seller_id}", dependencies=[Depends(require_admin)])
+async def create_contato_for_seller(seller_id: str):
+    """Create CA contact for an existing seller that has no ca_contato_ml."""
+    from app.services.ca_api import buscar_ou_criar_pessoa
+    db = get_db()
+    result = db.table("sellers").select("*").eq("id", seller_id).single().execute()
+    seller = result.data
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller not found")
+
+    if seller.get("ca_contato_ml"):
+        return {"status": "already_exists", "ca_contato_ml": seller["ca_contato_ml"]}
+
+    nome = f"ML - {seller.get('dashboard_empresa') or seller.get('name', seller_id)}"
+    slug = seller.get("slug", seller_id)[:20]
+    try:
+        contact_id = await buscar_ou_criar_pessoa(
+            nome, slug, f"Auto-created by Lever Money for seller {slug}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"CA API error: {e}")
+
+    db.table("sellers").update({"ca_contato_ml": contact_id}).eq("id", seller_id).execute()
+    return {"status": "created", "ca_contato_ml": contact_id, "nome": nome}

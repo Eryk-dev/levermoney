@@ -271,6 +271,51 @@ async def listar_centros_custo() -> list:
     return items
 
 
+async def criar_pessoa(nome: str, codigo: str, observacao: str = "") -> dict:
+    """POST /v1/pessoas — create a new contact (Cliente + Fornecedor)."""
+    payload = {
+        "nome": nome,
+        "tipo_pessoa": "Jurídica",
+        "perfis": [
+            {"tipo_perfil": "Cliente"},
+            {"tipo_perfil": "Fornecedor"},
+        ],
+        "codigo": codigo,
+        "observacao": observacao,
+    }
+    resp = await _request_with_retry(
+        "post", f"{CA_API}/v1/pessoas",
+        headers=await _headers(), json=payload,
+    )
+    return resp.json()
+
+
+async def buscar_pessoas(busca: str) -> list:
+    """GET /v1/pessoas?busca=... — search contacts by name."""
+    resp = await _request_with_retry(
+        "get", f"{CA_API}/v1/pessoas",
+        headers=await _headers(),
+        params={"busca": busca, "tamanho_pagina": 10},
+    )
+    data = resp.json()
+    return data.get("itens", data if isinstance(data, list) else [])
+
+
+async def buscar_ou_criar_pessoa(nome: str, codigo: str, observacao: str = "") -> str:
+    """Search for contact by exact name. If not found, create it. Returns UUID.
+    Idempotent: safe to call multiple times with same name."""
+    existing = await buscar_pessoas(nome)
+    for pessoa in existing:
+        if pessoa.get("nome", "").strip().lower() == nome.strip().lower():
+            logger.info(f"Found existing CA contact '{nome}': {pessoa['id']}")
+            return pessoa["id"]
+
+    result = await criar_pessoa(nome, codigo, observacao)
+    contact_id = result.get("id")
+    logger.info(f"Created CA contact '{nome}': {contact_id}")
+    return contact_id
+
+
 async def criar_baixa(parcela_id: str, data_pagamento: str, valor: float, conta_financeira: str) -> dict:
     """POST /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa"""
     payload = {

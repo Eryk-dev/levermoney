@@ -856,7 +856,33 @@ com valor 0, o default `amount` não era usado. Resultado: estorno com valor R$ 
 **Correção:** `payment.get("transaction_amount_refunded") or amount` — usa `amount` como
 fallback quando o valor é 0 ou None (operador `or` trata falsy values).
 
-### Feature 13: Landing page de instalação self-service (2026-02-12)
+### Correção 13: charged_back + reimbursed não gera estorno (2026-02-12)
+
+**Arquivo:** `processor.py` - roteamento de status
+
+**Problema:** Todo payment `charged_back` era roteado para `_process_refunded()`, gerando
+receita + estorno + estorno_taxa. Porém, quando `status_detail = "reimbursed"`, o ML
+cobriu o chargeback via proteção ao vendedor — o seller NÃO perdeu o dinheiro. O estorno
+era indevido e inflava o valor de "Devoluções e Cancelamentos" no DRE do Conta Azul.
+
+**Exemplo real:** Payment 143699005939 (R$ 115,80) — chargeback de cartão, mas reembolsado
+pelo ML. No DRE, "1.2.1 Devoluções e Cancelamentos" mostrava -R$ 1.654,56 em vez de
+-R$ 1.539 (diferença de R$ 115,80 = exatamente este payment).
+
+**Correção:** Antes de rotear `charged_back` para `_process_refunded()`, verifica
+`status_detail`. Se `reimbursed`, trata como `approved` (cria receita + despesas normais,
+sem estorno). Apenas chargebacks NÃO reembolsados geram estorno.
+
+```python
+elif status == "charged_back" and payment.get("status_detail") == "reimbursed":
+    # Seller recebeu o dinheiro (proteção ML). Sem estorno.
+    await _process_approved(db, seller, payment, existing.data)
+elif status in ("refunded", "charged_back"):
+    # Chargeback real (seller perdeu) ou refund normal.
+    await _process_refunded(db, seller, payment, existing.data)
+```
+
+### Feature 14: Landing page de instalação self-service (2026-02-12)
 
 **Arquivos novos:** `app/static/install.html`
 **Arquivos editados:** `auth_ml.py`, `ml_api.py`, `main.py`, `onboarding.py`

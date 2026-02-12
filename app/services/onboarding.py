@@ -44,6 +44,24 @@ async def approve_seller(seller_id: str, config: dict) -> dict:
         if field in config and config[field] is not None:
             update_data[field] = config[field]
 
+    # Auto-create CA contact if not provided
+    if not update_data.get("ca_contato_ml"):
+        try:
+            from app.services.ca_api import buscar_ou_criar_pessoa
+            # Fetch seller to get name for contact
+            seller_row = db.table("sellers").select("slug, name, dashboard_empresa").eq("id", seller_id).single().execute()
+            s = seller_row.data or {}
+            contact_name = f"ML - {update_data.get('dashboard_empresa') or s.get('dashboard_empresa') or s.get('name', seller_id)}"
+            slug = s.get("slug", seller_id)[:20]
+            contact_id = await buscar_ou_criar_pessoa(
+                contact_name, slug,
+                f"Auto-created by Lever Money for seller {slug}",
+            )
+            update_data["ca_contato_ml"] = contact_id
+            logger.info("Auto-created CA contact '%s' (%s) for seller %s", contact_name, contact_id, seller_id)
+        except Exception as e:
+            logger.error("Failed to auto-create CA contact for seller %s: %s", seller_id, e)
+
     result = db.table("sellers").update(update_data).eq("id", seller_id).execute()
     seller = result.data[0] if result.data else None
 

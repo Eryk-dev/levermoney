@@ -82,6 +82,10 @@ async def process_payment_webhook(seller_slug: str, payment_id: int):
         logger.error(f"Seller {seller_slug} not found")
         return
 
+    if not seller.get("ca_contato_ml"):
+        logger.error(f"Seller {seller_slug} has no ca_contato_ml, skipping payment {payment_id}")
+        return
+
     # Idempotência: verifica se já processou
     existing = db.table("payments").select("id, status").eq(
         "ml_payment_id", payment_id
@@ -112,6 +116,11 @@ async def process_payment_webhook(seller_slug: str, payment_id: int):
         return
 
     if status in ("approved", "in_mediation"):
+        await _process_approved(db, seller, payment, existing.data)
+    elif status == "charged_back" and payment.get("status_detail") == "reimbursed":
+        # Chargeback coberto pela proteção ML: seller recebeu o dinheiro.
+        # Tratar como venda normal (receita + despesas, sem estorno).
+        logger.info(f"Payment {payment_id} charged_back+reimbursed, treating as approved (no estorno)")
         await _process_approved(db, seller, payment, existing.data)
     elif status in ("refunded", "charged_back"):
         await _process_refunded(db, seller, payment, existing.data)
