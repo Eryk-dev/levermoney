@@ -58,14 +58,13 @@ export function AdminPanel({
 
   const handleApprove = async () => {
     if (!approveForm) return;
-    const config: Record<string, string> = {
+    await approveSeller(approveForm.id, {
       dashboard_empresa: approveForm.empresa,
       dashboard_grupo: approveForm.grupo,
       dashboard_segmento: approveForm.segmento,
-    };
-    if (approveForm.ca_conta_bancaria) config.ca_conta_bancaria = approveForm.ca_conta_bancaria;
-    if (approveForm.ca_centro_custo_variavel) config.ca_centro_custo_variavel = approveForm.ca_centro_custo_variavel;
-    await approveSeller(approveForm.id, config);
+      ca_conta_bancaria: approveForm.ca_conta_bancaria || undefined,
+      ca_centro_custo_variavel: approveForm.ca_centro_custo_variavel || undefined,
+    });
     setApproveForm(null);
   };
 
