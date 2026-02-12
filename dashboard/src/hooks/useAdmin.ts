@@ -49,11 +49,6 @@ export interface CaCostCenter {
   descricao: string;
 }
 
-export interface CaContato {
-  id: string;
-  nome: string;
-}
-
 const TOKEN_KEY = 'lever-admin-token';
 
 export function useAdmin() {
@@ -67,7 +62,6 @@ export function useAdmin() {
   });
   const [caAccounts, setCaAccounts] = useState<CaAccount[]>([]);
   const [caCostCenters, setCaCostCenters] = useState<CaCostCenter[]>([]);
-  const [caContatos, setCaContatos] = useState<CaContato[]>([]);
 
   const isAuthenticated = !!token;
 
@@ -194,38 +188,6 @@ export function useAdmin() {
     }
   }, [token, headers]);
 
-  const loadCaContatos = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_BASE}/admin/ca/contatos`, { headers: headers() });
-      if (res.ok) {
-        const data = await res.json();
-        setCaContatos(data);
-      }
-    } catch (e) {
-      console.error('Failed to load CA contatos:', e);
-    }
-  }, [token, headers]);
-
-  const createContatoForSeller = useCallback(async (sellerId: string) => {
-    if (!token) return null;
-    try {
-      const res = await fetch(`${API_BASE}/admin/ca/contatos/create-for-seller/${sellerId}`, {
-        method: 'POST',
-        headers: headers(),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        await loadCaContatos();
-        await loadSellers();
-        return data;
-      }
-    } catch (e) {
-      console.error('Failed to create CA contato:', e);
-    }
-    return null;
-  }, [token, headers, loadCaContatos, loadSellers]);
-
   // ── Persistence: Goals & Revenue Lines ────────────────────
 
   const saveGoalsBulk = useCallback(async (goals: CompanyYearlyGoal[]) => {
@@ -293,9 +255,8 @@ export function useAdmin() {
       loadSyncStatus();
       loadCaAccounts();
       loadCaCostCenters();
-      loadCaContatos();
     }
-  }, [isAuthenticated, loadSellers, loadSyncStatus, loadCaAccounts, loadCaCostCenters, loadCaContatos]);
+  }, [isAuthenticated, loadSellers, loadSyncStatus, loadCaAccounts, loadCaCostCenters]);
 
   const pendingSellers = sellers.filter(s => s.onboarding_status === 'pending_approval');
   const activeSellers = sellers.filter(s => s.onboarding_status === 'active');
@@ -315,8 +276,6 @@ export function useAdmin() {
     loadSellers,
     caAccounts,
     caCostCenters,
-    caContatos,
-    createContatoForSeller,
     saveGoalsBulk,
     createRevenueLine,
     updateRevenueLine,

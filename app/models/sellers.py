@@ -16,6 +16,10 @@ CA_CATEGORIES = {
     "tarifa_pagamento": "d77aa9d6-dd63-4d67-a622-64c3a05780a5",   # 2.11.8 Tarifas de Pagamento
 }
 
+# Contato CA padrão — "MERCADO LIVRE" compartilhado por todos os sellers.
+# Filtragem por seller é feita pela conta bancária (ca_conta_bancaria).
+CA_CONTATO_ML = "b247cccb-38a2-4851-bf0e-700c53036c2c"
+
 
 def get_seller_config(db, seller_slug: str) -> dict | None:
     """Busca config do seller no Supabase."""

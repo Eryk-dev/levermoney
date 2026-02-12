@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 
 from app.db.supabase import get_db
-from app.models.sellers import CA_CATEGORIES, get_seller_config
+from app.models.sellers import CA_CATEGORIES, CA_CONTATO_ML, get_seller_config
 from app.services import ml_api, ca_queue
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ def _build_despesa_payload(seller: dict, data_competencia: str, data_vencimento:
     data_vencimento: quando o ML desconta (money_release_date)
     """
     conta = seller["ca_conta_bancaria"]
-    contato = seller.get("ca_contato_ml")
+    contato = seller.get("ca_contato_ml") or CA_CONTATO_ML
 
     parcela = _build_parcela(descricao, data_vencimento, conta, valor, nota_parcela)
     return _build_evento(data_competencia, valor, descricao, observacao, contato, conta,
@@ -80,10 +80,6 @@ async def process_payment_webhook(seller_slug: str, payment_id: int):
     seller = get_seller_config(db, seller_slug)
     if not seller:
         logger.error(f"Seller {seller_slug} not found")
-        return
-
-    if not seller.get("ca_contato_ml"):
-        logger.error(f"Seller {seller_slug} has no ca_contato_ml, skipping payment {payment_id}")
         return
 
     # Idempotência: verifica se já processou
@@ -200,7 +196,7 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     desc_receita = f"Venda ML #{order_id or ''} - {item_title}"[:200]
     obs = f"Payment: {payment_id} | Liberação: {money_release_date}"
 
-    contato = seller.get("ca_contato_ml")
+    contato = seller.get("ca_contato_ml") or CA_CONTATO_ML
     conta = seller["ca_conta_bancaria"]
     cc = seller.get("ca_centro_custo_variavel")
 
@@ -264,7 +260,7 @@ async def _process_partial_refund(db, seller: dict, payment: dict):
     ).like("ca_evento_id", f"partial_refund_{payment_id}_%").execute()
     processed_count = len(existing_refunds.data) if existing_refunds.data else 0
 
-    contato = seller.get("ca_contato_ml")
+    contato = seller.get("ca_contato_ml") or CA_CONTATO_ML
     conta = seller["ca_conta_bancaria"]
     cc = seller.get("ca_centro_custo_variavel")
 
@@ -333,7 +329,7 @@ async def _process_refunded(db, seller: dict, payment: dict, existing: list):
     # refund.amount pode incluir frete devolvido ao comprador, que não faz parte da receita.
     estorno_receita = min(total_refunded_raw, amount)
 
-    contato = seller.get("ca_contato_ml")
+    contato = seller.get("ca_contato_ml") or CA_CONTATO_ML
     conta = seller["ca_conta_bancaria"]
     cc = seller.get("ca_centro_custo_variavel")
 
