@@ -9,7 +9,12 @@ Auto-refresh via AWS Cognito quando expirado.
 import asyncio
 import logging
 import time
+from datetime import datetime, timezone
+from typing import Any
+
 import httpx
+
+from app.config import settings
 from app.db.supabase import get_db
 from app.services.rate_limiter import rate_limiter
 
@@ -28,10 +33,163 @@ _token_cache = {
 _refresh_lock = asyncio.Lock()
 
 
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _is_numeric_string(value: str) -> bool:
+    value = value.strip()
+    if not value:
+        return False
+    if value.startswith("-"):
+        value = value[1:]
+    return value.isdigit()
+
+
+def _to_epoch_ms(value: Any) -> int:
+    """Normalize expiry values from Supabase/env to epoch milliseconds."""
+    if value is None:
+        return 0
+
+    if isinstance(value, bool):
+        return 0
+
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+
+    if isinstance(value, (int, float)):
+        raw = int(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return 0
+        try:
+            raw = int(float(stripped))
+        except ValueError:
+            try:
+                dt = datetime.fromisoformat(stripped.replace("Z", "+00:00"))
+            except ValueError:
+                logger.warning("Invalid ca_tokens.expires_at format: %r", value)
+                return 0
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return int(dt.timestamp() * 1000)
+    else:
+        logger.warning("Unsupported ca_tokens.expires_at type: %s", type(value).__name__)
+        return 0
+
+    # Seconds epoch (10 digits) -> ms
+    if raw < 10_000_000_000:
+        return raw * 1000
+    # Microseconds epoch (16+ digits) -> ms
+    if raw > 10_000_000_000_000:
+        return raw // 1000
+    return raw
+
+
+def _epoch_ms_to_iso(value_ms: int) -> str:
+    return datetime.fromtimestamp(value_ms / 1000, tz=timezone.utc).isoformat()
+
+
+def _expiry_candidates_for_db(expires_at_ms: int, existing_value: Any) -> list[Any]:
+    """Generate compatible candidate values for ca_tokens.expires_at."""
+    if isinstance(existing_value, datetime):
+        preferred = _epoch_ms_to_iso(expires_at_ms)
+    elif isinstance(existing_value, str):
+        preferred = str(expires_at_ms) if _is_numeric_string(existing_value) else _epoch_ms_to_iso(expires_at_ms)
+    else:
+        preferred = expires_at_ms
+
+    candidates = [preferred]
+    for candidate in (expires_at_ms, str(expires_at_ms), _epoch_ms_to_iso(expires_at_ms)):
+        if candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def _fetch_ca_tokens_row(db) -> dict | None:
+    result = db.table("ca_tokens").select("*").eq("id", 1).limit(1).execute()
+    rows = result.data or []
+    return rows[0] if rows else None
+
+
+def _persist_ca_tokens(
+    db,
+    access_token: str,
+    refresh_token: str,
+    expires_at_ms: int,
+    current_row: dict | None,
+) -> None:
+    """Persist tokens trying compatible expires_at formats."""
+    last_error = None
+    for expires_value in _expiry_candidates_for_db(
+        expires_at_ms, (current_row or {}).get("expires_at")
+    ):
+        payload = {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_at": expires_value,
+        }
+        try:
+            if current_row:
+                db.table("ca_tokens").update(payload).eq("id", 1).execute()
+            else:
+                db.table("ca_tokens").upsert({"id": 1, **payload}).execute()
+            return
+        except Exception as e:
+            last_error = e
+
+    raise RuntimeError(f"Could not persist CA tokens in Supabase: {last_error}")
+
+
+async def _refresh_access_token(refresh_token: str) -> tuple[str, int]:
+    """Refresh CA access token via Cognito."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            COGNITO_URL,
+            headers={
+                "Content-Type": "application/x-amz-json-1.1",
+                "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
+            },
+            json={
+                "AuthFlow": "REFRESH_TOKEN_AUTH",
+                "ClientId": COGNITO_CLIENT_ID,
+                "AuthParameters": {
+                    "REFRESH_TOKEN": refresh_token,
+                },
+            },
+        )
+
+    if resp.status_code >= 400:
+        err_code = ""
+        err_message = resp.text[:400]
+        try:
+            err = resp.json()
+            err_code = str(err.get("__type") or err.get("code") or "")
+            err_message = str(err.get("message") or err_message)
+        except Exception:
+            pass
+
+        normalized = f"{err_code} {err_message}".lower()
+        if "notauthorized" in normalized or "refresh token" in normalized or "expired" in normalized:
+            raise RuntimeError(f"Cognito refresh token inválido/expirado: {err_message}")
+
+        raise RuntimeError(f"Cognito refresh failed ({resp.status_code}): {err_message}")
+
+    data = resp.json()
+    auth_result = data.get("AuthenticationResult", {})
+    new_access_token = auth_result.get("AccessToken")
+    expires_in = int(auth_result.get("ExpiresIn", 3600))
+    if not new_access_token:
+        raise RuntimeError(f"Cognito refresh failed: missing AccessToken ({data})")
+    return new_access_token, expires_in
+
+
 async def _get_ca_token() -> str:
     """Pega access_token do CA. Se expirado, faz refresh via Cognito.
     Uses asyncio.Lock to prevent concurrent refresh attempts."""
-    now_ms = int(time.time() * 1000)
+    now_ms = _now_ms()
 
     # Fast path: cache still valid (60s margin)
     if _token_cache["access_token"] and _token_cache["expires_at"] > now_ms + 60000:
@@ -39,57 +197,54 @@ async def _get_ca_token() -> str:
 
     async with _refresh_lock:
         # Re-check after acquiring lock (another coroutine may have refreshed)
-        now_ms = int(time.time() * 1000)
+        now_ms = _now_ms()
         if _token_cache["access_token"] and _token_cache["expires_at"] > now_ms + 60000:
             return _token_cache["access_token"]
 
         db = get_db()
-        result = db.table("ca_tokens").select("*").eq("id", 1).single().execute()
-        tokens = result.data
-
-        if not tokens:
-            raise RuntimeError("CA tokens not found in Supabase ca_tokens table")
+        tokens = _fetch_ca_tokens_row(db)
 
         # If Supabase token still valid (another process may have refreshed)
-        if tokens["expires_at"] > now_ms + 60000:
-            _token_cache["access_token"] = tokens["access_token"]
-            _token_cache["expires_at"] = tokens["expires_at"]
-            return tokens["access_token"]
+        if tokens and tokens.get("access_token"):
+            db_expires_ms = _to_epoch_ms(tokens.get("expires_at"))
+            if db_expires_ms > now_ms + 60000:
+                _token_cache["access_token"] = tokens["access_token"]
+                _token_cache["expires_at"] = db_expires_ms
+                return tokens["access_token"]
+
+        env_refresh_token = settings.ca_refresh_token.strip()
+        refresh_token = (tokens or {}).get("refresh_token") or env_refresh_token
+        if not refresh_token:
+            raise RuntimeError(
+                "Conta Azul sem refresh token. Configure ca_tokens.refresh_token ou CA_REFRESH_TOKEN no .env."
+            )
 
         # Refresh via Cognito
-        logger.info("CA token expired, refreshing via Cognito...")
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                COGNITO_URL,
-                headers={
-                    "Content-Type": "application/x-amz-json-1.1",
-                    "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
-                },
-                json={
-                    "AuthFlow": "REFRESH_TOKEN_AUTH",
-                    "ClientId": COGNITO_CLIENT_ID,
-                    "AuthParameters": {
-                        "REFRESH_TOKEN": tokens["refresh_token"],
-                    },
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        logger.info("CA token expired/missing, refreshing via Cognito...")
+        used_refresh_token = refresh_token
+        try:
+            new_access_token, expires_in = await _refresh_access_token(refresh_token)
+        except Exception as e:
+            # If DB token became stale, allow env token as recovery path.
+            if env_refresh_token and env_refresh_token != refresh_token:
+                logger.warning(
+                    "Stored CA refresh_token failed; trying CA_REFRESH_TOKEN from environment."
+                )
+                new_access_token, expires_in = await _refresh_access_token(env_refresh_token)
+                used_refresh_token = env_refresh_token
+            else:
+                raise RuntimeError(f"Failed to refresh Conta Azul token: {e}") from e
 
-        auth_result = data.get("AuthenticationResult", {})
-        new_access_token = auth_result.get("AccessToken")
-        expires_in = auth_result.get("ExpiresIn", 3600)
+        new_expires_at = _now_ms() + (expires_in * 1000)
 
-        if not new_access_token:
-            raise RuntimeError(f"Cognito refresh failed: {data}")
-
-        new_expires_at = int(time.time() * 1000) + (expires_in * 1000)
-
-        # Update Supabase
-        db.table("ca_tokens").update({
-            "access_token": new_access_token,
-            "expires_at": new_expires_at,
-        }).eq("id", 1).execute()
+        # Update Supabase (keep refresh token in sync with source used)
+        _persist_ca_tokens(
+            db=db,
+            access_token=new_access_token,
+            refresh_token=used_refresh_token,
+            expires_at_ms=new_expires_at,
+            current_row=tokens,
+        )
 
         # Update cache
         _token_cache["access_token"] = new_access_token
