@@ -25,7 +25,7 @@ from app.services.ca_api import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth/ca")
 
-CA_AUTHORIZE_URL = "https://auth.contaazul.com/oauth2/authorize"
+CA_AUTHORIZE_URL = "https://auth.contaazul.com/login"
 CA_SCOPES = "openid profile aws.cognito.signin.user.admin"
 
 
