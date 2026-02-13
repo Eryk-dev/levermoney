@@ -68,12 +68,21 @@ async def backfill_payments(
     total_amount = sum(p.get("transaction_amount", 0) for p in all_payments)
 
     # Check which are already processed in Supabase (terminal statuses)
+    # Paginate to avoid Supabase's default 1000-row limit
     already_done = set()
-    done_result = db.table("payments").select("ml_payment_id, status").eq(
-        "seller_slug", seller_slug
-    ).in_("status", ["synced", "queued", "refunded", "skipped", "skipped_non_sale"]).execute()
-    if done_result.data:
-        already_done = {r["ml_payment_id"] for r in done_result.data}
+    page_start = 0
+    page_limit = 1000
+    while True:
+        done_result = db.table("payments").select("ml_payment_id").eq(
+            "seller_slug", seller_slug
+        ).in_(
+            "status", ["synced", "queued", "refunded", "skipped", "skipped_non_sale"]
+        ).range(page_start, page_start + page_limit - 1).execute()
+        batch = done_result.data or []
+        already_done.update(r["ml_payment_id"] for r in batch)
+        if len(batch) < page_limit:
+            break
+        page_start += page_limit
 
     processable = [
         p for p in all_payments
