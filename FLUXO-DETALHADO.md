@@ -1,6 +1,6 @@
 # Fluxo Detalhado - Lever Money Platform
 
-**Versão:** 3.2 | **Data:** 2026-02-12
+**Versão:** 3.3 | **Data:** 2026-02-13
 
 ---
 
@@ -66,7 +66,7 @@ Plataforma unificada que integra:
 │  │                                                                  │    │
 │  │  Retorna:                                                        │    │
 │  │    transaction_amount     = R$ 284,74  (bruto)                  │    │
-│  │    date_approved          = 2026-02-01 (data da venda)          │    │
+│  │    date_created           = 2026-02-01T... (data da venda)      │    │
 │  │    money_release_date     = 2026-02-15 (data da liberação)      │    │
 │  │    net_received_amount    = R$ 235,85  (líquido)                │    │
 │  │    charges_details (SOURCE OF TRUTH):                            │    │
@@ -107,7 +107,7 @@ Plataforma unificada que integra:
 │                                                                         │
 │  Dados extraídos:                                                       │
 │    amount             = R$ 284,74   (transaction_amount)                │
-│    date_approved      = 2026-02-01  (competência de TODOS os lanç.)    │
+│    competencia        = 2026-02-01  (date_created convertido p/ BRT)   │
 │    money_release_date = 2026-02-15  (vencimento + baixa das despesas)  │
 │    net                = R$ 235,85   (net_received_amount)              │
 │                                                                         │
@@ -149,7 +149,7 @@ Plataforma unificada que integra:
 │  endpoint: POST /v1/financeiro/eventos-financeiros/contas-a-receber    │
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────┐      │
-│  │  data_competencia: "2026-02-01"  ← date_approved              │      │
+│  │  data_competencia: "2026-02-01"  ← date_created (BRT)         │      │
 │  │  valor: 284.74                    ← transaction_amount        │      │
 │  │  descricao: "Venda ML #46410008520 - Filtro de Ar XPTO"      │      │
 │  │  contato: UUID MERCADO LIVRE                                   │      │
@@ -171,7 +171,7 @@ Plataforma unificada que integra:
 │  endpoint: POST /v1/financeiro/eventos-financeiros/contas-a-pagar      │
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────┐      │
-│  │  data_competencia: "2026-02-01"  ← date_approved              │      │
+│  │  data_competencia: "2026-02-01"  ← date_created (BRT)         │      │
 │  │  valor: 25.44                     ← amount - net - shipping   │      │
 │  │  descricao: "Comissão ML - Payment 144370799868"              │      │
 │  │  conta_financeira: UUID conta bancária do seller                    │      │
@@ -304,8 +304,8 @@ Plataforma unificada que integra:
 │  in_mediation = venda aprovada sob disputa do comprador.               │
 │  O dinheiro já foi creditado ou será. Lança como receita normal.       │
 │  Se mediação resolver como refund, webhook atualiza para refunded.     │
-│  date_approved existe e é a data de competência (quando a venda        │
-│  realmente entrou para o seller).                                       │
+│  date_created convertido para BRT é a data de competência.              │
+│  Bate com o relatório de Vendas do ML (que usa BRT).                    │
 │                                                                         │
 │  cancelled/rejected = sem movimentação financeira.                     │
 │  Salvo no Supabase para rastreamento, mas sem entrada no CA.           │
@@ -318,7 +318,7 @@ Plataforma unificada que integra:
 ## Linha do Tempo: Datas no Conta Azul
 
 ```
-  01/02 (date_approved)                     15/02 (money_release_date)
+  01/02 (date_created BRT)                   15/02 (money_release_date)
     │                                           │
     ▼                                           ▼
 ────●───────────────────────────────────────────●──────────────────▶ tempo
@@ -701,7 +701,7 @@ sob disputa — o dinheiro já foi creditado ao seller. Devem gerar receita+desp
 
 **Correção:**
 - `in_mediation` agora é roteado para `_process_approved()` (mesmo fluxo do approved)
-- `date_approved` é usado como data de competência (existe porque a venda foi aprovada antes)
+- `date_created` convertido para BRT (UTC-3) é usado como data de competência (bate com relatório ML)
 - Se mediação resolver como refund, webhook de "refunded" cria os estornos automaticamente
 
 ### Correção 4: Filtro de non-sale payments (2026-02-12)
@@ -792,6 +792,24 @@ perda de dados se o servidor caísse mid-flight, sem audit trail, sem idempotên
 - Ordem: priority garante receita(10) antes de despesa(20) antes de baixa(30)
 - Retry: backoff exponencial (30s, 120s, 480s), max 3 tentativas, depois dead letter
 - Audit: ca_jobs registra payload, resposta, protocolo, timestamps, tentativas
+
+### Correção 10: Competência usa date_created em BRT (2026-02-13)
+
+**Arquivo:** `processor.py`
+
+**Problema:** A competência das receitas/despesas usava `date_approved[:10]`, que era
+errado por dois motivos:
+1. **Campo errado**: o relatório de Vendas do ML usa `date_created`, não `date_approved`
+2. **Timezone errado**: a API ML retorna datas em UTC-4, mas o relatório usa BRT (UTC-3).
+   Vendas feitas às 23:45 UTC-4 = 00:45 BRT do dia seguinte → cruzava a meia-noite.
+
+Exemplo real: payment 144449074344, `date_created: "2026-02-01T23:45:11.000-04:00"`.
+O código antigo atribuía competência 01/02, mas em BRT é 02/02 (e o ML reporta 02/02).
+
+**Correção:**
+- Nova função `_to_brt_date(iso_str)`: converte ISO datetime para data BRT (YYYY-MM-DD)
+- Competência agora é `_to_brt_date(date_created)` em vez de `date_approved[:10]`
+- Variável renomeada de `date_approved` para `competencia` para clareza
 
 ### Arquitetura: Baixa separada (2026-02-11)
 

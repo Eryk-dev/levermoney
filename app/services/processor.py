@@ -3,13 +3,29 @@ Processador de eventos ML/MP → Conta Azul.
 Implementa o mapeamento definido em PLANO.md Seção 13.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from app.db.supabase import get_db
 from app.models.sellers import CA_CATEGORIES, CA_CONTATO_ML, get_seller_config
 from app.services import ml_api, ca_queue
 
 logger = logging.getLogger(__name__)
+
+BRT = timezone(timedelta(hours=-3))
+
+
+def _to_brt_date(iso_str: str) -> str:
+    """Convert ISO datetime string from ML API to BRT date (YYYY-MM-DD).
+
+    ML API returns dates in UTC-4. The ML sales report uses BRT (UTC-3),
+    so late-night sales (e.g. 23:45 UTC-4 = 00:45 BRT) cross midnight
+    and must be attributed to the next day to match ML's reports.
+    """
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        return dt.astimezone(BRT).strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return iso_str[:10]
 
 
 def _build_parcela(descricao: str, data_vencimento: str, conta_financeira: str, valor: float, nota: str = "") -> dict:
@@ -60,7 +76,7 @@ def _build_despesa_payload(seller: dict, data_competencia: str, data_vencimento:
     """Build conta-a-pagar payload (does NOT call CA API).
 
     Baixa é feita pelo job separado /baixas/processar/{seller} quando vencimento <= hoje.
-    data_competencia: quando a despesa ocorreu (date_approved)
+    data_competencia: quando a venda ocorreu (date_created convertido para BRT)
     data_vencimento: quando o ML desconta (money_release_date)
     """
     conta = seller["ca_conta_bancaria"]
@@ -152,8 +168,9 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
 
     # 2. Extrair valores do payment
     amount = payment["transaction_amount"]
-    date_approved = payment.get("date_approved", payment["date_created"])[:10]
-    money_release_date = (payment.get("money_release_date") or date_approved)[:10]
+    date_created_raw = payment.get("date_created") or payment.get("date_approved", "")
+    competencia = _to_brt_date(date_created_raw)
+    money_release_date = (payment.get("money_release_date") or date_created_raw)[:10]
     net = payment.get("transaction_details", {}).get("net_received_amount", 0)
 
     # 3. Extrair taxas de charges_details (source of truth)
@@ -205,7 +222,7 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     # A) RECEITA (contas-a-receber)
     parcela_receita = _build_parcela(desc_receita, money_release_date, conta, amount)
     receita_payload = _build_evento(
-        date_approved, amount, desc_receita, obs, contato, conta,
+        competencia, amount, desc_receita, obs, contato, conta,
         CA_CATEGORIES["venda_ml"], cc, parcela_receita,
     )
     await ca_queue.enqueue_receita(seller_slug, payment_id, receita_payload)
@@ -213,7 +230,7 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     # B) DESPESA - Comissão ML (se > 0)
     if mp_fee > 0:
         comissao_payload = _build_despesa_payload(
-            seller, date_approved, money_release_date, mp_fee,
+            seller, competencia, money_release_date, mp_fee,
             f"Comissão ML - Payment {payment_id}",
             f"Venda #{order_id} | fee={mp_fee}",
             CA_CATEGORIES["comissao_ml"],
@@ -224,7 +241,7 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     # C) DESPESA - Frete (se > 0)
     if shipping_cost_seller > 0:
         frete_payload = _build_despesa_payload(
-            seller, date_approved, money_release_date, shipping_cost_seller,
+            seller, competencia, money_release_date, shipping_cost_seller,
             f"Frete MercadoEnvios - Payment {payment_id}",
             f"Shipment #{shipping_id}",
             CA_CATEGORIES["frete_mercadoenvios"],
