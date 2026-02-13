@@ -4,9 +4,10 @@ Base: https://api-v2.contaazul.com
 Rate limit: 600 req/min, 10 req/seg
 
 Tokens armazenados no Supabase (tabela ca_tokens).
-Auto-refresh via AWS Cognito quando expirado.
+Auto-refresh via OAuth2 endpoint (auth.contaazul.com) com token rotation.
 """
 import asyncio
+import base64
 import logging
 import time
 from datetime import datetime, timezone
@@ -21,8 +22,7 @@ from app.services.rate_limiter import rate_limiter
 logger = logging.getLogger(__name__)
 
 CA_API = "https://api-v2.contaazul.com"
-COGNITO_URL = "https://cognito-idp.sa-east-1.amazonaws.com/"
-COGNITO_CLIENT_ID = "6ri07ptg5k2u7dubdlttg3a7t8"
+CA_TOKEN_URL = "https://auth.contaazul.com/oauth2/token"
 
 # Cache em memória para evitar query a cada request
 _token_cache = {
@@ -143,52 +143,67 @@ def _persist_ca_tokens(
     raise RuntimeError(f"Could not persist CA tokens in Supabase: {last_error}")
 
 
-async def _refresh_access_token(refresh_token: str) -> tuple[str, int]:
-    """Refresh CA access token via Cognito."""
+async def _refresh_access_token(refresh_token: str) -> tuple[str, int, str | None]:
+    """Refresh CA tokens via OAuth2 endpoint (supports refresh token rotation).
+
+    Returns (access_token, expires_in_seconds, new_refresh_token_or_None).
+    """
+    client_id = settings.ca_client_id
+    client_secret = settings.ca_client_secret
+    if not client_secret:
+        raise RuntimeError(
+            "CA_CLIENT_SECRET não configurado. Adicione ao .env."
+        )
+
+    basic = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
-            COGNITO_URL,
+            CA_TOKEN_URL,
             headers={
-                "Content-Type": "application/x-amz-json-1.1",
-                "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": f"Basic {basic}",
             },
-            json={
-                "AuthFlow": "REFRESH_TOKEN_AUTH",
-                "ClientId": COGNITO_CLIENT_ID,
-                "AuthParameters": {
-                    "REFRESH_TOKEN": refresh_token,
-                },
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
             },
         )
 
     if resp.status_code >= 400:
-        err_code = ""
         err_message = resp.text[:400]
         try:
             err = resp.json()
-            err_code = str(err.get("__type") or err.get("code") or "")
-            err_message = str(err.get("message") or err_message)
+            err_message = err.get("error_description") or err.get("error") or err_message
         except Exception:
             pass
 
-        normalized = f"{err_code} {err_message}".lower()
-        if "notauthorized" in normalized or "refresh token" in normalized or "expired" in normalized:
-            raise RuntimeError(f"Cognito refresh token inválido/expirado: {err_message}")
-
-        raise RuntimeError(f"Cognito refresh failed ({resp.status_code}): {err_message}")
+        normalized = err_message.lower()
+        if "invalid_grant" in normalized or "expired" in normalized:
+            raise RuntimeError(
+                f"CA refresh token expirado/inválido: {err_message}. "
+                "Reconecte via /auth/ca/connect"
+            )
+        raise RuntimeError(f"CA OAuth2 refresh failed ({resp.status_code}): {err_message}")
 
     data = resp.json()
-    auth_result = data.get("AuthenticationResult", {})
-    new_access_token = auth_result.get("AccessToken")
-    expires_in = int(auth_result.get("ExpiresIn", 3600))
+    new_access_token = data.get("access_token")
+    expires_in = int(data.get("expires_in", 3600))
+    new_refresh_token = data.get("refresh_token")  # rotation: new token returned
+
     if not new_access_token:
-        raise RuntimeError(f"Cognito refresh failed: missing AccessToken ({data})")
-    return new_access_token, expires_in
+        raise RuntimeError(f"CA OAuth2 refresh: missing access_token ({data})")
+
+    if new_refresh_token and new_refresh_token != refresh_token:
+        logger.info("CA refresh token rotated (new token received)")
+
+    return new_access_token, expires_in, new_refresh_token
 
 
 async def _get_ca_token() -> str:
-    """Pega access_token do CA. Se expirado, faz refresh via Cognito.
-    Uses asyncio.Lock to prevent concurrent refresh attempts."""
+    """Pega access_token do CA. Se expirado, faz refresh via OAuth2.
+    Uses asyncio.Lock to prevent concurrent refresh attempts.
+    Handles refresh token rotation (stores new refresh token each time)."""
     now_ms = _now_ms()
 
     # Fast path: cache still valid (60s margin)
@@ -216,32 +231,32 @@ async def _get_ca_token() -> str:
         refresh_token = (tokens or {}).get("refresh_token") or env_refresh_token
         if not refresh_token:
             raise RuntimeError(
-                "Conta Azul sem refresh token. Configure ca_tokens.refresh_token ou CA_REFRESH_TOKEN no .env."
+                "Conta Azul sem refresh token. Reconecte via /auth/ca/connect"
             )
 
-        # Refresh via Cognito
-        logger.info("CA token expired/missing, refreshing via Cognito...")
-        used_refresh_token = refresh_token
+        # Refresh via OAuth2 endpoint (supports token rotation)
+        logger.info("CA token expired/missing, refreshing via OAuth2...")
         try:
-            new_access_token, expires_in = await _refresh_access_token(refresh_token)
+            new_access_token, expires_in, new_refresh_token = await _refresh_access_token(refresh_token)
         except Exception as e:
             # If DB token became stale, allow env token as recovery path.
             if env_refresh_token and env_refresh_token != refresh_token:
                 logger.warning(
                     "Stored CA refresh_token failed; trying CA_REFRESH_TOKEN from environment."
                 )
-                new_access_token, expires_in = await _refresh_access_token(env_refresh_token)
-                used_refresh_token = env_refresh_token
+                new_access_token, expires_in, new_refresh_token = await _refresh_access_token(env_refresh_token)
             else:
                 raise RuntimeError(f"Failed to refresh Conta Azul token: {e}") from e
 
+        # Use rotated refresh token if returned, otherwise keep current
+        final_refresh_token = new_refresh_token or refresh_token
         new_expires_at = _now_ms() + (expires_in * 1000)
 
-        # Update Supabase (keep refresh token in sync with source used)
+        # Persist both access + rotated refresh token to Supabase
         _persist_ca_tokens(
             db=db,
             access_token=new_access_token,
-            refresh_token=used_refresh_token,
+            refresh_token=final_refresh_token,
             expires_at_ms=new_expires_at,
             current_row=tokens,
         )

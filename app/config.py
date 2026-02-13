@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     # Conta Azul
     ca_access_token: str = ""
     ca_refresh_token: str = ""
+    ca_client_id: str = "6ri07ptg5k2u7dubdlttg3a7t8"
+    ca_client_secret: str = ""
 
     # Supabase
     supabase_url: str = ""

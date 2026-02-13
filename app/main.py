@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.routers import health, webhooks, auth_ml, backfill, baixas, queue, admin, dashboard_api
+from app.routers import health, webhooks, auth_ml, auth_ca, backfill, baixas, queue, admin, dashboard_api
 from app.services.ca_queue import CaWorker
 from app.services.faturamento_sync import FaturamentoSyncer
 from app.db.supabase import get_db
@@ -90,15 +90,29 @@ async def _run_baixas_all_sellers():
         logger.error(f"Scheduler _run_baixas_all_sellers error: {e}")
 
 
+async def _ca_token_refresh_loop():
+    """Proactively refresh CA token every 30 min to keep rotation alive."""
+    from app.services.ca_api import _get_ca_token
+    while True:
+        await asyncio.sleep(30 * 60)  # 30 minutes
+        try:
+            await _get_ca_token()
+            logger.info("CA proactive token refresh OK")
+        except Exception as e:
+            logger.error(f"CA proactive token refresh failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app):
     await worker.start()
     await syncer.start()
     baixa_task = asyncio.create_task(_daily_baixa_scheduler())
+    ca_refresh_task = asyncio.create_task(_ca_token_refresh_loop())
     yield
     await worker.stop()
     await syncer.stop()
     baixa_task.cancel()
+    ca_refresh_task.cancel()
 
 
 app = FastAPI(
@@ -122,6 +136,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(webhooks.router)
 app.include_router(auth_ml.router)
+app.include_router(auth_ca.router)
 app.include_router(backfill.router)
 app.include_router(baixas.router)
 app.include_router(queue.router)
