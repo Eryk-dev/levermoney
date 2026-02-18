@@ -1,0 +1,11 @@
+flowchart LR
+    EXT[account_statement\nrelease_report/bank_report] --> SPLIT{classificacao diaria}
+
+    SPLIT --> APIB[Baixa API do dia\nsum(net_amount)\npayments liquidados\nmoney_release_date = dia]
+    SPLIT --> LEG[Ajustes legado do dia\nrefund + mediation + reserve\nshipping + payout + non-sale]
+
+    APIB --> MODEL[Modelo do dia]
+    LEG --> MODEL
+    MODEL --> EQ{extrato_total_dia\n== APIB + LEG ?}
+    EQ -->|sim| OK[Fechamento diario OK]
+    EQ -->|nao| GAP[Investigar divergencia]

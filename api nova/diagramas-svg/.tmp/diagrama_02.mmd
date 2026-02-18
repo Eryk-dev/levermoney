@@ -1,0 +1,45 @@
+sequenceDiagram
+    autonumber
+    participant T as Trigger (daily_sync/backfill)
+    participant MP as ML/MP API
+    participant P as processor.py
+    participant DB as Supabase (payments)
+    participant Q as ca_queue (ca_jobs)
+    participant W as CaWorker
+    participant CA as Conta Azul API
+
+    T->>MP: search/get payment
+    T->>P: process_payment_webhook(seller, payment_data)
+    P->>DB: verifica idempotencia (payments)
+
+    alt payment sem order_id / marketplace_shipment / collector!=null
+        P->>DB: upsert status=skipped_non_sale
+    else order payment
+        alt status approved ou in_mediation
+            P->>Q: enqueue receita
+            P->>Q: enqueue comissao (se houver)
+            P->>Q: enqueue frete (se houver)
+            P->>DB: upsert status=queued
+        else status charged_back + reimbursed
+            P->>Q: trata como approved (sem estorno)
+            P->>DB: upsert status=queued
+        else status refunded/charged_back
+            P->>Q: enqueue estorno
+            P->>Q: enqueue estorno_taxa (refund total)
+            P->>DB: upsert status=queued
+        end
+    end
+
+    loop worker
+        W->>Q: poll proximo job elegivel
+        W->>CA: POST/GET endpoint financeiro
+        alt sucesso 2xx
+            W->>Q: marca job completed
+        else 401/429/5xx
+            W->>Q: retry com backoff
+        else erro 4xx permanente
+            W->>Q: marca dead
+        end
+    end
+
+    W->>DB: quando grupo completo, payments.status=synced

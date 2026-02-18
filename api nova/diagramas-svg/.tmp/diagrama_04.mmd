@@ -1,0 +1,9 @@
+stateDiagram-v2
+    [*] --> received
+    received --> skipped_non_sale: sem order / filtros
+    received --> pending: status nao final
+    received --> queued: approved/refunded/... enfileirado no CA
+    queued --> synced: grupo de jobs concluido
+    queued --> queued: ha job dead (mantem erro)
+    received --> skipped: cancelled/rejected
+    received --> refunded: fluxo de refund concluido

@@ -1,8 +1,4 @@
-.env
-venv/
-__pycache__/
-*.pyc
 .DS_Store
-node_modules/
-dashboard/dist/
-dashboard/.env
+.claude/
+*.pyc
+__pycache__/

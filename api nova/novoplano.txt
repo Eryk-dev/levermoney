@@ -1,0 +1,56 @@
+
+› Esse código tem a intenção de suportar o pessoal do financeiro na conciliação do mercado pago. a api legado já funcionava para fins de baixa, etretanto,
+  estávamos com furo na parte de competencia, ou seja, o mes fechava e ficávamos sem horizonte de quanto faturamos na competência, dessa forma, o código
+  seria mais para lancar e dar baixa nos lancamentos de vendas, cancelamentos, frete, comissão do meli etc... precisamos, se necessário, simplificar isso
+  tudo e rodar, de repente, somente com o sistema legado para lancamentos de transferencias e tudo não relacionado a vendas e deixar essa nova api somente
+  com os lancamentos de competencia de vendas e cancelamentos etc... seria possível? se sim, como podemos fazer? gostaria de seguir dessa forma e se
+  necessário simplificarmos para que demos um up na api legado, visto que creio que seja necessário sometne o extrato em csv (que pode ser extraido via
+  api do mercado livre e já temos os tokens das empresas que autorizaram o app) ai iriamos extrair o extrato para checar se batem as baixas e os
+  lancamentos que não são de vendas, conseguimos fazer isso? me pergunte tudo que achar necessário para colocar isso para rodar da maneira menos complexa
+  possível.
+
+
+• Você está propondo exatamente o caminho mais pragmático: separar “vendas/competência” da “movimentação não-venda”. Vou validar no código atual o que já
+  existe para isso e te trago um plano mínimo com as perguntas certas para colocar em produção com pouca complexidade.
+
+• Explored
+• Sim, é possível, e o código já está quase nesse formato.
+
+  Hoje já existe suporte para separar os dois mundos:
+
+  1. Nova API só para vendas/cancelamentos/competência: DAILY_SYNC_NON_ORDER_MODE=legacy em api nova/app/config.py:26 e uso em api nova/app/services/
+     daily_sync.py:243.
+  2. Legado para não-venda (transferências, boletos etc.) usando só extrato via API do MP:
+     run_legacy_daily_for_seller já cria/baixa settlement report, converte para extrato e roda o legado em api nova/app/services/
+     legacy_daily_export.py:323.
+  3. Baixas continuam na nova API com validação de liberação: api nova/app/routers/baixas.py:32.
+
+  Plano menos complexo (recomendado):
+
+  1. Manter uma única API (a nova), sem operar dois serviços.
+  2. Configurar non-order em modo legado (DAILY_SYNC_NON_ORDER_MODE=legacy).
+  3. Ativar job legado diário (LEGACY_DAILY_ENABLED=true) para não-venda.
+  4. Manter nova API cuidando de competência (vendas/refunds/chargebacks) + baixa.
+  5. Opcional: esconder/desativar rotas de expenses para reduzir superfície.
+
+  Para eu fechar isso e colocar para rodar, preciso dessas respostas (pode responder numerado):
+
+  1. Competência deve ser por date_approved em BRT para vendas? (recomendado: sim)
+  2. Refund parcial deve gerar estorno parcial automático? (recomendado: sim)
+  3. in_mediation entra como venda na competência? (recomendado: sim, como está hoje)
+  4. Lançamentos não-venda vão ser importados manualmente no CA via ZIP/XLSX, ou você já tem endpoint de upload para automação?
+  5. Se houver upload automático: qual URL e token vamos usar?
+  6. Horários desejados (BRT) para: sync de vendas, baixas, legado diário?
+  7. Data de corte do go-live e janela de backfill (ex.: últimos 60 dias)?
+  8. Quais sellers entram na primeira onda?
+  9. Queremos desativar completamente endpoints expenses/release-report nesta fase?
+  10. Critério de “fechou o dia”: quais relatórios/contagens você quer como aceite?
+
+  Com isso, eu te devolvo um plano de execução curto (config + ajustes mínimos + checklist de validação) e já aplico no código.
+
+
+› 1 - mantenha o que está hoje 2 - sim 3 - sim 4 - gostaria de gerar automaticamente nas segundas e quintas feiras e gerar diretamente no google drive com
+  na estrutura empresa > mes > dia com cada dia tendo os dois xlsx de transferencias e pagamento de contas automaticamente, o que acha? 5 - gostaria de
+  fazer upload no google drive 6 - gostaria de comecar a fazer tudo sequencialmente quando virasse o dia para que de manhã já tivéssemos tudo atualizado,
+  entao comecando 00:01 para puxar os dados consolidados do dia anterior 7 - gostaria de deixar fevereiro correto 8 - quero testar somente com a 141air de
+  primeiro momento 9 - sim 10 - nao entendi.

@@ -1,0 +1,5 @@
+status,count,gross_amount,commission_calc,shipping_calc,launch_net_calc,extrato_sum,diff_extrato_vs_launch
+approved,140,43464.41,5494.46,2683.35,35286.6,35286.6,0.0
+charged_back,1,115.8,13.9,13.96,87.94,87.94,0.0
+in_mediation,6,3542.7,440.34,218.66,2883.7,-2486.58,-5370.28
+refunded,30,11209.8,1386.22,563.32,9260.26,-7203.93,-16464.19

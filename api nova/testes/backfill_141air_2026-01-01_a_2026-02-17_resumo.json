@@ -1,0 +1,32 @@
+{
+  "seller": "141air",
+  "period": {
+    "from": "2026-01-01",
+    "to": "2026-02-17"
+  },
+  "initial_balance": 4476.23,
+  "settlement_report_16_17": "settlement-1963376627-manual-2026-02-18-121920.csv",
+  "payments_map_count": 857,
+  "unresolved_ids_16_17": [],
+  "caixa_totals": {
+    "api_baixas": 145782.04,
+    "ajustes_legado": -146631.84,
+    "gerado_total": -849.8,
+    "extrato_total": -849.8,
+    "dif_total": 0.0,
+    "final_balance_gerado": 3626.43,
+    "final_balance_extrato": 3626.43,
+    "final_balance_diff": 0.0
+  },
+  "dre_totals": {
+    "receita_bruta": 242389.33,
+    "devolucoes_cancelamentos": 35302.94,
+    "receita_liquida": 207086.39,
+    "comissao_ml": 30789.19,
+    "frete_ml": 12736.76,
+    "estorno_taxas": 382.25,
+    "resultado_variavel": 163942.69,
+    "margem_variavel_pct": 79.17
+  },
+  "days_with_diff": []
+}
