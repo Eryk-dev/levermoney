@@ -1,0 +1,264 @@
+.container {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  min-height: 520px;
+  gap: var(--space-4);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-3);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.summary {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.summaryItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.summaryLabel {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
+.summaryValue {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.summaryValue.positive {
+  color: var(--success);
+}
+
+.summaryValue.warning {
+  color: var(--warning);
+}
+
+.summaryValue.negative {
+  color: var(--danger);
+}
+
+/* Projection Summary */
+.projectionSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--space-3);
+}
+
+.projectionBadge {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.projectionBadge.positive {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+
+.projectionBadge.warning {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+}
+
+.projectionBadge.negative {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}
+
+.projectionGap {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chart */
+.chartWrapper {
+  margin: 0 calc(var(--space-2) * -1);
+  flex: 1;
+  min-height: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sectionTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sectionMeta {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.chartWrapperDaily {
+  margin: 0 calc(var(--space-2) * -1);
+  height: 220px;
+  touch-action: pan-y;
+}
+
+.chartWrapperCumulative {
+  margin: 0 calc(var(--space-2) * -1);
+  height: 240px;
+  touch-action: pan-y;
+}
+
+.sectionDivider {
+  height: 1px;
+  background: var(--line);
+  width: 100%;
+}
+
+/* Simple Progress (for yesterday view) */
+.simpleProgress {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.progressBar {
+  position: relative;
+  height: 24px;
+  background: var(--surface);
+  border-radius: 12px;
+  overflow: visible;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 12px;
+  transition: width 0.3s ease;
+}
+
+.progressFill.success {
+  background: var(--success);
+}
+
+.progressFill.warning {
+  background: var(--warning);
+}
+
+.progressFill.danger {
+  background: var(--danger);
+}
+
+.progressMarker {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--ink-faint);
+  transform: translateX(-50%);
+}
+
+.progressLabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+/* Tooltip */
+.tooltip {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: var(--space-2) var(--space-3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.tooltipHeader {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: var(--space-1);
+}
+
+.tooltipRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+.tooltipDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tooltipValue {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  margin-left: auto;
+}
+
+/* Confidence Badge */
+.confidenceBadge {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.confidenceBadge.high {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
+}
+
+.confidenceBadge.medium {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+}
+
+.confidenceBadge.low {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+}

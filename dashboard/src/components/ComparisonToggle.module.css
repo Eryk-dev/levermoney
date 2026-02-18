@@ -1,0 +1,134 @@
+.container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  position: relative;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toggle:hover {
+  border-color: var(--ink-faint);
+  color: var(--ink);
+}
+
+.toggle.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.label {
+  font-weight: 500;
+}
+
+.customButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.customButton:hover {
+  border-color: var(--ink-faint);
+}
+
+.customButton.expanded {
+  border-color: var(--ink-faint);
+  background: var(--paper);
+}
+
+.periodLabel {
+  font-variant-numeric: tabular-nums;
+}
+
+.chevron {
+  transition: transform 0.15s ease;
+}
+
+.expanded .chevron {
+  transform: rotate(180deg);
+}
+
+.customPanel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: var(--space-2);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  z-index: 50;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  min-width: 240px;
+}
+
+.customHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+.clearCustom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.clearCustom:hover {
+  background: var(--surface);
+  color: var(--ink-muted);
+}
+
+.customDates {
+  display: flex;
+  gap: var(--space-2);
+}
+
+@media (max-width: 768px) {
+  .label {
+    display: none;
+  }
+
+  .customPanel {
+    right: 0;
+    left: auto;
+  }
+
+  .customDates {
+    flex-direction: column;
+  }
+}
