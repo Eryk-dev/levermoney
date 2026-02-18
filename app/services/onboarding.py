@@ -65,13 +65,15 @@ async def approve_seller(seller_id: str, config: dict) -> dict:
             "active": True,
         }, on_conflict="empresa").execute()
 
-        # Create 12 goals with valor=0 for current year
+        # Create 12 goals with valor=0 for current year (only if not already set)
         year = datetime.now().year
         goals = [
             {"empresa": empresa, "grupo": grupo, "year": year, "month": m, "valor": 0}
             for m in range(1, 13)
         ]
-        db.table("goals").upsert(goals, on_conflict="empresa,year,month").execute()
+        db.table("goals").upsert(
+            goals, on_conflict="empresa,year,month", ignore_duplicates=True
+        ).execute()
 
     # Auto-activate if seller already has ML tokens from install flow
     if seller.get("ml_access_token"):
