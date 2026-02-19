@@ -69,9 +69,10 @@ class FaturamentoSyncer:
                 data = await fetch_paid_orders(slug, date_str)
 
                 if data["valor"] > 0:
-                    ok = self._upsert_faturamento(empresa, date_str, data["valor"])
+                    ok, upsert_error = await self._upsert_faturamento(empresa, date_str, data["valor"])
                     status = "synced" if ok else "upsert_error"
                 else:
+                    upsert_error = None
                     status = "no_sales"
 
                 result = {
@@ -82,6 +83,9 @@ class FaturamentoSyncer:
                     "fraud_skipped": data["fraud_skipped"],
                     "status": status,
                 }
+                if upsert_error:
+                    # Keep payload small for admin API response.
+                    result["error"] = str(upsert_error)[:400]
                 results.append(result)
                 logger.info("[%s] %s: R$ %.2f (%d orders)", slug, status, data["valor"], data["order_count"])
 
@@ -94,15 +98,67 @@ class FaturamentoSyncer:
         logger.info("Faturamento sync complete: %d sellers", len(results))
         return results
 
-    def _upsert_faturamento(self, empresa: str, date_str: str, valor: float) -> bool:
-        """Upsert to faturamento table using Supabase SDK."""
-        try:
-            db = get_db()
-            db.table("faturamento").upsert(
-                {"empresa": empresa, "data": date_str, "valor": valor, "source": "sync", "updated_at": datetime.now(BRT).isoformat()},
-                on_conflict="empresa,data",
-            ).execute()
-            return True
-        except Exception as e:
-            logger.error("Supabase upsert failed %s/%s: %s", empresa, date_str, e)
-            return False
+    async def _upsert_faturamento(self, empresa: str, date_str: str, valor: float) -> tuple[bool, str | None]:
+        """Upsert to faturamento with retries and fallback update/insert.
+
+        This avoids hard-failing the whole sync on transient PostgREST/network
+        issues and handles environments where on_conflict may intermittently fail.
+        """
+        db = get_db()
+        payload = {
+            "empresa": empresa,
+            "data": date_str,
+            "valor": valor,
+            "source": "sync",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        last_error: str | None = None
+
+        for attempt in range(1, 4):
+            try:
+                db.table("faturamento").upsert(
+                    payload,
+                    on_conflict="empresa,data",
+                ).execute()
+                return True, None
+            except Exception as e:
+                last_error = str(e)
+                logger.warning(
+                    "Faturamento upsert attempt %d failed for %s/%s: %s",
+                    attempt,
+                    empresa,
+                    date_str,
+                    e,
+                )
+
+                # Fallback path: explicit update-or-insert without ON CONFLICT.
+                try:
+                    existing = (
+                        db.table("faturamento")
+                        .select("id")
+                        .eq("empresa", empresa)
+                        .eq("data", date_str)
+                        .limit(1)
+                        .execute()
+                    )
+                    if existing.data:
+                        row_id = existing.data[0]["id"]
+                        db.table("faturamento").update(payload).eq("id", row_id).execute()
+                    else:
+                        db.table("faturamento").insert(payload).execute()
+                    return True, None
+                except Exception as fallback_exc:
+                    last_error = f"{e} | fallback={fallback_exc}"
+                    logger.warning(
+                        "Faturamento fallback attempt %d failed for %s/%s: %s",
+                        attempt,
+                        empresa,
+                        date_str,
+                        fallback_exc,
+                    )
+
+                if attempt < 3:
+                    await asyncio.sleep(0.7 * attempt)
+
+        logger.error("Supabase upsert failed %s/%s after retries: %s", empresa, date_str, last_error)
+        return False, last_error
