@@ -188,18 +188,44 @@ async def _run_nightly_pipeline():
 
     logger.info("NightlyPipeline: start target_day=%s", target_day)
 
+    # 1. Sync payments
     try:
         sync_results = await sync_all_sellers()
         logger.info("NightlyPipeline: sync_all_sellers done (sellers=%s)", len(sync_results))
     except Exception as e:
         logger.error("NightlyPipeline: sync_all_sellers failed: %s", e, exc_info=True)
 
+    # 2. Validate release report fees (adjustments for hidden charges)
+    try:
+        from app.services.release_report_validator import validate_release_fees_all_sellers
+        validation_results = await validate_release_fees_all_sellers()
+        total_adj = sum(r.get("adjustments_created", 0) for r in validation_results)
+        logger.info("NightlyPipeline: fee validation done (adjustments=%s)", total_adj)
+    except Exception as e:
+        logger.error("NightlyPipeline: fee validation failed: %s", e, exc_info=True)
+
+    # 3. Ingest account_statement lines (fills gaps not covered by Payments API)
+    try:
+        from app.services.extrato_ingester import ingest_extrato_all_sellers
+        lookback_days = 3
+        ingestion_results = await ingest_extrato_all_sellers(lookback_days=lookback_days)
+        total_ingested = sum(r.get("newly_ingested", 0) for r in ingestion_results)
+        logger.info(
+            "NightlyPipeline: extrato ingestion complete (%d sellers, %d new lines)",
+            len(ingestion_results),
+            total_ingested,
+        )
+    except Exception as e:
+        logger.error("NightlyPipeline: extrato ingestion failed: %s", e, exc_info=True)
+
+    # 4. Baixas
     try:
         await _run_baixas_all_sellers()
         logger.info("NightlyPipeline: baixas done")
     except Exception as e:
         logger.error("NightlyPipeline: baixas failed: %s", e, exc_info=True)
 
+    # 5. Legacy export (specific weekdays)
     if now_brt.weekday() in legacy_weekdays:
         try:
             legacy_results = await run_legacy_daily_for_all(target_day=target_day, upload=True)
@@ -213,6 +239,20 @@ async def _run_nightly_pipeline():
             sorted(legacy_weekdays),
         )
 
+    # 6. Extrato coverage check
+    try:
+        from app.services.extrato_coverage_checker import check_extrato_coverage_all_sellers
+        coverage_results = await check_extrato_coverage_all_sellers()
+        for r in coverage_results:
+            if r.get("uncovered", 0) > 0:
+                logger.warning(
+                    "NightlyPipeline: %s has %d uncovered extrato lines (%.1f%% coverage)",
+                    r.get("seller"), r["uncovered"], r.get("coverage_pct", 0),
+                )
+    except Exception as e:
+        logger.error("NightlyPipeline: coverage check failed: %s", e, exc_info=True)
+
+    # 7. Financial closing
     await _run_financial_closing()
     logger.info("NightlyPipeline: finished target_day=%s", target_day)
 

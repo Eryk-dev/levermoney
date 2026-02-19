@@ -80,6 +80,14 @@ async def approve_seller(seller_id: str, config: dict) -> dict:
         await activate_seller(seller["slug"])
         logger.info("Seller auto-activated: %s (had ML tokens)", seller_id)
 
+        # Auto-configure release report with fee breakdown columns
+        try:
+            from app.services.ml_api import configure_release_report
+            await configure_release_report(seller["slug"])
+            logger.info("Release report configured for %s", seller["slug"])
+        except Exception as e:
+            logger.warning("Failed to configure release report for %s: %s", seller["slug"], e)
+
     logger.info("Seller approved: %s -> empresa=%s", seller_id, empresa)
     return seller
 

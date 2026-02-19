@@ -1,6 +1,7 @@
-# API Conciliador V2 - Lever Money
+# API Conciliador V2/V3 - Lever Money
 
 > **Leia este documento ANTES de qualquer alteracao.** Ele substitui a necessidade de ler cada arquivo individualmente.
+> Para documentacao completa de endpoints (request/response examples, status codes), consulte `API_DOCUMENTATION.md`.
 
 ---
 
@@ -19,23 +20,35 @@ Sistema de conciliacao automatica entre **Mercado Livre / Mercado Pago** e **Con
 
 **Mecanismo de ingestao:** Daily sync automatico as 00:01 BRT (D-1 a D-3). Webhooks continuam recebendo e logando, mas NAO processam payments (daily sync cuida de tudo).
 
-Tambem inclui: dashboard de faturamento (React SPA), sync periodico de faturamento, onboarding self-service de sellers, e painel admin.
+**Funcionalidades adicionais:**
+- Dashboard de faturamento (React SPA)
+- Sync periodico de faturamento
+- Onboarding self-service de sellers
+- Painel admin
+- Financial closing (fechamento financeiro diario)
+- Legacy daily export (ZIP com PAGAMENTO_CONTAS e TRANSFERENCIAS)
+- Nightly pipeline (orquestracao sequencial de todos os processos)
 
 ---
 
 ## 2. Stack e Infra
 
-| Camada | Tecnologia |
-|--------|------------|
-| API | FastAPI 0.115.6 (Python 3.12) |
-| HTTP Client | httpx 0.28.1 |
-| DB | Supabase (PostgreSQL) via supabase-py 2.11.0 |
-| Auth CA | OAuth2 / Cognito (token rotation) |
-| Auth ML | OAuth2 / Mercado Pago |
-| Settings | pydantic-settings 2.7.1 (.env) |
-| Dashboard | React 19 + Vite + TypeScript (SPA separada) |
-| Deploy | Docker multi-stage (Python + Nginx) |
-| Dominio | conciliador.levermoney.com.br |
+| Camada | Tecnologia | Versao |
+|--------|------------|--------|
+| API | FastAPI | 0.115.6 |
+| Python | Python | 3.12 |
+| HTTP Client | httpx | 0.28.1 |
+| DB | Supabase (PostgreSQL) | via supabase-py 2.11.0 |
+| Auth CA | OAuth2 / Cognito (token rotation) | - |
+| Auth ML | OAuth2 / Mercado Pago | - |
+| Settings | pydantic-settings | 2.7.1 |
+| Planilhas | openpyxl | 3.1.5 |
+| Criptografia | bcrypt | 4.2.1 |
+| Data Processing | pandas 2.2.3 + numpy 2.1.3 | - |
+| Google Drive | google-api-python-client 2.167.0 | - |
+| Dashboard | React 19 + Vite + TypeScript (SPA separada) | - |
+| Deploy | Docker multi-stage (Python + Nginx) | - |
+| Dominio | conciliador.levermoney.com.br | - |
 
 ---
 
@@ -61,29 +74,47 @@ cd dashboard && npm run build
 
 ## 4. Variaveis de Ambiente (.env)
 
+### Obrigatorias
+
 ```
 ML_APP_ID=             # App ID do Mercado Livre
 ML_SECRET_KEY=         # Secret key do app ML
 ML_REDIRECT_URI=       # https://dominio/auth/ml/callback
-
-CA_ACCESS_TOKEN=       # (bootstrap) Token Conta Azul
-CA_REFRESH_TOKEN=      # (bootstrap) Refresh token CA
 CA_CLIENT_ID=          # Cognito Client ID
 CA_CLIENT_SECRET=      # Cognito Client Secret
-
 SUPABASE_URL=          # https://xxx.supabase.co
 SUPABASE_KEY=          # Service role key
-
-BASE_URL=              # https://dominio (para OAuth callbacks)
-CORS_ORIGINS=          # Origens CORS (comma-separated)
-SYNC_INTERVAL_MINUTES= # Intervalo sync faturamento (default: 5)
-DAILY_SYNC_NON_ORDER_MODE= # classifier (default) | legacy
-LEGACY_DAILY_ENABLED=  # true/false (scheduler de export legado)
-LEGACY_DAILY_HOUR_BRT= # hora BRT (default: 6)
-LEGACY_DAILY_MINUTE_BRT= # minuto BRT (default: 15)
-LEGACY_DAILY_UPLOAD_URL= # endpoint para receber ZIP legado (multipart)
-LEGACY_DAILY_UPLOAD_TOKEN= # bearer token opcional do upload
 ```
+
+### Opcionais
+
+| Variavel | Default | Descricao |
+|----------|---------|-----------|
+| `CA_ACCESS_TOKEN` | `""` | Token CA bootstrap |
+| `CA_REFRESH_TOKEN` | `""` | Refresh token CA bootstrap |
+| `BASE_URL` | `http://localhost:8000` | URL base para OAuth callbacks |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Origens CORS (comma-separated) |
+| `SYNC_INTERVAL_MINUTES` | `5` | Intervalo sync faturamento |
+| `DAILY_SYNC_NON_ORDER_MODE` | `classifier` | `classifier` ou `legacy` |
+| `SELLER_ALLOWLIST` | `""` | Slugs permitidos (comma-separated, vazio = todos) |
+| `EXPENSES_API_ENABLED` | `true` | Habilita router /expenses |
+| `NIGHTLY_PIPELINE_ENABLED` | `false` | Habilita pipeline noturno unificado |
+| `NIGHTLY_PIPELINE_HOUR_BRT` | `0` | Hora BRT do pipeline noturno |
+| `NIGHTLY_PIPELINE_MINUTE_BRT` | `1` | Minuto BRT do pipeline noturno |
+| `NIGHTLY_PIPELINE_LEGACY_WEEKDAYS` | `0,3` | Dias da semana para legacy export (0=Seg) |
+| `LEGACY_DAILY_ENABLED` | `false` | Habilita scheduler legado |
+| `LEGACY_DAILY_HOUR_BRT` | `6` | Hora BRT do export legado |
+| `LEGACY_DAILY_MINUTE_BRT` | `15` | Minuto BRT do export legado |
+| `LEGACY_DAILY_UPLOAD_MODE` | `http` | Modo de upload (`http` ou `gdrive`) |
+| `LEGACY_DAILY_UPLOAD_URL` | `""` | URL para upload do ZIP legado |
+| `LEGACY_DAILY_UPLOAD_TOKEN` | `""` | Bearer token para upload |
+| `LEGACY_DAILY_UPLOAD_TIMEOUT_SECONDS` | `120` | Timeout do upload HTTP |
+| `LEGACY_DAILY_REPORT_WAIT_SECONDS` | `300` | Tempo de espera por report ML |
+| `LEGACY_DAILY_DEFAULT_CENTRO_CUSTO` | `NETAIR` | Centro de custo padrao |
+| `LEGACY_DAILY_GOOGLE_DRIVE_ROOT_FOLDER_ID` | `""` | Pasta raiz do Google Drive |
+| `LEGACY_DAILY_GOOGLE_DRIVE_ID` | `""` | Shared Drive ID (opcional) |
+| `LEGACY_DAILY_GOOGLE_SERVICE_ACCOUNT_JSON` | `""` | JSON da service account |
+| `LEGACY_DAILY_GOOGLE_SERVICE_ACCOUNT_FILE` | `""` | Caminho para arquivo da service account |
 
 ---
 
@@ -92,44 +123,54 @@ LEGACY_DAILY_UPLOAD_TOKEN= # bearer token opcional do upload
 ```
 lever money/
 ├── app/
-│   ├── main.py              # FastAPI app, lifespan, routers, SPA serve
-│   ├── config.py             # Pydantic Settings (env vars)
+│   ├── main.py                  # FastAPI app, lifespan, routers, SPA serve
+│   ├── config.py                # Pydantic Settings (env vars)
 │   ├── db/
-│   │   └── supabase.py       # Singleton Supabase client
+│   │   └── supabase.py          # Singleton Supabase client
 │   ├── models/
-│   │   └── sellers.py        # CA categories, seller queries
+│   │   └── sellers.py           # CA categories, seller queries
 │   ├── routers/
-│   │   ├── webhooks.py       # POST /webhooks/ml (receiver ML/MP, log only)
-│   │   ├── backfill.py       # GET /backfill/{seller} (retroativo manual)
-│   │   ├── baixas.py         # GET /baixas/processar/{seller}
-│   │   ├── auth_ml.py        # OAuth ML (connect/callback/install)
-│   │   ├── auth_ca.py        # OAuth CA (connect/callback/status)
-│   │   ├── admin.py          # Admin CRUD (sellers, goals, sync)
-│   │   ├── dashboard_api.py  # Dashboard read API (public)
-│   │   ├── expenses.py       # MP expenses: list, export XLSX, stats
-│   │   ├── queue.py          # Queue monitoring (status/dead/retry)
-│   │   └── health.py         # Health check + debug endpoints
+│   │   ├── webhooks.py          # POST /webhooks/ml (receiver ML/MP, log only)
+│   │   ├── backfill.py          # GET /backfill/{seller} (retroativo manual)
+│   │   ├── baixas.py            # GET /baixas/processar/{seller}
+│   │   ├── auth_ml.py           # OAuth ML (connect/callback/install)
+│   │   ├── auth_ca.py           # OAuth CA (connect/callback/status)
+│   │   ├── admin.py             # Admin CRUD (sellers, goals, sync, closing)
+│   │   ├── dashboard_api.py     # Dashboard read API (publico)
+│   │   ├── expenses.py          # MP expenses: list, export XLSX, stats, batches
+│   │   ├── queue.py             # Queue monitoring + reconciliation
+│   │   └── health.py            # Health check + debug endpoints
 │   ├── services/
-│   │   ├── processor.py      # CORE: ML payment → CA events
-│   │   ├── ca_api.py         # CA HTTP client (retry, rate limit, token rotation)
-│   │   ├── ml_api.py         # ML/MP HTTP client (per-seller tokens)
-│   │   ├── ca_queue.py       # Persistent job queue + CaWorker
+│   │   ├── processor.py         # CORE: ML payment → CA events
+│   │   ├── ca_api.py            # CA HTTP client (retry, rate limit, token rotation)
+│   │   ├── ml_api.py            # ML/MP HTTP client (per-seller tokens)
+│   │   ├── ca_queue.py          # Persistent job queue + CaWorker
 │   │   ├── daily_sync.py        # Daily sync: backfill D-1..D-3 + classify non-orders
 │   │   ├── expense_classifier.py # Classify non-order payments → mp_expenses
+│   │   ├── financial_closing.py # Fechamento financeiro diario (auto + manual lanes)
 │   │   ├── faturamento_sync.py  # Polling ML orders → faturamento table
 │   │   ├── release_checker.py   # Verifica money_release_status antes de baixas
 │   │   ├── rate_limiter.py      # Token bucket (9 req/s, 540 req/min)
-│   │   └── onboarding.py       # Seller signup → approve → activate
+│   │   ├── onboarding.py        # Seller signup → approve → activate
+│   │   ├── onboarding_backfill.py # Backfill de ativacao (dashboard_ca)
+│   │   ├── legacy_daily_export.py # Export legado diario (release_report → ZIP → upload)
+│   │   ├── legacy_bridge.py     # Bridge para formato legado (CSV → XLSX)
+│   │   ├── legacy_engine.py     # Motor de reconciliacao legado (processar_conciliacao)
+│   │   ├── release_report_sync.py # Sync release report → mp_expenses
+│   │   ├── release_report_validator.py # Valida fees do processor vs release report
+│   │   ├── extrato_ingester.py  # Ingesta lacunas do account_statement em mp_expenses
+│   │   └── extrato_coverage_checker.py # Verifica 100% cobertura do extrato
 │   └── static/
-│       └── install.html      # Landing page self-service install
-├── dashboard/                # React SPA (tem seu proprio CLAUDE.md)
-├── PLANO.md                  # Plano do projeto v1.8
-├── FLUXO-DETALHADO.md        # Fluxo detalhado v3.3
-├── REFERENCIA-APIs-ML-MP.md  # Referencia APIs ML/MP
-├── Dockerfile                # Multi-stage: dashboard build + Python API
-├── docker-compose.yml        # Services: api (8000) + dashboard (3000)
-├── requirements.txt          # Deps Python
-└── .env                      # Segredos (NAO commitar)
+│       └── install.html         # Landing page self-service install
+├── dashboard/                   # React SPA (tem seu proprio CLAUDE.md)
+├── API_DOCUMENTATION.md         # Documentacao completa da API (endpoints detalhados)
+├── PLANO.md                     # Plano do projeto v1.8
+├── FLUXO-DETALHADO.md           # Fluxo detalhado v3.3
+├── REFERENCIA-APIs-ML-MP.md     # Referencia APIs ML/MP
+├── Dockerfile                   # Multi-stage: dashboard build + Python API
+├── docker-compose.yml           # Services: api (8000) + dashboard (3000)
+├── requirements.txt             # Deps Python
+└── .env                         # Segredos (NAO commitar)
 ```
 
 ---
@@ -146,7 +187,11 @@ ml_user_id, ml_access_token, ml_refresh_token, ml_token_expires_at,
 ml_app_id, ml_secret_key,
 ca_conta_bancaria, ca_centro_custo_variavel, ca_contato_ml,
 dashboard_empresa, dashboard_grupo, dashboard_segmento,
-source, approved_at, created_at
+source,
+integration_mode (dashboard_only|dashboard_ca), ca_start_date,
+ca_backfill_status (pending|running|completed|failed|null),
+ca_backfill_started_at, ca_backfill_completed_at, ca_backfill_progress (jsonb),
+approved_at, created_at
 ```
 
 ### payments
@@ -155,7 +200,9 @@ Registro de cada payment processado (idempotencia + audit trail).
 id (PK), seller_slug, ml_payment_id (unique per seller), ml_status,
 amount, net_amount, money_release_date, ml_order_id,
 status (pending|queued|synced|refunded|skipped|skipped_non_sale),
-raw_payment (jsonb), error, ca_evento_id, created_at, updated_at
+raw_payment (jsonb), error, ca_evento_id,
+processor_fee (numeric), processor_shipping (numeric), fee_adjusted (bool),
+created_at, updated_at
 ```
 
 ### ca_jobs
@@ -223,16 +270,36 @@ id (1), password_hash (bcrypt)
 ### mp_expenses
 Classificacao de pagamentos non-order (boletos, SaaS, cashback, transferencias).
 ```
-id (PK bigserial), seller_slug (FK sellers), payment_id,
-expense_type (bill_payment|subscription|darf|cashback|collection|transfer_pix|transfer_intra|deposit|other),
+id (PK bigserial), seller_slug (FK sellers), payment_id (text; id numerico ou chave composta "id:tipo"),
+expense_type (bill_payment|subscription|darf|cashback|collection|transfer_pix|transfer_intra|deposit|savings_pot|other|difal|faturas_ml|reembolso_disputa|dinheiro_retido|entrada_dinheiro|debito_envio_ml|liberacao_cancelada|reembolso_generico|deposito_avulso|debito_divida_disputa|debito_troca|bonus_envio),
 expense_direction (expense|income|transfer),
 ca_category, auto_categorized (bool),
 amount, description, business_branch, operation_type, payment_method,
 external_reference, febraban_code,
-date_created, date_approved, beneficiary_name, notes,
+date_created, date_approved, beneficiary_name, notes, source (payments_api|extrato),
 status (pending_review|auto_categorized|manually_categorized|exported),
 exported_at, raw_payment (jsonb), created_at, updated_at
 UNIQUE(seller_slug, payment_id)
+```
+
+### release_report_fees
+Dados parseados do release report para audit trail e reconciliacao de fees.
+```
+id (PK bigserial), seller_slug (FK sellers), source_id, release_date (date),
+description, record_type, gross_amount, mp_fee_amount, financing_fee_amount,
+shipping_fee_amount, taxes_amount, coupon_amount, net_credit_amount, net_debit_amount,
+external_reference, order_id, payment_method, created_at
+UNIQUE(seller_slug, source_id, release_date, description)
+
+Indexes:
+  idx_rrf_seller_source: (seller_slug, source_id)
+  idx_rrf_seller_date: (seller_slug, release_date)
+```
+
+### sync_state
+Cursor de sincronizacao persistente do daily sync e legacy export.
+```
+seller_slug, key, state (jsonb), updated_at
 ```
 
 ---
@@ -243,6 +310,7 @@ UNIQUE(seller_slug, payment_id)
 Daily Sync (00:01 BRT, D-1 a D-3) ou Backfill manual
     │
     ├─ search_payments() pagina todos payments do periodo
+    │   (busca por date_approved + date_last_updated, deduplica por payment_id)
     ├─ Filtra already_done (payments + mp_expenses)
     └─ Para cada payment:
            │
@@ -256,9 +324,11 @@ Daily Sync (00:01 BRT, D-1 a D-3) ou Backfill manual
            │       ├─ Extrai taxas de charges_details (source of truth)
            │       ├─ comissao = soma fee (from=collector, exclui financing_fee)
            │       ├─ frete_seller = max(0, soma shipping from=collector - shipping_amount)
+           │       ├─ Persiste processor_fee/processor_shipping em payments
            │       ├─ Enqueue: receita (contas-a-receber)
            │       ├─ Enqueue: comissao (contas-a-pagar) se > 0
-           │       └─ Enqueue: frete (contas-a-pagar) se > 0
+           │       ├─ Enqueue: frete (contas-a-pagar) se > 0
+           │       └─ Se net_real > net_calculado: Enqueue receita de subsidio (1.3.7)
            │
            ├─ status = "charged_back" + status_detail = "reimbursed"
            │   └─ Trata como approved (ML cobriu o chargeback)
@@ -299,6 +369,26 @@ Scheduler → para cada seller ativo:
     └─ Enqueue baixa para cada parcela liberada
 ```
 
+### Financial Closing (11:30 BRT)
+```
+Para cada seller ativo:
+    ├─ Auto lane: verifica payments + ca_jobs (synced, queued, dead)
+    ├─ Manual lane: verifica mp_expenses + expense_batches (exported, imported)
+    └─ Gera relatorio por dia/seller (closed = auto ok + manual ok)
+```
+
+### Nightly Pipeline (quando habilitado)
+```
+Substitui schedulers individuais. Execucao sequencial:
+    1. sync_all_sellers() → Daily sync de payments
+    2. validate_release_fees_all_sellers() → Valida fees vs release report, cria ajustes CA
+    3. ingest_extrato_all_sellers() → Ingesta lacunas do account_statement
+    4. _run_baixas_all_sellers() → Baixas
+    5. run_legacy_daily_for_all() → Legacy export (dias configurados)
+    6. check_extrato_coverage_all_sellers() → Verifica 100% cobertura do extrato
+    7. _run_financial_closing() → Fechamento financeiro (inclui coverage data)
+```
+
 ---
 
 ## 8. Code Map — Assinaturas de Todas as Funcoes
@@ -309,6 +399,9 @@ Scheduler → para cada seller ativo:
 def _to_brt_date(iso_str: str) -> str:
     """Converte ISO datetime ML (UTC-4) → BRT date (YYYY-MM-DD).
     Late-night sales cross midnight: 23:45 UTC-4 = 00:45 BRT → dia seguinte."""
+
+def _extract_processor_charges(payment: dict) -> tuple[float, float, str | None, float, float]:
+    """Extrai fee/frete de charges_details e reconcilia net calculado vs net real."""
 
 def _build_parcela(descricao, data_vencimento, conta_financeira, valor, nota="") -> dict:
     """Monta parcela CA v2. Inclui detalhe_valor com valor_bruto e valor_liquido."""
@@ -327,7 +420,7 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
     payment_data: if provided, skips API fetch (used by daily_sync)."""
 
 async def _process_approved(db, seller, payment, existing):
-    """EVENTO 1: Venda aprovada. Cria receita + comissao + frete na fila CA."""
+    """EVENTO 1: Venda aprovada. Cria receita + comissao + frete + subsidio (se houver)."""
 
 async def _process_partial_refund(db, seller, payment):
     """Refund parcial (status_detail='partially_refunded'). Estornos proporcionais."""
@@ -335,7 +428,8 @@ async def _process_partial_refund(db, seller, payment):
 async def _process_refunded(db, seller, payment, existing):
     """EVENTO 4: Devolucao total. Cria receita original se necessario + estornos."""
 
-def _upsert_payment(db, seller_slug, payment, status, error=None, ca_evento_id=None):
+def _upsert_payment(db, seller_slug, payment, status, error=None, ca_evento_id=None,
+                    processor_fee=None, processor_shipping=None):
     """Insere ou atualiza payment no Supabase (idempotencia)."""
 ```
 
@@ -395,8 +489,8 @@ async def get_order(seller_slug, order_id) -> dict:
 async def get_shipment_costs(seller_slug, shipment_id) -> dict:
     """GET /shipments/{id}/costs"""
 
-async def search_payments(seller_slug, begin_date, end_date, offset, limit) -> dict:
-    """GET /v1/payments/search — busca por periodo"""
+async def search_payments(seller_slug, begin_date, end_date, offset=0, limit=50, range_field="date_approved") -> dict:
+    """GET /v1/payments/search — busca por periodo (date_approved/date_last_updated/money_release_date)."""
 
 async def fetch_user_info(access_token) -> dict:
     """GET /users/me — perfil ML"""
@@ -406,6 +500,12 @@ async def exchange_code(code) -> dict:
 
 async def fetch_paid_orders(seller_slug, date_str) -> dict:
     """Busca orders pagos no dia → {valor, order_count, fraud_skipped}"""
+
+async def get_release_report_config(seller_slug) -> dict:
+    """GET /v1/account/release_report/config"""
+
+async def configure_release_report(seller_slug) -> dict:
+    """PUT /v1/account/release_report/config - configura colunas com fee breakdown."""
 ```
 
 ### app/services/ca_queue.py — Fila Persistente + Worker
@@ -434,6 +534,183 @@ class CaWorker:
     async def _check_group_completion(group_id)  # Marca payment synced quando grupo completa
 ```
 
+### app/services/daily_sync.py — Daily Sync
+
+```python
+async def _daily_sync_scheduler():
+    """Async loop, roda as 00:01 BRT. Covers D-1 to D-3."""
+
+async def sync_all_sellers(lookback_days=3) -> list[dict]:
+    """Sync todos os sellers ativos. Retorna lista de resultados."""
+
+async def sync_seller_payments(seller_slug, begin_date, end_date) -> dict:
+    """Sync payments de um seller. Busca por date_approved + date_last_updated.
+    Orders → processor, non-orders → classifier.
+    Retorna {orders_processed, expenses_classified, skipped, errors}."""
+
+def _compute_sync_window(cursor, lookback_days, seller_slug) -> tuple:
+    """Calcula janela de sync baseada no cursor persistido."""
+
+def _load_sync_cursor(db, seller_slug) -> dict | None:
+    """Carrega cursor de sync do sync_state."""
+
+def _persist_sync_cursor(db, seller_slug, cursor_data):
+    """Persiste cursor de sync no sync_state."""
+```
+
+### app/services/expense_classifier.py — Classificador Non-Order
+
+```python
+AUTO_RULES = [...]  # Lista extensivel de regras de auto-categorizacao
+
+def _extract_branch(payment) -> str:
+    """Extrai point_of_interaction.business_info.branch."""
+
+def _extract_unit(payment) -> str:
+    """Extrai point_of_interaction.business_info.unit."""
+
+def _extract_febraban(payment) -> str | None:
+    """Extrai codigo Febraban dos references."""
+
+def _match_rule(rule, payment, branch) -> bool:
+    """Testa se uma auto-rule faz match."""
+
+def _classify(payment) -> tuple[expense_type, direction, category, auto, description]:
+    """Arvore de decisao: partition→skip, cashback→income, bill→expense, etc."""
+
+async def classify_non_order_payment(db, seller_slug, payment) -> dict | None:
+    """Classifica e salva em mp_expenses. Retorna None se skip (partition/addition)."""
+```
+
+### app/services/financial_closing.py — Fechamento Financeiro
+
+```python
+async def compute_seller_financial_closing(seller_slug, date_from, date_to) -> dict:
+    """Computa fechamento financeiro de um seller (auto + manual lanes)."""
+
+async def run_financial_closing_for_all(date_from, date_to) -> list[dict]:
+    """Roda fechamento para todos os sellers ativos."""
+
+def get_last_financial_closing() -> dict:
+    """Retorna resultado do ultimo fechamento."""
+
+def _compute_auto_lane(db, seller_slug, date_from, date_to) -> dict:
+    """Lane automatica: payments + ca_jobs status."""
+
+def _compute_manual_lane(db, seller_slug, date_from, date_to) -> dict:
+    """Lane manual: mp_expenses + expense_batches status."""
+```
+
+### app/services/legacy_daily_export.py — Export Legado
+
+```python
+async def run_legacy_daily_for_seller(seller_slug, target_day, upload) -> dict:
+    """Baixa account_statement, roda reconciliacao legada, gera ZIP, faz upload."""
+
+async def run_legacy_daily_for_all(target_day, upload) -> list[dict]:
+    """Roda export legado para todos os sellers ativos."""
+
+def get_legacy_daily_status(seller_slug=None) -> dict:
+    """Retorna status dos ultimos exports legados."""
+
+async def _legacy_daily_scheduler():
+    """Scheduler do export legado. Hora configuravel via env."""
+```
+
+### app/services/legacy_bridge.py — Bridge Legado
+
+```python
+async def run_legacy_reconciliation(extrato, dinheiro, vendas, pos_venda, liberacoes, centro_custo) -> dict:
+    """Roda reconciliacao usando motor legado. Retorna resultado + erros."""
+
+def build_legacy_expenses_zip(resultado) -> tuple[io.BytesIO, dict]:
+    """Monta ZIP com PAGAMENTO_CONTAS.xlsx + TRANSFERENCIAS.xlsx a partir do resultado."""
+```
+
+### app/services/legacy_engine.py — Motor Legado
+
+```python
+def processar_conciliacao(arquivos, centro_custo="NETAIR") -> dict:
+    """Motor de reconciliacao legado completo. ~1500 linhas. Processa CSVs do ML/MP."""
+
+def gerar_xlsx_completo(rows, output_path) -> bool:
+    """Gera XLSX com formatacao para importar no CA."""
+
+def gerar_xlsx_resumo(rows, output_path) -> bool:
+    """Gera XLSX de resumo."""
+```
+
+### app/services/release_report_sync.py — Sync Release Report
+
+```python
+async def sync_release_report(seller_slug, begin_date, end_date) -> dict:
+    """Baixa release_report do ML e synca linhas para mp_expenses."""
+
+def _classify_payout(row, same_day_payouts) -> tuple[str, str, str]:
+    """Classifica linha de payout do release report."""
+
+def _classify_credit(row) -> tuple[str, str, str, str | None]:
+    """Classifica linha de credito do release report."""
+```
+
+### app/services/release_report_validator.py — Validacao de Fees
+
+```python
+async def validate_release_fees_for_seller(seller_slug, begin_date, end_date) -> dict:
+    """Compara processor_fee/shipping com MP_FEE/SHIPPING do release report.
+    Cria ajustes CA (contas-a-pagar) para diferencas."""
+
+async def validate_release_fees_all_sellers(lookback_days=3) -> list[dict]:
+    """Valida fees para todos os sellers ativos (D-1 a D-{lookback_days})."""
+
+def get_last_validation_result() -> dict:
+    """Retorna resultado da ultima validacao."""
+
+def _parse_release_report_with_fees(csv_bytes) -> list[dict]:
+    """Parse CSV do release report com colunas de fee breakdown."""
+```
+
+### app/services/extrato_ingester.py — Ingestao de Lacunas do Extrato
+
+```python
+async def ingest_extrato_for_seller(seller_slug, begin_date, end_date) -> dict:
+    """Ingere linhas do account_statement nao cobertas por payments/mp_expenses.
+    Upsert em mp_expenses com source="extrato" e payment_id composto."""
+
+async def ingest_extrato_all_sellers(lookback_days=3) -> list[dict]:
+    """Ingestao para todos os sellers ativos (D-1 a D-{lookback_days})."""
+
+def get_last_ingestion_result() -> dict:
+    """Retorna resultado da ultima ingestao."""
+```
+
+### app/services/extrato_coverage_checker.py — Cobertura do Extrato
+
+```python
+async def check_extrato_coverage(seller_slug, begin_date, end_date) -> dict:
+    """Verifica que TODAS as linhas do extrato sao cobertas por payments, mp_expenses ou legacy.
+    Retorna {total_lines, covered_by_api, covered_by_expenses, uncovered, coverage_pct}."""
+
+async def check_extrato_coverage_all_sellers(lookback_days=3) -> list[dict]:
+    """Coverage check para todos os sellers ativos."""
+
+def get_last_coverage_result() -> dict:
+    """Retorna resultado do ultimo coverage check."""
+```
+
+### app/services/onboarding_backfill.py — Backfill de Ativacao (Onboarding V2)
+
+```python
+async def run_onboarding_backfill(seller_slug: str) -> None:
+    """Backfill historico por money_release_date (ca_start_date -> ontem)."""
+
+async def retry_backfill(seller_slug: str) -> None:
+    """Re-dispara backfill com retomada idempotente."""
+
+def get_backfill_status(seller_slug: str) -> dict:
+    """Retorna ca_backfill_status/started/completed/progress."""
+```
+
 ### app/services/faturamento_sync.py — Sync Periodico
 
 ```python
@@ -457,38 +734,6 @@ class ReleaseChecker:
         """Bulk-load do Supabase (raw_payment cache)"""
     async def _recheck_ml_api(payment_ids) -> dict[int, str]:
         """Re-fetch do ML API para payments com release_date passada"""
-```
-
-### app/services/daily_sync.py — Daily Sync
-
-```python
-async def _daily_sync_scheduler():
-    """Async loop, roda as 00:01 BRT. Covers D-1 to D-3."""
-
-async def sync_all_sellers(lookback_days=3) -> list[dict]:
-    """Sync todos os sellers ativos. Retorna lista de resultados."""
-
-async def sync_seller_payments(seller_slug, begin_date, end_date) -> dict:
-    """Sync payments de um seller. Orders → processor, non-orders → classifier.
-    Retorna {orders_processed, expenses_classified, skipped, errors}."""
-```
-
-### app/services/expense_classifier.py — Classificador Non-Order
-
-```python
-AUTO_RULES = [...]  # Lista extensivel de regras de auto-categorizacao
-
-def _extract_branch(payment) -> str:
-    """Extrai point_of_interaction.business_info.branch."""
-
-def _extract_febraban(payment) -> str | None:
-    """Extrai codigo Febraban dos references."""
-
-def _classify(payment) -> tuple[expense_type, direction, category, auto, description]:
-    """Arvore de decisao: partition→skip, cashback→income, bill→expense, etc."""
-
-async def classify_non_order_payment(db, seller_slug, payment) -> dict | None:
-    """Classifica e salva em mp_expenses. Retorna None se skip (partition/addition)."""
 ```
 
 ### app/services/rate_limiter.py
@@ -537,6 +782,8 @@ def get_all_active_sellers(db) -> list[dict]
 
 ## 9. Rotas da API
 
+> Para documentacao completa com request/response bodies e exemplos, ver `API_DOCUMENTATION.md`.
+
 ### Webhooks
 | Metodo | Rota | Descricao |
 |--------|------|-----------|
@@ -545,12 +792,12 @@ def get_all_active_sellers(db) -> list[dict]
 ### Backfill
 | Metodo | Rota | Descricao |
 |--------|------|-----------|
-| GET | `/backfill/{seller}?begin_date=...&end_date=...&dry_run=true` | Backfill retroativo. dry_run=true lista, false processa |
+| GET | `/backfill/{seller}?begin_date=...&end_date=...&dry_run=true&max_process=0&concurrency=10&reprocess_missing_fees=true` | Backfill retroativo. dry_run=true lista, false processa |
 
 ### Baixas
 | Metodo | Rota | Descricao |
 |--------|------|-----------|
-| GET | `/baixas/processar/{seller}?dry_run=true&verify_release=true` | Baixas de parcelas vencidas. Verifica release no ML |
+| GET | `/baixas/processar/{seller}?dry_run=true&verify_release=true&data_ate=...&lookback_days=90` | Baixas de parcelas vencidas. Verifica release no ML |
 
 ### Auth ML
 | Metodo | Rota | Descricao |
@@ -576,12 +823,34 @@ def get_all_active_sellers(db) -> list[dict]
 | POST | `/admin/sellers/{id}/reject` | Rejeita seller |
 | PATCH | `/admin/sellers/{id}` | Atualiza seller |
 | GET/POST | `/admin/revenue-lines` | CRUD revenue lines |
+| PATCH | `/admin/revenue-lines/{empresa}` | Atualiza revenue line |
+| DELETE | `/admin/revenue-lines/{empresa}` | Desativa revenue line (soft delete) |
 | GET | `/admin/goals?year=2026` | Lista metas |
 | POST | `/admin/goals/bulk` | Upsert metas em lote |
 | POST | `/admin/sync/trigger` | Trigger sync faturamento |
 | GET | `/admin/sync/status` | Status ultimo sync |
-| POST | `/admin/legacy/daily/trigger` | Roda extracao/export legado diario (seller unico ou todos) |
-| GET | `/admin/legacy/daily/status` | Ultimos resultados do job legado (sync_state) |
+| POST | `/admin/closing/trigger?date_from=...&date_to=...` | Trigger financial closing |
+| GET | `/admin/closing/status` | Resultado do ultimo closing |
+| GET | `/admin/closing/seller/{seller}?date_from=...&date_to=...` | Closing detalhado por seller |
+| POST | `/admin/release-report/sync` | Sync release report → mp_expenses |
+| POST | `/admin/release-report/validate/{seller}?begin_date=...&end_date=...` | Validar fees vs release report |
+| POST | `/admin/release-report/validate-all?lookback_days=3` | Validar fees todos sellers |
+| GET | `/admin/release-report/validation-status` | Resultado da ultima validacao |
+| POST | `/admin/release-report/configure/{seller}` | Configurar colunas do release report |
+| GET | `/admin/release-report/config/{seller}` | Ver config do release report |
+| GET | `/admin/extrato/coverage/{seller}?date_from=...&date_to=...` | Coverage check do extrato |
+| POST | `/admin/extrato/coverage-all?lookback_days=3` | Coverage check todos sellers |
+| GET | `/admin/extrato/coverage-status` | Resultado do ultimo coverage check |
+| POST | `/admin/sellers/{slug}/activate` | Ativa seller (dashboard_only ou dashboard_ca) |
+| POST | `/admin/sellers/{slug}/upgrade-to-ca` | Migra seller para dashboard_ca + dispara backfill |
+| GET | `/admin/sellers/{slug}/backfill-status` | Status/progresso do onboarding backfill |
+| POST | `/admin/sellers/{slug}/backfill-retry` | Re-dispara onboarding backfill |
+| GET | `/admin/onboarding/install-link` | Link para install OAuth ML |
+| POST | `/admin/extrato/ingest/{seller}?begin_date=...&end_date=...` | Ingestao manual de lacunas do extrato |
+| POST | `/admin/extrato/ingest-all?lookback_days=3` | Ingestao de extrato para todos os sellers |
+| GET | `/admin/extrato/ingestion-status` | Resultado da ultima ingestao de extrato |
+| POST | `/admin/legacy/daily/trigger?seller_slug=...&target_day=...&upload=true` | Trigger export legado |
+| GET | `/admin/legacy/daily/status?seller_slug=...` | Status exports legados |
 | GET | `/admin/ca/contas-financeiras` | Lista contas CA |
 | GET | `/admin/ca/centros-custo` | Lista centros de custo CA |
 
@@ -600,14 +869,20 @@ def get_all_active_sellers(db) -> list[dict]
 | GET | `/queue/dead` | Lista dead-letter jobs |
 | POST | `/queue/retry/{job_id}` | Retry manual de job dead |
 | POST | `/queue/retry-all-dead` | Retry todos dead jobs |
+| GET | `/queue/reconciliation/{seller}?date_from=...&date_to=...&sample_limit=200` | Reconciliacao operacional por seller |
 
 ### Expenses (requer X-Admin-Token header)
 | Metodo | Rota | Descricao |
 |--------|------|-----------|
-| GET | `/expenses/{seller}` | Lista mp_expenses com filtros (status, tipo, data) |
+| GET | `/expenses/{seller}?status=...&expense_type=...&direction=...&date_from=...&date_to=...` | Lista mp_expenses com filtros |
+| PATCH | `/expenses/review/{seller}/{expense_id}` | Revisao manual de despesa |
+| GET | `/expenses/{seller}/pending-summary?date_from=...&date_to=...` | Resumo pendentes por dia |
 | GET | `/expenses/{seller}/stats` | Contadores por tipo/status |
-| GET | `/expenses/{seller}/export` | ZIP com PAGAMENTO_CONTAS.xlsx + TRANSFERENCIAS.xlsx |
-| POST | `/expenses/{seller}/legacy-export` | Bridge legado (CSV/ZIP) para gerar PAGAMENTO_CONTAS/TRANSFERENCIAS no formato V1 |
+| GET | `/expenses/{seller}/export?date_from=...&date_to=...&mark_exported=false` | ZIP com XLSX por dia |
+| GET | `/expenses/{seller}/batches?status=...` | Lista lotes de exportacao |
+| POST | `/expenses/{seller}/batches/{batch_id}/confirm-import` | Confirma importacao de lote |
+| GET | `/expenses/{seller}/closing?date_from=...&date_to=...` | Status fechamento diario |
+| POST | `/expenses/{seller}/legacy-export` | Bridge legado (multipart: extrato + CSVs) |
 
 ### Health/Debug
 | Metodo | Rota | Descricao |
@@ -623,14 +898,16 @@ def get_all_active_sellers(db) -> list[dict]
 
 Iniciados no startup do FastAPI:
 
-| Task | Intervalo | Funcao |
-|------|-----------|--------|
-| **CaWorker** | Poll 1s | Processa fila ca_jobs → CA API |
-| **FaturamentoSyncer** | 5 min | Sync ML orders → tabela faturamento |
-| **Daily Sync Scheduler** | 1x/dia 00:01 BRT | Backfill D-1..D-3: orders → CA. Non-orders: `classifier` ou `legacy` (via env) |
-| **Daily Baixa Scheduler** | 1x/dia 10h BRT | Processa baixas de todos os sellers |
-| **Legacy Daily Export** | 1x/dia (config BRT) | Baixa account_statement (`release_report`/`bank_report`), monta ZIP legado e faz upload opcional |
-| **CA Token Refresh** | 30 min | Refresh proativo do token CA (manter rotation vivo) |
+| Task | Intervalo | Funcao | Ativacao |
+|------|-----------|--------|----------|
+| **CaWorker** | Poll 1s | Processa fila ca_jobs → CA API | Sempre |
+| **FaturamentoSyncer** | 5 min (config) | Sync ML orders → tabela faturamento | Sempre |
+| **CA Token Refresh** | 30 min | Refresh proativo do token CA | Sempre |
+| **Daily Sync Scheduler** | 1x/dia 00:01 BRT | Backfill D-1..D-3: orders → CA + non-orders → classifier | Quando `nightly_pipeline_enabled=false` |
+| **Daily Baixa Scheduler** | 1x/dia 10h BRT | Processa baixas de todos os sellers | Quando `nightly_pipeline_enabled=false` |
+| **Financial Closing Scheduler** | 1x/dia 11:30 BRT | Fechamento financeiro | Quando `nightly_pipeline_enabled=false` |
+| **Legacy Daily Export** | 1x/dia (config BRT) | Baixa account_statement, monta ZIP, upload | Quando `legacy_daily_enabled=true` e `nightly_pipeline_enabled=false` |
+| **Nightly Pipeline** | 1x/dia (config BRT) | Orquestracao sequencial: sync → fee validation → extrato ingestion → baixas → legacy → coverage check → closing | Quando `nightly_pipeline_enabled=true` |
 
 ---
 
@@ -644,6 +921,14 @@ liquido_calculado = amount - comissao_ml - frete_seller
 ```
 **NAO usar** `fee_details` (incompleto). **USAR** `charges_details` como fonte de verdade.
 `financing_fee` e net-neutral e deve ser excluido da comissao contabil.
+
+### 11.1b Subsidio ML (net > calculado)
+Quando `net_received_amount` for maior que `amount - fee - frete`, o diff vira
+receita de subsidio (`Subsídio ML - Payment {id}`, categoria 1.3.7).
+
+### 11.1c Backfill de Fees Faltantes
+`/backfill/{seller}` pode reprocessar payments ja finalizados quando
+`processor_fee`/`processor_shipping` estiverem nulos (`reprocess_missing_fees=true`).
 
 ### 11.2 financing_fee e NET-NEUTRAL
 `financing_fee` = `financing_transfer` (pass-through). **NAO** gera despesa no CA. Ja esta descontado do net.
@@ -777,22 +1062,39 @@ Bugs ja corrigidos — NAO reintroduzir:
 Payments sem `order_id` sao classificados pelo `expense_classifier.py`:
 
 **Arvore de decisao:**
-1. `operation_type == "partition_transfer"` → SKIP (nao salva)
-2. `operation_type == "payment_addition"` → SKIP (nao salva)
-3. `money_transfer` + `branch == "Cashback"` → RECEITA 1.3.4 (auto)
-4. `money_transfer` + `branch == "Intra MP"` → TRANSFER (transfer_intra)
-5. `money_transfer` + outro → TRANSFER (transfer_pix)
-6. `branch` contem "Bill Payment" → check DARF (auto 2.2.7) ou DESPESA manual
-7. `branch == "Virtual"` → check auto-rules (SaaS) ou default 2.6.1
-8. `branch` contem "Collections" → DESPESA 2.8.2 (auto)
-9. `payment_method == "pix"` sem branch → TRANSFER (deposit)
-10. Nenhum match → DESPESA (other)
+
+| Condicao | Tipo | Direcao | Categoria | Auto |
+|----------|------|---------|-----------|------|
+| `partition_transfer` + `am-to-pot` | `savings_pot` | transfer | - | Nao |
+| `partition_transfer` (outros) | SKIP | - | - | - |
+| `payment_addition` | SKIP | - | - | - |
+| `money_transfer` + Cashback | `cashback` | income | 1.3.4 | Sim |
+| `money_transfer` + Intra MP | `transfer_intra` | transfer | - | Nao |
+| `money_transfer` + outro | `transfer_pix` | transfer | - | Nao |
+| Bill Payment + DARF | `darf` | expense | 2.2.7 | Sim |
+| Bill Payment (outros) | `bill_payment` | expense | - | Nao |
+| Virtual + Claude/Anthropic | `subscription` | expense | 2.6.5 | Sim |
+| Virtual + Supabase | `subscription` | expense | 2.6.4 | Sim |
+| Virtual + Notion | `subscription` | expense | 2.6.1 | Sim |
+| Virtual (outros) | `subscription` | expense | 2.6.1 | Sim |
+| Collections | `collection` | expense | 2.8.2 | Sim |
+| PIX sem branch | `deposit` | transfer | - | Nao |
+| Nenhum match | `other` | expense | - | Nao |
 
 **Auto-rules extensiveis** em `AUTO_RULES` no topo de `expense_classifier.py`.
 
 ### 11.12 XLSX Export (Despesas MP)
 
-`GET /expenses/{seller}/export` retorna ZIP com 2 XLSX:
+`GET /expenses/{seller}/export` retorna ZIP com XLSX organizados por dia:
+
+```
+EMPRESA/
+├── 2026-02-15/
+│   ├── PAGAMENTO_CONTAS.xlsx    # expense + income
+│   └── TRANSFERENCIAS.xlsx       # transfer
+├── manifest.csv
+└── manifest_pagamentos.csv
+```
 
 **PAGAMENTO_CONTAS.xlsx:** boletos, DARF, SaaS, cobrancas, cashback (direction=expense|income)
 **TRANSFERENCIAS.xlsx:** PIX, transferencias intra MP (direction=transfer)
@@ -834,6 +1136,7 @@ Payments sem `order_id` sao classificados pelo `expense_classifier.py`:
 - **Stuck jobs**: recover automatico no startup (processing > 5min → failed).
 - **Concurrent refresh**: asyncio.Lock previne race condition no refresh do token CA.
 - **Rate limit**: token bucket compartilhado entre CaWorker e ca_api reads.
+- **Sync cursor**: daily sync persiste cursor em `sync_state` para evitar gaps entre execucoes.
 
 ---
 
@@ -855,11 +1158,15 @@ Payments sem `order_id` sao classificados pelo `expense_classifier.py`:
 O dashboard React tem seu **proprio CLAUDE.md** em `dashboard/claude.md` com documentacao completa de 780+ linhas cobrindo componentes, hooks, tipos, e regras de negocio.
 
 Para trabalhar no dashboard, consulte esse arquivo. Resumo:
-- React 19 + TypeScript + Vite + Recharts
+- React 19 + TypeScript + Vite 7 + Recharts 3
 - 4 views: Geral, Metas, Entrada, Linhas
 - Motor de calculos centralizado em `goalCalculator.ts`
 - Sem backend proprio (SPA → Supabase direto + admin API)
 - CSS Modules, sem Tailwind
+- PWA instalavel (offline read-only)
+- Realtime subscription via Supabase
+- Regra D-1: indicadores "esperado" usam ontem como referencia
+- Regra AR CONDICIONADO: dia util = 120%, fim de semana = 50%
 
 ---
 

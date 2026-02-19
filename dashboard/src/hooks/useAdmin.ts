@@ -12,9 +12,18 @@ interface Seller {
   dashboard_empresa?: string;
   dashboard_grupo?: string;
   dashboard_segmento?: string;
+  ca_conta_bancaria?: string;
+  ca_centro_custo_variavel?: string;
   ml_user_id?: number;
   source?: string;
   created_at: string;
+  // V3 onboarding fields
+  integration_mode?: 'dashboard_only' | 'dashboard_ca';
+  ca_start_date?: string | null;
+  ca_backfill_status?: string | null;
+  ca_backfill_started_at?: string | null;
+  ca_backfill_completed_at?: string | null;
+  ca_backfill_progress?: BackfillProgress | null;
 }
 
 interface SellerConfig {
@@ -47,6 +56,42 @@ export interface CaAccount {
 export interface CaCostCenter {
   id: string;
   descricao: string;
+}
+
+// V3 Onboarding types
+
+export interface BackfillProgress {
+  total: number;
+  processed: number;
+  orders_processed: number;
+  expenses_classified: number;
+  skipped: number;
+  errors: number;
+  baixas_created?: number;
+}
+
+export interface BackfillStatus {
+  ca_backfill_status: string | null;
+  ca_backfill_started_at: string | null;
+  ca_backfill_completed_at: string | null;
+  ca_backfill_progress: BackfillProgress | null;
+}
+
+export interface ActivateSellerConfig {
+  integration_mode: 'dashboard_only' | 'dashboard_ca';
+  name?: string;
+  dashboard_empresa: string;
+  dashboard_grupo: string;
+  dashboard_segmento: string;
+  ca_conta_bancaria?: string;
+  ca_centro_custo_variavel?: string;
+  ca_start_date?: string; // YYYY-MM-01
+}
+
+export interface UpgradeToCAConfig {
+  ca_conta_bancaria: string;
+  ca_centro_custo_variavel: string;
+  ca_start_date: string; // YYYY-MM-01
 }
 
 const TOKEN_KEY = 'lever-admin-token';
@@ -248,6 +293,101 @@ export function useAdmin() {
     }
   }, [token, headers]);
 
+  // ── V3 Onboarding Methods ──────────────────────────────────
+
+  const getInstallLink = useCallback(async (): Promise<{ url: string }> => {
+    if (!token) return { url: '' };
+    try {
+      const res = await fetch(`${API_BASE}/admin/onboarding/install-link`, { headers: headers() });
+      if (res.ok) return await res.json();
+      // Fallback: construct the URL from the current origin
+      const origin = window.location.origin;
+      return { url: `${origin}/auth/ml/install` };
+    } catch {
+      const origin = window.location.origin;
+      return { url: `${origin}/auth/ml/install` };
+    }
+  }, [token, headers]);
+
+  const activateSeller = useCallback(async (
+    slug: string,
+    config: ActivateSellerConfig,
+  ): Promise<{ status: string; backfill_triggered: boolean }> => {
+    if (!token) return { status: 'error', backfill_triggered: false };
+    try {
+      const res = await fetch(`${API_BASE}/admin/sellers/${slug}/activate`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error('Failed to activate seller:', errData);
+        return { status: 'error', backfill_triggered: false };
+      }
+      const data = await res.json();
+      await loadSellers();
+      return data;
+    } catch (e) {
+      console.error('Failed to activate seller:', e);
+      return { status: 'error', backfill_triggered: false };
+    }
+  }, [token, headers, loadSellers]);
+
+  const upgradeToCA = useCallback(async (
+    slug: string,
+    config: UpgradeToCAConfig,
+  ): Promise<{ status: string; backfill_triggered: boolean }> => {
+    if (!token) return { status: 'error', backfill_triggered: false };
+    try {
+      const res = await fetch(`${API_BASE}/admin/sellers/${slug}/upgrade-to-ca`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error('Failed to upgrade seller to CA:', errData);
+        return { status: 'error', backfill_triggered: false };
+      }
+      const data = await res.json();
+      await loadSellers();
+      return data;
+    } catch (e) {
+      console.error('Failed to upgrade seller to CA:', e);
+      return { status: 'error', backfill_triggered: false };
+    }
+  }, [token, headers, loadSellers]);
+
+  const getBackfillStatus = useCallback(async (slug: string): Promise<BackfillStatus> => {
+    if (!token) return { ca_backfill_status: null, ca_backfill_started_at: null, ca_backfill_progress: null };
+    try {
+      const res = await fetch(`${API_BASE}/admin/sellers/${slug}/backfill-status`, { headers: headers() });
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.error('Failed to get backfill status:', e);
+    }
+    return { ca_backfill_status: null, ca_backfill_started_at: null, ca_backfill_progress: null };
+  }, [token, headers]);
+
+  const retryBackfill = useCallback(async (slug: string): Promise<{ status: string }> => {
+    if (!token) return { status: 'error' };
+    try {
+      const res = await fetch(`${API_BASE}/admin/sellers/${slug}/backfill-retry`, {
+        method: 'POST',
+        headers: headers(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        await loadSellers();
+        return data;
+      }
+    } catch (e) {
+      console.error('Failed to retry backfill:', e);
+    }
+    return { status: 'error' };
+  }, [token, headers, loadSellers]);
+
   // Load data when authenticated
   useEffect(() => {
     if (isAuthenticated) {
@@ -280,5 +420,11 @@ export function useAdmin() {
     createRevenueLine,
     updateRevenueLine,
     removeRevenueLine,
+    // V3 Onboarding
+    getInstallLink,
+    activateSeller,
+    upgradeToCA,
+    getBackfillStatus,
+    retryBackfill,
   };
 }

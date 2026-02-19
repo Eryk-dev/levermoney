@@ -76,6 +76,46 @@ def _compute_effective_net_amount(payment: dict) -> float:
     return round(max(0.0, adjusted), 2)
 
 
+def _extract_processor_charges(payment: dict) -> tuple[float, float, str | None, float, float]:
+    """Compute fee/shipping from charges_details and reconcile against payment net."""
+    amount = _to_float(payment.get("transaction_amount"))
+    net = _to_float((payment.get("transaction_details") or {}).get("net_received_amount"))
+    charges = payment.get("charges_details", [])
+
+    shipping_charges_collector = 0.0
+    mp_fee = 0.0
+    shipping_ids: set[str] = set()
+
+    for charge in charges:
+        accounts = charge.get("accounts", {}) or {}
+        if accounts.get("from") != "collector":
+            continue
+
+        charge_amount = _to_float((charge.get("amounts", {}) or {}).get("original"))
+        charge_type = charge.get("type")
+
+        if charge_type == "shipping":
+            shipping_charges_collector += charge_amount
+            shipment_id = str((charge.get("metadata", {}) or {}).get("shipment_id") or "").strip()
+            if shipment_id:
+                shipping_ids.add(shipment_id)
+        elif charge_type == "fee":
+            charge_name = (charge.get("name") or "").strip().lower()
+            # financing_fee is offset by financing_transfer and does not impact net.
+            if charge_name == "financing_fee":
+                continue
+            mp_fee += charge_amount
+
+    shipping_amount_buyer = _to_float(payment.get("shipping_amount"))
+    shipping_cost_seller = round(max(0.0, shipping_charges_collector - shipping_amount_buyer), 2)
+    mp_fee = round(mp_fee, 2)
+    shipping_id = next(iter(shipping_ids), None)
+
+    reconciled_net = round(amount - mp_fee - shipping_cost_seller, 2)
+    net_diff = round(net - reconciled_net, 2)
+    return mp_fee, shipping_cost_seller, shipping_id, reconciled_net, net_diff
+
+
 def _build_parcela(descricao: str, data_vencimento: str, conta_financeira: str, valor: float, nota: str = "") -> dict:
     """Monta parcela no formato correto do CA v2."""
     return {
@@ -215,7 +255,22 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
         if payment.get("status_detail") == "partially_refunded":
             await _process_partial_refund(db, seller, payment)
         else:
-            logger.info(f"Payment {payment_id} already synced/queued, skipping")
+            current_status = next((e.get("status") for e in existing if e.get("status")), "queued")
+            mp_fee, shipping_cost_seller, _, _, _ = _extract_processor_charges(payment)
+            _upsert_payment(
+                db,
+                seller_slug,
+                payment,
+                current_status,
+                processor_fee=mp_fee,
+                processor_shipping=shipping_cost_seller,
+            )
+            logger.info(
+                "Payment %s already synced/queued, refreshed processor charges: fee=%.2f shipping=%.2f",
+                payment_id,
+                mp_fee,
+                shipping_cost_seller,
+            )
         return
 
     # 1. Dados do pedido
@@ -237,44 +292,7 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     # 3. Extrair taxas direto do ML charges_details (source of truth)
     # Não usar fallback por shipment_costs para evitar duplicidade/desbalanceamento
     # em pagamentos split do mesmo pedido.
-    charges = payment.get("charges_details", [])
-    shipping_charges_collector = 0.0
-    mp_fee = 0.0
-    shipping_ids: set[str] = set()
-
-    for charge in charges:
-        accounts = charge.get("accounts", {}) or {}
-        if accounts.get("from") != "collector":
-            continue
-
-        raw_amount = (charge.get("amounts", {}) or {}).get("original", 0)
-        charge_amount = float(raw_amount or 0)
-        charge_type = charge.get("type")
-
-        if charge_type == "shipping":
-            shipping_charges_collector += charge_amount
-            shipment_id = str((charge.get("metadata", {}) or {}).get("shipment_id") or "").strip()
-            if shipment_id:
-                shipping_ids.add(shipment_id)
-        elif charge_type == "fee":
-            # financing_fee é compensado por financing_transfer e não afeta net.
-            # Não lançar como comissão para evitar overposting.
-            charge_name = (charge.get("name") or "").strip().lower()
-            if charge_name == "financing_fee":
-                continue
-            mp_fee += charge_amount
-
-    shipping_amount_buyer = float(payment.get("shipping_amount") or 0)
-    # charges_details.shipping representa custo bruto de frete no payment.
-    # Para o custo líquido do seller, descontar frete pago pelo comprador.
-    shipping_cost_seller = round(max(0.0, shipping_charges_collector - shipping_amount_buyer), 2)
-    mp_fee = round(mp_fee, 2)
-    shipping_id = next(iter(shipping_ids), None)
-
-    # Reconciliação interna: quando charges_details não fecha com o net do payment,
-    # logar diferença para investigação, mas sem forçar ajuste por cálculo indireto.
-    reconciled_net = round(amount - mp_fee - shipping_cost_seller, 2)
-    net_diff = round(net - reconciled_net, 2)
+    mp_fee, shipping_cost_seller, shipping_id, reconciled_net, net_diff = _extract_processor_charges(payment)
     if abs(net_diff) >= 0.01:
         logger.warning(
             "Payment %s: net mismatch using direct charges (net=%s vs calc=%s, diff=%s)",
@@ -329,8 +347,22 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
 
     # NOTA: financing_fee NÃO gera despesa (net-neutral).
 
+    # D) RECEITA - Subsídio ML (net > calculated net → ML paying extra to seller)
+    subsidy = round(net - reconciled_net, 2) if net_diff > 0 else 0.0
+    if subsidy >= 0.01:
+        subsidy_desc = f"Subsídio ML - Payment {payment_id}"
+        subsidy_obs = f"calc_net={reconciled_net}, net_real={net}, diff={subsidy}"
+        subsidy_payload = _build_evento(
+            competencia, subsidy, subsidy_desc, subsidy_obs,
+            contato, conta, CA_CATEGORIES["estorno_frete"], cc,
+            _build_parcela(subsidy_desc, money_release_date, conta, subsidy),
+        )
+        await ca_queue.enqueue_receita(seller_slug, f"{payment_id}_subsidy", subsidy_payload)
+        logger.info("Payment %s: ML subsidy detected R$%.2f, enqueued receita 1.3.7", payment_id, subsidy)
+
     # Salva no Supabase como queued (worker updates to synced when group completes)
-    _upsert_payment(db, seller_slug, payment, "queued")
+    _upsert_payment(db, seller_slug, payment, "queued",
+                    processor_fee=mp_fee, processor_shipping=shipping_cost_seller)
 
     logger.info(
         f"Payment {payment_id} queued: receita={amount}, comissão={mp_fee}, "
@@ -455,7 +487,9 @@ async def _process_refunded(db, seller: dict, payment: dict, existing: list):
     _upsert_payment(db, seller_slug, payment, "queued")
 
 
-def _upsert_payment(db, seller_slug: str, payment: dict, status: str, error: str = None, ca_evento_id: str = None):
+def _upsert_payment(db, seller_slug: str, payment: dict, status: str, error: str = None,
+                    ca_evento_id: str = None, processor_fee: float = None,
+                    processor_shipping: float = None):
     """Insere ou atualiza payment no Supabase."""
     payment_id = payment["id"]
     effective_net = _compute_effective_net_amount(payment)
@@ -475,6 +509,10 @@ def _upsert_payment(db, seller_slug: str, payment: dict, status: str, error: str
         data["error"] = error
     if ca_evento_id:
         data["ca_evento_id"] = ca_evento_id
+    if processor_fee is not None:
+        data["processor_fee"] = processor_fee
+    if processor_shipping is not None:
+        data["processor_shipping"] = processor_shipping
 
     existing = db.table("payments").select("id").eq(
         "ml_payment_id", payment_id

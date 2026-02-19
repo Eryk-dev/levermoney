@@ -2,7 +2,7 @@
 Admin API - password-protected endpoints for seller management, goals, sync.
 Authentication via X-Admin-Token header verified against bcrypt hash in admin_config table.
 """
-import hashlib
+import asyncio
 import logging
 import secrets
 from datetime import datetime, timezone
@@ -12,6 +12,7 @@ import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from pydantic import BaseModel
 
+from app.config import settings
 from app.db.supabase import get_db
 from app.services.financial_closing import (
     compute_seller_financial_closing,
@@ -22,6 +23,26 @@ from app.services.legacy_daily_export import (
     get_legacy_daily_status,
     run_legacy_daily_for_all,
     run_legacy_daily_for_seller,
+)
+from app.services.release_report_validator import (
+    get_last_validation_result,
+    validate_release_fees_all_sellers,
+    validate_release_fees_for_seller,
+)
+from app.services.extrato_coverage_checker import (
+    check_extrato_coverage,
+    check_extrato_coverage_all_sellers,
+    get_last_coverage_result,
+)
+from app.services.extrato_ingester import (
+    get_last_ingestion_result,
+    ingest_extrato_all_sellers,
+    ingest_extrato_for_seller,
+)
+from app.services.onboarding_backfill import (
+    get_backfill_status,
+    retry_backfill,
+    run_onboarding_backfill,
 )
 
 logger = logging.getLogger(__name__)
@@ -322,6 +343,109 @@ async def sync_release_report(req: ReleaseReportSyncRequest):
         raise HTTPException(status_code=500, detail=f"Release report sync failed: {e}")
 
 
+# ── Release Report Fee Validation ───────────────────────────
+
+@router.post("/release-report/validate/{seller_slug}", dependencies=[Depends(require_admin)])
+async def trigger_release_report_validation(
+    seller_slug: str,
+    begin_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+):
+    """Validate processor fees against release report for a specific seller."""
+    try:
+        result = await validate_release_fees_for_seller(seller_slug, begin_date, end_date)
+        return result
+    except Exception as e:
+        logger.error("Release report validation error for %s: %s", seller_slug, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Validation failed: {e}")
+
+
+@router.post("/release-report/validate-all", dependencies=[Depends(require_admin)])
+async def trigger_release_report_validation_all(
+    lookback_days: int = Query(3, description="Number of days to look back"),
+):
+    """Validate processor fees against release report for all active sellers."""
+    try:
+        results = await validate_release_fees_all_sellers(lookback_days=lookback_days)
+        return {
+            "count": len(results),
+            "total_adjustments": sum(r.get("adjustments_created", 0) for r in results),
+            "results": results,
+        }
+    except Exception as e:
+        logger.error("Release report validation-all error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Validation failed: {e}")
+
+
+@router.get("/release-report/validation-status", dependencies=[Depends(require_admin)])
+async def release_report_validation_status():
+    """Return the result of the last fee validation run."""
+    return get_last_validation_result()
+
+
+@router.post("/release-report/configure/{seller_slug}", dependencies=[Depends(require_admin)])
+async def configure_release_report(seller_slug: str):
+    """Configure release report columns with fee breakdown for a seller."""
+    from app.services.ml_api import configure_release_report as do_configure, get_release_report_config
+    try:
+        result = await do_configure(seller_slug)
+        return {"status": "configured", "config": result}
+    except Exception as e:
+        logger.error("Release report configure error for %s: %s", seller_slug, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Configure failed: {e}")
+
+
+@router.get("/release-report/config/{seller_slug}", dependencies=[Depends(require_admin)])
+async def get_release_report_config_endpoint(seller_slug: str):
+    """Get current release report configuration for a seller."""
+    from app.services.ml_api import get_release_report_config
+    try:
+        config = await get_release_report_config(seller_slug)
+        return config
+    except Exception as e:
+        logger.error("Release report get config error for %s: %s", seller_slug, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Get config failed: {e}")
+
+
+# ── Extrato Coverage ─────────────────────────────────────────
+
+@router.get("/extrato/coverage/{seller_slug}", dependencies=[Depends(require_admin)])
+async def extrato_coverage(
+    seller_slug: str,
+    date_from: str = Query(..., description="YYYY-MM-DD"),
+    date_to: str = Query(..., description="YYYY-MM-DD"),
+):
+    """Check release report coverage for a specific seller."""
+    try:
+        result = await check_extrato_coverage(seller_slug, date_from, date_to)
+        return result
+    except Exception as e:
+        logger.error("Extrato coverage error for %s: %s", seller_slug, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Coverage check failed: {e}")
+
+
+@router.post("/extrato/coverage-all", dependencies=[Depends(require_admin)])
+async def extrato_coverage_all(
+    lookback_days: int = Query(3, description="Number of days to look back"),
+):
+    """Check release report coverage for all active sellers."""
+    try:
+        results = await check_extrato_coverage_all_sellers(lookback_days=lookback_days)
+        return {
+            "count": len(results),
+            "results": results,
+        }
+    except Exception as e:
+        logger.error("Extrato coverage-all error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Coverage check failed: {e}")
+
+
+@router.get("/extrato/coverage-status", dependencies=[Depends(require_admin)])
+async def extrato_coverage_status():
+    """Return the result of the last coverage check run."""
+    return get_last_coverage_result()
+
+
 # ── Conta Azul Resources ─────────────────────────────────────
 
 @router.get("/ca/contas-financeiras", dependencies=[Depends(require_admin)])
@@ -346,3 +470,283 @@ async def list_ca_cost_centers():
     except Exception as e:
         logger.error(f"CA centros-custo error: {e}")
         raise HTTPException(status_code=502, detail=str(e))
+
+
+# ── Onboarding V2 ────────────────────────────────────────────
+
+
+class ActivateSellerRequest(BaseModel):
+    integration_mode: str  # "dashboard_only" | "dashboard_ca"
+    name: str | None = None
+    dashboard_empresa: str | None = None
+    dashboard_grupo: str = "OUTROS"
+    dashboard_segmento: str = "OUTROS"
+    ca_conta_bancaria: str | None = None
+    ca_centro_custo_variavel: str | None = None
+    ca_start_date: str | None = None  # YYYY-MM-DD, must be 1st of month
+
+
+@router.post("/sellers/{slug}/activate", dependencies=[Depends(require_admin)])
+async def activate_seller_v2(slug: str, req: ActivateSellerRequest):
+    """Activate a seller (pending_approval or any status) with V2 integration mode.
+
+    For dashboard_ca: requires ca_conta_bancaria, ca_centro_custo_variavel,
+    ca_start_date (must be the 1st of a month). Triggers onboarding backfill
+    as a background task.
+
+    Returns {"status": "ok", "backfill_triggered": true/false}.
+    """
+    if req.integration_mode not in ("dashboard_only", "dashboard_ca"):
+        raise HTTPException(
+            status_code=400,
+            detail="integration_mode must be 'dashboard_only' or 'dashboard_ca'",
+        )
+
+    if req.integration_mode == "dashboard_ca":
+        missing = [
+            f for f in ("ca_conta_bancaria", "ca_centro_custo_variavel", "ca_start_date")
+            if not getattr(req, f)
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"dashboard_ca requires: {', '.join(missing)}",
+            )
+        # Validate ca_start_date is the 1st of a month
+        try:
+            from datetime import date as _date
+            _parsed = _date.fromisoformat(req.ca_start_date)
+            if _parsed.day != 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"ca_start_date must be the 1st of a month, got {req.ca_start_date}",
+                )
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"ca_start_date is not a valid date: {req.ca_start_date}",
+            )
+
+    db = get_db()
+
+    # Load seller to verify it exists
+    result = db.table("sellers").select("*").eq("slug", slug).limit(1).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"Seller '{slug}' not found")
+
+    seller = result.data[0]
+
+    # Build update payload
+    update_data: dict = {
+        "integration_mode": req.integration_mode,
+        "onboarding_status": "active",
+        "active": True,
+    }
+    if req.name:
+        update_data["name"] = req.name
+    if req.dashboard_empresa:
+        update_data["dashboard_empresa"] = req.dashboard_empresa
+    update_data["dashboard_grupo"] = req.dashboard_grupo
+    update_data["dashboard_segmento"] = req.dashboard_segmento
+    if req.integration_mode == "dashboard_ca":
+        update_data["ca_conta_bancaria"] = req.ca_conta_bancaria
+        update_data["ca_centro_custo_variavel"] = req.ca_centro_custo_variavel
+        update_data["ca_start_date"] = req.ca_start_date
+        update_data["ca_backfill_status"] = "pending"
+
+    db.table("sellers").update(update_data).eq("slug", slug).execute()
+    logger.info("activate_seller_v2 %s: mode=%s", slug, req.integration_mode)
+
+    # Create revenue_line and goals (only if not already present)
+    empresa = req.dashboard_empresa or seller.get("dashboard_empresa")
+    if empresa:
+        from datetime import datetime as _dt
+        grupo = req.dashboard_grupo
+        segmento = req.dashboard_segmento
+
+        db.table("revenue_lines").upsert(
+            {
+                "empresa": empresa,
+                "grupo": grupo,
+                "segmento": segmento,
+                "seller_id": seller.get("id"),
+                "source": seller.get("source", "ml"),
+                "active": True,
+            },
+            on_conflict="empresa",
+        ).execute()
+
+        year = _dt.now().year
+        goals = [
+            {"empresa": empresa, "grupo": grupo, "year": year, "month": m, "valor": 0}
+            for m in range(1, 13)
+        ]
+        db.table("goals").upsert(
+            goals, on_conflict="empresa,year,month", ignore_duplicates=True
+        ).execute()
+        logger.info("activate_seller_v2 %s: revenue_line + goals ensured for empresa=%s", slug, empresa)
+
+    # Auto-configure release report (best-effort)
+    try:
+        from app.services.ml_api import configure_release_report
+        await configure_release_report(slug)
+        logger.info("activate_seller_v2 %s: release report configured", slug)
+    except Exception as exc:
+        logger.warning("activate_seller_v2 %s: failed to configure release report: %s", slug, exc)
+
+    backfill_triggered = False
+    if req.integration_mode == "dashboard_ca":
+        asyncio.create_task(run_onboarding_backfill(slug))
+        backfill_triggered = True
+        logger.info("activate_seller_v2 %s: onboarding backfill task launched", slug)
+
+    return {"status": "ok", "backfill_triggered": backfill_triggered}
+
+
+class UpgradeToCaRequest(BaseModel):
+    ca_conta_bancaria: str
+    ca_centro_custo_variavel: str
+    ca_start_date: str  # YYYY-MM-DD, must be 1st of month
+
+
+@router.post("/sellers/{slug}/upgrade-to-ca", dependencies=[Depends(require_admin)])
+async def upgrade_seller_to_ca(slug: str, req: UpgradeToCaRequest):
+    """Upgrade an active dashboard_only seller to dashboard_ca integration.
+
+    Validates that the seller is active and currently in dashboard_only mode.
+    Sets CA config fields and launches the onboarding backfill in the background.
+
+    Returns {"status": "ok", "backfill_triggered": true}.
+    """
+    # Validate ca_start_date is the 1st of a month
+    try:
+        from datetime import date as _date
+        _parsed = _date.fromisoformat(req.ca_start_date)
+        if _parsed.day != 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"ca_start_date must be the 1st of a month, got {req.ca_start_date}",
+            )
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ca_start_date is not a valid date: {req.ca_start_date}",
+        )
+
+    db = get_db()
+    result = db.table("sellers").select("*").eq("slug", slug).limit(1).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"Seller '{slug}' not found")
+
+    seller = result.data[0]
+
+    if not seller.get("active"):
+        raise HTTPException(status_code=400, detail=f"Seller '{slug}' is not active")
+
+    current_mode = seller.get("integration_mode", "dashboard_only")
+    if current_mode == "dashboard_ca":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Seller '{slug}' is already in dashboard_ca mode",
+        )
+
+    update_data = {
+        "integration_mode": "dashboard_ca",
+        "ca_conta_bancaria": req.ca_conta_bancaria,
+        "ca_centro_custo_variavel": req.ca_centro_custo_variavel,
+        "ca_start_date": req.ca_start_date,
+        "ca_backfill_status": "pending",
+    }
+    db.table("sellers").update(update_data).eq("slug", slug).execute()
+    logger.info("upgrade_seller_to_ca %s: ca_start_date=%s", slug, req.ca_start_date)
+
+    asyncio.create_task(run_onboarding_backfill(slug))
+    logger.info("upgrade_seller_to_ca %s: onboarding backfill task launched", slug)
+
+    return {"status": "ok", "backfill_triggered": True}
+
+
+@router.get("/sellers/{slug}/backfill-status", dependencies=[Depends(require_admin)])
+async def seller_backfill_status(slug: str):
+    """Return the current onboarding backfill status and progress for a seller."""
+    try:
+        return get_backfill_status(slug)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error("backfill_status error for %s: %s", slug, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Backfill status error: {exc}")
+
+
+@router.post("/sellers/{slug}/backfill-retry", dependencies=[Depends(require_admin)])
+async def seller_backfill_retry(slug: str):
+    """Re-trigger a failed onboarding backfill for a seller.
+
+    The backfill is idempotent — it resumes from where it left off by skipping
+    payments already present in the payments and mp_expenses tables.
+    """
+    try:
+        await retry_backfill(slug)
+        return {"status": "ok"}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("backfill_retry error for %s: %s", slug, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Backfill retry error: {exc}")
+
+
+@router.get("/onboarding/install-link", dependencies=[Depends(require_admin)])
+async def onboarding_install_link():
+    """Return the ML OAuth install link to share with prospective sellers."""
+    return {"url": f"{settings.base_url}/auth/ml/install"}
+
+
+# ── Extrato Ingester ─────────────────────────────────────────
+
+
+@router.post("/extrato/ingest/{seller_slug}", dependencies=[Depends(require_admin)])
+async def trigger_extrato_ingest(
+    seller_slug: str,
+    begin_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+):
+    """Manually trigger account_statement ingestion for a specific seller.
+
+    Ingests extrato lines not already covered by the payments or mp_expenses
+    tables and inserts them as mp_expenses rows.
+    """
+    try:
+        result = await ingest_extrato_for_seller(seller_slug, begin_date, end_date)
+        return result
+    except Exception as exc:
+        logger.error(
+            "extrato ingest error for %s: %s", seller_slug, exc, exc_info=True
+        )
+        raise HTTPException(status_code=500, detail=f"Extrato ingest failed: {exc}")
+
+
+@router.post("/extrato/ingest-all", dependencies=[Depends(require_admin)])
+async def trigger_extrato_ingest_all(
+    lookback_days: int = Query(3, description="Number of days to look back from yesterday"),
+):
+    """Trigger account_statement ingestion for all active sellers.
+
+    Runs the same pipeline used by the nightly scheduler.
+    """
+    try:
+        results = await ingest_extrato_all_sellers(lookback_days=lookback_days)
+        return {
+            "count": len(results),
+            "total_ingested": sum(r.get("newly_ingested", 0) for r in results),
+            "total_errors": sum(r.get("errors", 0) for r in results),
+            "results": results,
+        }
+    except Exception as exc:
+        logger.error("extrato ingest-all error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Extrato ingest-all failed: {exc}")
+
+
+@router.get("/extrato/ingestion-status", dependencies=[Depends(require_admin)])
+async def extrato_ingestion_status():
+    """Return the result of the last extrato ingestion run."""
+    return get_last_ingestion_result()

@@ -23,6 +23,10 @@ async def backfill_payments(
     dry_run: bool = Query(True, description="Se True, apenas lista sem processar"),
     max_process: int = Query(0, description="Máximo de payments a processar (0=todos)"),
     concurrency: int = Query(10, description="Payments processados em paralelo"),
+    reprocess_missing_fees: bool = Query(
+        True,
+        description="Reprocessa payments já finalizados com processor_fee/shipping nulos",
+    ),
 ):
     """
     Puxa payments do ML por período e processa no CA.
@@ -70,16 +74,25 @@ async def backfill_payments(
     # Check which are already processed in Supabase (terminal statuses)
     # Paginate to avoid Supabase's default 1000-row limit
     already_done = set()
+    done_missing_fees = set()
     page_start = 0
     page_limit = 1000
     while True:
-        done_result = db.table("payments").select("ml_payment_id").eq(
+        done_result = db.table("payments").select(
+            "ml_payment_id, processor_fee, processor_shipping"
+        ).eq(
             "seller_slug", seller_slug
         ).in_(
             "status", ["synced", "queued", "refunded", "skipped", "skipped_non_sale"]
         ).range(page_start, page_start + page_limit - 1).execute()
         batch = done_result.data or []
-        already_done.update(r["ml_payment_id"] for r in batch)
+        for row in batch:
+            pid = row.get("ml_payment_id")
+            if pid is None:
+                continue
+            already_done.add(pid)
+            if row.get("processor_fee") is None or row.get("processor_shipping") is None:
+                done_missing_fees.add(pid)
         if len(batch) < page_limit:
             break
         page_start += page_limit
@@ -87,11 +100,16 @@ async def backfill_payments(
     processable = [
         p for p in all_payments
         if p.get("status") in ("approved", "refunded", "in_mediation", "charged_back")
-        and p["id"] not in already_done
+        and (
+            p["id"] not in already_done
+            or (reprocess_missing_fees and p["id"] in done_missing_fees)
+        )
         and (p.get("order") or {}).get("id")  # filter non-sale payments
         and p.get("description") != "marketplace_shipment"  # skip buyer-paid shipping
         and (p.get("collector") or {}).get("id") is None  # skip purchases (seller is buyer)
     ]
+    to_reprocess_missing_fees = len([p for p in processable if p["id"] in done_missing_fees])
+    to_process_new = len(processable) - to_reprocess_missing_fees
 
     if dry_run:
         return {
@@ -102,6 +120,10 @@ async def backfill_payments(
             "total_amount": round(total_amount, 2),
             "by_status": status_counts,
             "already_done": len(already_done),
+            "already_done_missing_fees": len(done_missing_fees),
+            "reprocess_missing_fees": reprocess_missing_fees,
+            "to_process_new": to_process_new,
+            "to_reprocess_missing_fees": to_reprocess_missing_fees,
             "to_process": len(processable),
             "concurrency": concurrency,
             "sample": [
@@ -160,6 +182,9 @@ async def backfill_payments(
         "period": f"{begin_date} to {end_date}",
         "total_found": len(all_payments),
         "already_done": len(already_done),
+        "already_done_missing_fees": len(done_missing_fees),
+        "to_process_new": to_process_new,
+        "to_reprocess_missing_fees": to_reprocess_missing_fees,
         "processed": processed,
         "errors": errors,
         "remaining": len(processable) - len(to_process),

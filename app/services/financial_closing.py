@@ -320,6 +320,14 @@ async def run_financial_closing_for_all(
             logger.error("financial_closing error for %s: %s", slug, e, exc_info=True)
             results.append({"seller": slug, "error": str(e), "closed": False})
 
+    # Attach coverage data if available from last nightly run
+    coverage_data = None
+    try:
+        from app.services.extrato_coverage_checker import get_last_coverage_result
+        coverage_data = get_last_coverage_result()
+    except Exception:
+        pass
+
     summary = {
         "ran_at": datetime.now(timezone.utc).isoformat(),
         "date_from": date_from,
@@ -329,6 +337,15 @@ async def run_financial_closing_for_all(
         "sellers_open": sum(1 for r in results if not r.get("closed")),
         "results": results,
     }
+    if coverage_data and coverage_data.get("ran_at"):
+        summary["extrato_coverage"] = {
+            "ran_at": coverage_data["ran_at"],
+            "sellers_checked": len(coverage_data.get("results", [])),
+            "sellers_100pct": sum(
+                1 for r in coverage_data.get("results", [])
+                if r.get("coverage_pct", 0) >= 100.0
+            ),
+        }
 
     _last_closing_result.update(summary)
     return summary

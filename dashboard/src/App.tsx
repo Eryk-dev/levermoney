@@ -685,6 +685,12 @@ function App() {
               admin.logout();
               setCurrentView('geral');
             }}
+            getInstallLink={admin.getInstallLink}
+            activateSeller={admin.activateSeller}
+            upgradeToCA={admin.upgradeToCA}
+            getBackfillStatus={admin.getBackfillStatus}
+            retryBackfill={admin.retryBackfill}
+            loadSellers={admin.loadSellers}
           />
         ) : (
           <AdminLogin onLogin={admin.login} />

@@ -408,3 +408,58 @@ async def download_release_report(
         )
         resp.raise_for_status()
         return resp.content
+
+
+# ── Release Report Config ─────────────────────────────────────
+
+
+RELEASE_REPORT_COLUMNS = [
+    {"key": "DATE"},
+    {"key": "SOURCE_ID"},
+    {"key": "EXTERNAL_REFERENCE"},
+    {"key": "RECORD_TYPE"},
+    {"key": "DESCRIPTION"},
+    {"key": "NET_CREDIT_AMOUNT"},
+    {"key": "NET_DEBIT_AMOUNT"},
+    {"key": "GROSS_AMOUNT"},
+    {"key": "MP_FEE_AMOUNT"},
+    {"key": "FINANCING_FEE_AMOUNT"},
+    {"key": "SHIPPING_FEE_AMOUNT"},
+    {"key": "TAXES_AMOUNT"},
+    {"key": "COUPON_AMOUNT"},
+    {"key": "INSTALLMENTS"},
+    {"key": "PAYMENT_METHOD"},
+    {"key": "TRANSACTION_APPROVAL_DATE"},
+    {"key": "ORDER_ID"},
+]
+
+
+async def get_release_report_config(seller_slug: str) -> dict[str, Any]:
+    """GET /v1/account/release_report/config"""
+    token = await _get_token(seller_slug)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(
+            f"{MP_API}/v1/account/release_report/config",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
+
+async def configure_release_report(seller_slug: str) -> dict[str, Any]:
+    """PUT /v1/account/release_report/config - configure columns with fee breakdown."""
+    token = await _get_token(seller_slug)
+    config = {
+        "columns": RELEASE_REPORT_COLUMNS,
+        "separator": ";",
+        "display_timezone": "GMT-03",
+        "report_translation": "pt",
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.put(
+            f"{MP_API}/v1/account/release_report/config",
+            headers={"Authorization": f"Bearer {token}"},
+            json=config,
+        )
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
