@@ -360,14 +360,26 @@ export function useAdmin() {
   }, [token, headers, loadSellers]);
 
   const getBackfillStatus = useCallback(async (slug: string): Promise<BackfillStatus> => {
-    if (!token) return { ca_backfill_status: null, ca_backfill_started_at: null, ca_backfill_progress: null };
+    if (!token) {
+      return {
+        ca_backfill_status: null,
+        ca_backfill_started_at: null,
+        ca_backfill_completed_at: null,
+        ca_backfill_progress: null,
+      };
+    }
     try {
       const res = await fetch(`${API_BASE}/admin/sellers/${slug}/backfill-status`, { headers: headers() });
       if (res.ok) return await res.json();
     } catch (e) {
       console.error('Failed to get backfill status:', e);
     }
-    return { ca_backfill_status: null, ca_backfill_started_at: null, ca_backfill_progress: null };
+    return {
+      ca_backfill_status: null,
+      ca_backfill_started_at: null,
+      ca_backfill_completed_at: null,
+      ca_backfill_progress: null,
+    };
   }, [token, headers]);
 
   const retryBackfill = useCallback(async (slug: string): Promise<{ status: string }> => {

@@ -2,7 +2,8 @@
 FROM node:22-alpine AS dashboard-build
 WORKDIR /dashboard
 COPY dashboard/package*.json ./
-RUN npm ci
+# Build requires devDependencies (tsc/vite), even when NODE_ENV=production.
+RUN npm ci --include=dev
 COPY dashboard/ .
 RUN npm run build
 
