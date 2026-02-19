@@ -146,7 +146,7 @@ export function useSupabaseFaturamento(options: UseSupabaseOptions = {}) {
     fetchData();
   }, [fetchData]);
 
-  // Subscribe to realtime changes
+  // Subscribe to realtime changes + visibility refetch + polling fallback
   useEffect(() => {
     const channel = supabase
       .channel('faturamento_changes')
@@ -154,14 +154,24 @@ export function useSupabaseFaturamento(options: UseSupabaseOptions = {}) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'faturamento' },
         () => {
-          // Refetch on any change
           fetchData();
         }
       )
       .subscribe();
 
+    // Refetch when tab becomes visible (handles sleep/background)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') fetchData();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // Polling fallback every 60s in case realtime drops
+    const poll = setInterval(fetchData, 60_000);
+
     return () => {
       supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(poll);
     };
   }, [fetchData]);
 

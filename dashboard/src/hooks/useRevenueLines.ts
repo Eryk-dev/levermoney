@@ -56,7 +56,20 @@ export function useRevenueLines(yearlyGoals: CompanyYearlyGoal[]) {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Refetch when tab becomes visible
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') loadLines();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // Polling fallback every 60s
+    const poll = setInterval(loadLines, 60_000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(poll);
+    };
   }, []);
 
   // Ensure any goal entries exist in the line list

@@ -58,7 +58,20 @@ export function useGoals() {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Refetch when tab becomes visible
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') loadGoals();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // Polling fallback every 60s
+    const poll = setInterval(loadGoals, 60_000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(poll);
+    };
   }, []);
 
   // Default to current month, but can be overridden

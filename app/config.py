@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Faturamento sync interval in minutes
-    sync_interval_minutes: int = 5
+    sync_interval_minutes: int = 1
 
     # Daily sync handling for non-order payments:
     # - classifier: current V3 classifier flow
