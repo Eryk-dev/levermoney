@@ -32,7 +32,8 @@ export function useSupabaseFaturamento(options: UseSupabaseOptions = {}) {
       const { data: rows, error: fetchError } = await supabase
         .from('faturamento')
         .select('*')
-        .order('data', { ascending: false });
+        .order('data', { ascending: false })
+        .limit(10000);
 
       if (fetchError) throw fetchError;
 
