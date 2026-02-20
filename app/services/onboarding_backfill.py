@@ -269,19 +269,26 @@ async def _execute_backfill(
     Returns the final progress dict which is persisted to ca_backfill_progress.
     """
     today: date = datetime.now(timezone.utc).date()
-    yesterday: date = today - timedelta(days=1)
+
+    # Extend the search window 90 days into the future to capture payments
+    # approved before ca_start_date (e.g. late-month sales) whose
+    # money_release_date falls after today.  Without this, those payments fall
+    # through the cracks: the backfill end_date would be yesterday and the
+    # daily sync only looks at D-1..D-3 by date_approved/date_last_updated,
+    # which never covers old approved-but-not-yet-released payments.
+    future_cutoff: date = today + timedelta(days=90)
 
     # Dates for ML API (BRT timezone to match the account_statement convention)
     begin_date = f"{ca_start_date_raw}T00:00:00.000-03:00"
-    end_date = f"{yesterday.isoformat()}T23:59:59.999-03:00"
+    end_date = f"{future_cutoff.isoformat()}T23:59:59.999-03:00"
 
     # --- 3. Fetch all payments by money_release_date ----------------------------
     logger.info(
         "OnboardingBackfill %s: fetching payments "
-        "(range_field=money_release_date, %s → %s)",
+        "(range_field=money_release_date, %s → %s, includes future releases up to +90d)",
         seller_slug,
         ca_start_date_raw,
-        yesterday.isoformat(),
+        future_cutoff.isoformat(),
     )
     all_payments = await _fetch_all_payments(seller_slug, begin_date, end_date)
     total = len(all_payments)

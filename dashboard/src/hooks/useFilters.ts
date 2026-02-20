@@ -33,6 +33,11 @@ export interface CompanyDailyPerformanceItem {
 }
 
 const GAP_CATCHUP_STORAGE_KEY = 'faturamento-dashboard-gap-catchup-enabled';
+const DATE_PRESET_KEY = 'dashboard-date-preset';
+const FILTERS_KEY = 'dashboard-filters';
+const COMPARISON_ENABLED_KEY = 'dashboard-comparison-enabled';
+const COMPARISON_START_KEY = 'dashboard-comparison-start';
+const COMPARISON_END_KEY = 'dashboard-comparison-end';
 
 function getReferenceDateForPreset(preset: DatePreset): Date {
   const date = new Date();
@@ -58,15 +63,30 @@ interface GoalHelpers {
 
 export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) {
   const { yearlyGoals, setSelectedMonth, lines } = goalHelpers;
-  const [filters, setFilters] = useState<Filters>({
-    empresas: [],
-    grupos: [],
-    segmentos: [],
-    dataInicio: null,
-    dataFim: null,
+  const [filters, setFilters] = useState<Filters>(() => {
+    try {
+      const raw = localStorage.getItem(FILTERS_KEY);
+      if (!raw) return { empresas: [], grupos: [], segmentos: [], dataInicio: null, dataFim: null };
+      const parsed = JSON.parse(raw);
+      return {
+        empresas: parsed.empresas ?? [],
+        grupos: parsed.grupos ?? [],
+        segmentos: parsed.segmentos ?? [],
+        dataInicio: parsed.dataInicio ? new Date(parsed.dataInicio) : null,
+        dataFim: parsed.dataFim ? new Date(parsed.dataFim) : null,
+      };
+    } catch {
+      return { empresas: [], grupos: [], segmentos: [], dataInicio: null, dataFim: null };
+    }
   });
 
-  const [datePreset, setDatePreset] = useState<DatePreset>('mtd');
+  const [datePreset, setDatePreset] = useState<DatePreset>(() => {
+    try {
+      const raw = localStorage.getItem(DATE_PRESET_KEY);
+      if (raw === 'today' || raw === 'yesterday' || raw === 'wtd' || raw === 'mtd' || raw === 'all') return raw;
+    } catch { /* ignore */ }
+    return 'today';
+  });
   const [gapCatchUpEnabled, setGapCatchUpEnabled] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem(GAP_CATCHUP_STORAGE_KEY);
@@ -84,6 +104,24 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       // ignore storage failures
     }
   }, [gapCatchUpEnabled]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DATE_PRESET_KEY, datePreset);
+    } catch { /* ignore */ }
+  }, [datePreset]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FILTERS_KEY, JSON.stringify({
+        empresas: filters.empresas,
+        grupos: filters.grupos,
+        segmentos: filters.segmentos,
+        dataInicio: filters.dataInicio ? filters.dataInicio.toISOString() : null,
+        dataFim: filters.dataFim ? filters.dataFim.toISOString() : null,
+      }));
+    } catch { /* ignore */ }
+  }, [filters]);
 
   const lineSets = useMemo(() => {
     return {
@@ -566,9 +604,41 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
   }, [filteredData, adaptiveGoalPlanner, datePreset, effectiveDateRange]);
 
   // Comparison state
-  const [comparisonEnabled, setComparisonEnabled] = useState(false);
-  const [customComparisonStart, setCustomComparisonStart] = useState<Date | null>(null);
-  const [customComparisonEnd, setCustomComparisonEnd] = useState<Date | null>(null);
+  const [comparisonEnabled, setComparisonEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(COMPARISON_ENABLED_KEY) === 'true';
+    } catch { return false; }
+  });
+  const [customComparisonStart, setCustomComparisonStart] = useState<Date | null>(() => {
+    try {
+      const raw = localStorage.getItem(COMPARISON_START_KEY);
+      return raw ? new Date(raw) : null;
+    } catch { return null; }
+  });
+  const [customComparisonEnd, setCustomComparisonEnd] = useState<Date | null>(() => {
+    try {
+      const raw = localStorage.getItem(COMPARISON_END_KEY);
+      return raw ? new Date(raw) : null;
+    } catch { return null; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(COMPARISON_ENABLED_KEY, String(comparisonEnabled)); } catch { /* ignore */ }
+  }, [comparisonEnabled]);
+
+  useEffect(() => {
+    try {
+      if (customComparisonStart) localStorage.setItem(COMPARISON_START_KEY, customComparisonStart.toISOString());
+      else localStorage.removeItem(COMPARISON_START_KEY);
+    } catch { /* ignore */ }
+  }, [customComparisonStart]);
+
+  useEffect(() => {
+    try {
+      if (customComparisonEnd) localStorage.setItem(COMPARISON_END_KEY, customComparisonEnd.toISOString());
+      else localStorage.removeItem(COMPARISON_END_KEY);
+    } catch { /* ignore */ }
+  }, [customComparisonEnd]);
 
   // Calculate comparison date range based on current period duration
   const comparisonDateRange = useMemo(() => {

@@ -1,0 +1,29 @@
+flowchart TD
+    START(["GET /backfill/{seller}\nbegin_date · end_date · dry_run"])
+
+    START --> FETCH["Busca vendas no ML\npor competência (date_approved)\npagina de 50 em 50"]
+    FETCH --> SUPABASE["Carrega vendas já processadas\ndo banco (paginado, 1000/vez)"]
+    SUPABASE --> FILTER{"Filtra processáveis"}
+
+    FILTER -->|"✗ sem pedido"| IGN1["IGNORA\n(pagamento avulso)"]
+    FILTER -->|"✗ frete do comprador"| IGN2["IGNORA\n(marketplace_shipment)"]
+    FILTER -->|"✗ é uma compra"| IGN3["IGNORA\n(collector_id != null)"]
+    FILTER -->|"✗ já processado\n(sem fees faltantes)"| IGN4["IGNORA\n(já sincronizado)"]
+    FILTER -->|"✓ aprovada / devolvida\n/ mediação / chargeback"| PROC
+
+    subgraph PROC["Processáveis"]
+        DRYRUN{"dry_run?"}
+        DRYRUN -->|"true"| LIST["Retorna lista\nsem gravar nada"]
+        DRYRUN -->|"false"| BATCH["Processa em lotes\n(10 paralelos por padrão)"]
+        BATCH --> GETFRESH["Busca dados frescos\nno ML para cada venda"]
+        GETFRESH --> WEBHOOK["process_payment_webhook\npor cada venda"]
+    end
+
+    WEBHOOK --> RESULT["Resultado:\nprocessed · errors · remaining"]
+
+    style IGN1 fill:#ffcccc
+    style IGN2 fill:#ffcccc
+    style IGN3 fill:#ffcccc
+    style IGN4 fill:#ffcccc
+    style LIST fill:#fff3cd
+    style RESULT fill:#d4edda

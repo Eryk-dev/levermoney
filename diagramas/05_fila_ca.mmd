@@ -1,0 +1,38 @@
+flowchart TD
+    WORKER(["⚙️ Executor da Fila\nCaWorker\npoll a cada 1 segundo"])
+
+    WORKER --> POLL["Busca próximo job\nstatus: pendente ou falhou\nscheduled_for <= agora\nORDEM: prioridade · data criação"]
+    POLL -->|"fila vazia"| WAIT["Aguarda 1 segundo\ne tenta novamente"]
+    WAIT --> POLL
+
+    POLL -->|"job encontrado"| CLAIM["Marca atomicamente\ncomo em execução\n(evita processamento duplo)"]
+    CLAIM -->|"outro processo\ncapturou antes"| POLL
+
+    CLAIM --> RATE["Aguarda token\nde rate limit\n(máx 9 req/s · 540 req/min)"]
+    RATE --> EXECUTE["Executa chamada\nHTTP para CA API\n(POST ou GET)"]
+
+    EXECUTE --> RESULT{"Resposta\nda CA API"}
+
+    RESULT -->|"✓ 2xx sucesso"| SUCCESS["Marca como concluído\nSalva protocolo retornado\npela CA (async response)"]
+    SUCCESS --> GROUP{"Todos jobs\ndo grupo\nconcluídos?"}
+    GROUP -->|"sim + nenhum dead"| SYNCED["Venda marcada\ncomo SINCRONIZADA\n(payments.status = synced)"]
+    GROUP -->|"tem dead"| ERR_GROUP["Venda fica QUEUED\ncom nota de erro"]
+    GROUP -->|"ainda tem pendentes"| WAIT2["Aguarda\noutros jobs"]
+
+    RESULT -->|"401 token expirado"| REFRESH["Invalida cache\ndo token CA\nAgenda retry"]
+    RESULT -->|"429 rate limit\nou 5xx servidor"| RETRY["Marca como falhou\nBackoff exponencial:\n30s → 2min → 8min"]
+    RESULT -->|"4xx erro permanente\n(ex: 400, 422)"| DEAD["Dead Letter\nNão tenta mais\n⚠️ Ação manual necessária"]
+
+    RETRY --> ATTEMPTS{"Tentativas\n>= 3?"}
+    ATTEMPTS -->|"sim"| DEAD
+    ATTEMPTS -->|"não"| BACK_QUEUE["Volta para fila\ncom next_retry_at"]
+
+    subgraph STARTUP["Na inicialização do servidor"]
+        RECOVER["Recupera jobs travados:\nstatus processing > 5min\n→ volta para failed"]
+    end
+
+    style SUCCESS fill:#d4edda
+    style SYNCED fill:#d4edda
+    style DEAD fill:#ffcccc
+    style ERR_GROUP fill:#fff3cd
+    style RECOVER fill:#cce5ff

@@ -1,0 +1,1473 @@
+{
+  "synced_at": "2026-02-20T17:36:01.099059+00:00",
+  "count": 163,
+  "categories": [
+    {
+      "id": "78f42170-23f7-41dc-80cd-7886c78fc397",
+      "versao": 0,
+      "nome": "1.1.1 MercadoLibre",
+      "categoria_pai": "e1e6db54-66df-4c8e-a28a-fd3c74119a49",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "00c0bd64-e37b-4def-a69d-acf01353f0d3",
+      "versao": 0,
+      "nome": "1.1.2 Loja Própria (E-commerce)",
+      "categoria_pai": "e1e6db54-66df-4c8e-a28a-fd3c74119a49",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "0cf69a29-199f-4eb1-84cc-1dc7c3934974",
+      "versao": 0,
+      "nome": "1.1.3 Vendas B2B (Atacado)",
+      "categoria_pai": "e1e6db54-66df-4c8e-a28a-fd3c74119a49",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "d889b6f7-2ee4-433d-9b68-e15a70819db2",
+      "versao": 0,
+      "nome": "1.1.4 Marketplace (Outros - Shopee, Amazon, Magalu)",
+      "categoria_pai": "e1e6db54-66df-4c8e-a28a-fd3c74119a49",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "0ff3cac8-fc5f-443d-8829-36ae22458411",
+      "versao": 0,
+      "nome": "1.1.5 Vendas Diretas/Balcão",
+      "categoria_pai": "e1e6db54-66df-4c8e-a28a-fd3c74119a49",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "e2c73733-5382-400f-b740-bbd1ba3e769e",
+      "versao": 0,
+      "nome": "1.1.6 Serviços (Instalação, Consultoria)",
+      "categoria_pai": "e1e6db54-66df-4c8e-a28a-fd3c74119a49",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "713ee216-8abe-4bcd-bc54-34421cb62a06",
+      "versao": 0,
+      "nome": "1.2.1 Devoluções e Cancelamentos",
+      "categoria_pai": "33a82244-d0f0-4d48-bc69-21990bb34bcc",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "ffcf04c2-b5e7-4e08-bff1-e9b5f5a6a288",
+      "versao": 0,
+      "nome": "1.2.3 Abatimentos",
+      "categoria_pai": "33a82244-d0f0-4d48-bc69-21990bb34bcc",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "d00a7c0d-a04c-462b-bed6-6945d84bee6d",
+      "versao": 0,
+      "nome": "1.3.1 Receita de Frete Cobrado",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "bce13259-f34d-4fa9-8772-424b2980c9d9",
+      "versao": 0,
+      "nome": "1.3.2 Juros Recebidos",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "cb6b4687-32b6-4328-b537-ced78154be23",
+      "versao": 0,
+      "nome": "1.3.3 Rendimento de Aplicações",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c4cc890c-126a-48da-8e47-da7c1492620d",
+      "versao": 0,
+      "nome": "1.3.4 Descontos e Estornos de Taxas e Tarifas",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "12480120-72bb-44db-bc68-48720b3142ec",
+      "versao": 0,
+      "nome": "1.3.5 Receitas Intercompany",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "8dd95dff-a3ee-46d0-9442-cb4107d8e24b",
+      "versao": 0,
+      "nome": "1.3.6 Reversão de Provisões",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "2c0ef767-4983-4c4e-bfec-119f05708cd4",
+      "versao": 0,
+      "nome": "1.3.7 Estorno de Frete sobre Vendas",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "9c88df49-ee1b-40cd-9672-951c1964a686",
+      "versao": 0,
+      "nome": "1.3.8 A Classificar (receita operacional)",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "4be9c21a-1e81-4813-92bc-21927bbd811b",
+      "versao": 0,
+      "nome": "1.3.9 Rendimentos CC",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "eb0dece8-77d9-4282-9bc2-55f435025821",
+      "versao": 0,
+      "nome": "1.4.1 Venda de Ativo Imobilizado",
+      "categoria_pai": "ecbe23ff-0bee-4038-a412-71b038b0f0a7",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "deffb817-fb4e-45a4-9e25-35e0cde90244",
+      "versao": 0,
+      "nome": "1.4.2 Outras Receitas Eventuais",
+      "categoria_pai": "ecbe23ff-0bee-4038-a412-71b038b0f0a7",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "b6a02003-35d7-4c22-b492-15e864441e54",
+      "versao": 0,
+      "nome": "1.4.3 A Classificar (receita não operacional)",
+      "categoria_pai": "ecbe23ff-0bee-4038-a412-71b038b0f0a7",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "8131467a-4ab2-4920-ab43-e1f1a060e946",
+      "versao": 0,
+      "nome": "1.4.4 Empréstimo Entre Sócios - Entrada",
+      "categoria_pai": "ecbe23ff-0bee-4038-a412-71b038b0f0a7",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c77dd189-118d-45e5-b8b1-7f041716a554",
+      "versao": 0,
+      "nome": "1.4.5 Recebimento de Empréstimos e Financiamentos",
+      "categoria_pai": "ecbe23ff-0bee-4038-a412-71b038b0f0a7",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "14f9725d-ab61-4656-94b7-71a94317afe8",
+      "versao": 0,
+      "nome": "2.10.1 Honorários Contábeis",
+      "categoria_pai": "73de33d3-ac55-45a9-a72a-831e0346ec71",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "4ab8621e-7e5c-482a-a646-af60a6b561d2",
+      "versao": 0,
+      "nome": "2.10.2 Honorários Advocatícios",
+      "categoria_pai": "73de33d3-ac55-45a9-a72a-831e0346ec71",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "203b4588-f06b-4862-a360-f2ca7da36c2b",
+      "versao": 0,
+      "nome": "2.10.3 Taxas e Contribuições",
+      "categoria_pai": "73de33d3-ac55-45a9-a72a-831e0346ec71",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "fbec1b0d-df0f-48b5-9802-21fd36dd0b48",
+      "versao": 0,
+      "nome": "2.10.4 Certidões e Registros",
+      "categoria_pai": "73de33d3-ac55-45a9-a72a-831e0346ec71",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "4200c457-977a-40f7-b634-daa7e9bed394",
+      "versao": 0,
+      "nome": "2.10.5 Multas e Juros (Dedução Legal)",
+      "categoria_pai": "73de33d3-ac55-45a9-a72a-831e0346ec71",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "279f87f9-8677-4339-9226-dfa94b58a02a",
+      "versao": 0,
+      "nome": "2.10.6 Despesas Cartorárias",
+      "categoria_pai": "73de33d3-ac55-45a9-a72a-831e0346ec71",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "9414353c-3348-421b-8aff-6ef9650d38df",
+      "versao": 0,
+      "nome": "2.10.7 Anuidades Profissionais",
+      "categoria_pai": "73de33d3-ac55-45a9-a72a-831e0346ec71",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "db65c297-5958-469e-a515-7034868c3a98",
+      "versao": 0,
+      "nome": "2.11.10 Variação Cambial Passiva",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c2b9b4c9-af33-428d-be3b-ad9f86bcc5d5",
+      "versao": 0,
+      "nome": "2.11.11 Juros de Mora",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "1fabf5d2-5947-4977-82c3-8611916589e3",
+      "versao": 0,
+      "nome": "2.11.12 Juros sobre Financiamentos",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "05850937-3327-4778-a15d-9ccac6d670af",
+      "versao": 0,
+      "nome": "2.11.13 Juros do Rotativo do Cartão de Crédito",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "85f9585b-a8bb-4c49-a9b7-5818943883c0",
+      "versao": 0,
+      "nome": "2.11.14 Juros Sobre Cheque Especial",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "63cf7bba-7358-404e-b241-4a7497f218c3",
+      "versao": 0,
+      "nome": "2.11.15 Taxa de Boleto",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "f29d4f3f-aacb-4508-949b-4a2fbef891df",
+      "versao": 0,
+      "nome": "2.11.16 Descontos Concedidos (Financeiros)",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "af893d30-c690-4a13-b2c5-fa23a7ca10b5",
+      "versao": 0,
+      "nome": "2.11.17 Multas (despesa financeira)",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "b2f0b696-22d2-40d3-9191-9ba6d3197243",
+      "versao": 0,
+      "nome": "2.11.18 Juros (despesa financeira)",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "fb636c79-41e4-4ff2-bef1-006c920707fc",
+      "versao": 0,
+      "nome": "2.11.1 Juros sobre Empréstimos",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "43fea701-5bf4-46c6-a3e4-1109bb0b1219",
+      "versao": 0,
+      "nome": "2.11.2 Taxa de Administração de Consórcio",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "83a5f50d-2755-4a6a-940a-6b92eac8f0dc",
+      "versao": 0,
+      "nome": "2.11.3 Encargos De IRRF",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "fad85b86-a1cb-48db-acd4-dcb5a9b1cc4d",
+      "versao": 0,
+      "nome": "2.11.4 IOF",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "84f0c8b4-938f-4837-bcca-0ae7862d4391",
+      "versao": 0,
+      "nome": "2.11.5 Pagamento de Parcelas de Consórcio",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "358e375f-60c3-4800-b731-371edd3b32f7",
+      "versao": 0,
+      "nome": "2.11.6 Tarifas Bancárias",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "563e8fa4-8bbe-4108-be6f-75877b4aa15a",
+      "versao": 0,
+      "nome": "2.11.7 Tarifas de Cartão de Crédito",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "d77aa9d6-dd63-4d67-a622-64c3a05780a5",
+      "versao": 0,
+      "nome": "2.11.8 Tarifas de Pagamento (Mercado Pago, PagSeguro)",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "7e9efb50-6039-4238-b844-a10507c42ff2",
+      "versao": 0,
+      "nome": "2.11.9 Antecipação de Recebíveis",
+      "categoria_pai": "557d9bc8-44da-49d9-a3b6-18d08afb91da",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "6757861b-5bf9-4a8c-8145-16f872e03055",
+      "versao": 0,
+      "nome": "2.1.1 Compra de Mercadorias",
+      "categoria_pai": "0f4afdb2-6d24-4f94-b19a-ecd327ba7cac",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "5c6a97dc-95fb-486a-9efb-41f3facc5562",
+      "versao": 0,
+      "nome": "2.12.1 Combustível",
+      "categoria_pai": "e17a9a5f-8acb-426d-8f51-4c21c465ac1f",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "ef89d1d2-dc9c-4802-8969-5422fb81fe82",
+      "versao": 0,
+      "nome": "2.12.2 Manutenção de Veículos",
+      "categoria_pai": "e17a9a5f-8acb-426d-8f51-4c21c465ac1f",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "d2884f11-d8da-47b0-8fea-467981e654bb",
+      "versao": 0,
+      "nome": "2.12.3 Seguro de Veículos",
+      "categoria_pai": "e17a9a5f-8acb-426d-8f51-4c21c465ac1f",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "6ade5201-f87d-4f09-bcb8-e8fa6e87bdab",
+      "versao": 0,
+      "nome": "2.12.4 Estacionamento e Pedágios",
+      "categoria_pai": "e17a9a5f-8acb-426d-8f51-4c21c465ac1f",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "f5055130-17e7-4f96-92c5-f53119b83091",
+      "versao": 0,
+      "nome": "2.1.2 Frete sobre Compras (Entrada)",
+      "categoria_pai": "0f4afdb2-6d24-4f94-b19a-ecd327ba7cac",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c5c9ffb2-a712-4749-accd-9d4beff1da7c",
+      "versao": 0,
+      "nome": "2.13.1 IRPJ (Imposto de Renda PJ)",
+      "categoria_pai": "5b26013d-937d-473a-bc03-0357a5e3f14d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "89f624f8-a716-4a67-847c-b063a60358a1",
+      "versao": 0,
+      "nome": "2.13.2 CSLL (Contribuição Social)",
+      "categoria_pai": "5b26013d-937d-473a-bc03-0357a5e3f14d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "9deea29e-1a58-410a-a417-0682d818d898",
+      "versao": 0,
+      "nome": "2.13.3 Adicional de IRPJ",
+      "categoria_pai": "5b26013d-937d-473a-bc03-0357a5e3f14d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "72c92f16-f9e5-45ed-833f-fb94e1aa559e",
+      "versao": 0,
+      "nome": "2.1.3 Seguro de Transporte - Entrada",
+      "categoria_pai": "0f4afdb2-6d24-4f94-b19a-ecd327ba7cac",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "791504b0-5884-4227-9f9e-ed0b4585b1d4",
+      "versao": 0,
+      "nome": "2.14.10 A Classificar (despesa operacional)",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "ff2dcbc0-a357-47b4-93a1-1c1408902d49",
+      "versao": 0,
+      "nome": "2.14.11 IRRF",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "d3b9130c-73bd-4c91-a589-5929f3963a1b",
+      "versao": 0,
+      "nome": "2.14.12 Assinaturas",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "9520165a-0394-4337-8817-e76955625c1a",
+      "versao": 0,
+      "nome": "2.14.13 Pagamento de Empréstimos e Financiamentos",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "5f618f34-1481-499c-b051-309b8afc900a",
+      "versao": 0,
+      "nome": "2.14.14 Água, Copa e Cozinha",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "89b6e652-a3eb-4a0b-b1ce-0e8df1249033",
+      "versao": 0,
+      "nome": "2.14.1 Despesas com Viagens",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "fcd7438b-cc44-4096-985d-932d7ef1dd44",
+      "versao": 0,
+      "nome": "2.14.2 Alimentação e Refeições",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "271c1234-a58f-40e9-ae01-b7d93d00ab6b",
+      "versao": 0,
+      "nome": "2.14.3 Despesas Médicas e Exames",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "b48c5814-d3a8-43aa-87ff-ae412f7a7528",
+      "versao": 0,
+      "nome": "2.14.4 Doações e Patrocínios",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c332db91-0c8c-4a4d-980a-600db7c2f744",
+      "versao": 0,
+      "nome": "2.14.5 Perdas com Inadimplência",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "1c3b4d08-44d4-4978-832f-e47ed865fa52",
+      "versao": 0,
+      "nome": "2.14.6 Quebras e Perdas de Estoque",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "1bcd7c14-223d-499a-8331-8ce6bc645a2f",
+      "versao": 0,
+      "nome": "2.14.7 Perdas em Garantia",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "a3083a24-b46f-4791-a4b4-8671a07b2549",
+      "versao": 0,
+      "nome": "2.14.8 Despesas Eventuais",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "7cd338a2-a6ba-4814-9452-6e4242c774aa",
+      "versao": 0,
+      "nome": "2.14.9 Despesas de Exercícios Anteriores a nov/2025",
+      "categoria_pai": "1d500e22-75ef-4415-b6d1-fbd00611950d",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "78458b3a-cfd3-4b01-b252-7ca49822c7f4",
+      "versao": 0,
+      "nome": "2.1.4 Embalagens",
+      "categoria_pai": "0f4afdb2-6d24-4f94-b19a-ecd327ba7cac",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "dc10b1cf-b398-410b-950d-222a2141fd9d",
+      "versao": 0,
+      "nome": "2.15.1 Pesquisa e Desenvolvimento",
+      "categoria_pai": "3b9fb882-aff3-4347-9aa5-fc6c03f4cd24",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "e3b20654-9fee-4118-8bdc-606d49ee43a7",
+      "versao": 0,
+      "nome": "2.15.2 Expansão de Negócios",
+      "categoria_pai": "3b9fb882-aff3-4347-9aa5-fc6c03f4cd24",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "5da0b9e1-d270-4415-9ff6-22c07e99e94b",
+      "versao": 0,
+      "nome": "2.15.3 Consultoria Empresarial",
+      "categoria_pai": "3b9fb882-aff3-4347-9aa5-fc6c03f4cd24",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "3fb3af84-ee1e-4ad8-9e7f-f1ead7a115d2",
+      "versao": 0,
+      "nome": "2.15.4 Compra de Ativo Imobilizado",
+      "categoria_pai": "3b9fb882-aff3-4347-9aa5-fc6c03f4cd24",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "f7d6562b-0034-4477-8b3d-acbb6b8cac8d",
+      "versao": 0,
+      "nome": "2.15.5 Aporte de capital",
+      "categoria_pai": "3b9fb882-aff3-4347-9aa5-fc6c03f4cd24",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "f1dfba7e-a73d-45fe-b7a2-f9ddd99d86e4",
+      "versao": 0,
+      "nome": "2.1.5 Material de Empacotamento",
+      "categoria_pai": "0f4afdb2-6d24-4f94-b19a-ecd327ba7cac",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "ef048b69-8f68-4573-8725-3c0ea99550bf",
+      "versao": 0,
+      "nome": "2.16.1 Serviços Contratados Intercompany",
+      "categoria_pai": "72813f50-46f8-4a01-aa3f-2e9c3d08b3a4",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "43d97a3d-ad2a-4412-aa8a-99473c6b59e6",
+      "versao": 0,
+      "nome": "2.16.2 Aluguel Pago Intercompany",
+      "categoria_pai": "72813f50-46f8-4a01-aa3f-2e9c3d08b3a4",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "bfeee420-95cc-4881-b1e0-da102a5839a4",
+      "versao": 0,
+      "nome": "2.16.3 Rateio de Custos Compartilhados",
+      "categoria_pai": "72813f50-46f8-4a01-aa3f-2e9c3d08b3a4",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "95823dee-1363-4025-8323-6bad235635e2",
+      "versao": 0,
+      "nome": "2.16.4 Royalties e Licenciamento Interno",
+      "categoria_pai": "72813f50-46f8-4a01-aa3f-2e9c3d08b3a4",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "d0c636e0-6335-4973-8920-8a44d99565a5",
+      "versao": 0,
+      "nome": "2.17.1 Empréstimo Entre Sócios - Saída",
+      "categoria_pai": "b6702782-437a-4699-b910-af6058fa279a",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "e8a99394-173d-4e7b-a7b8-b618d5e91d9c",
+      "versao": 0,
+      "nome": "2.17.2 A Classificar (despesa não operacional)",
+      "categoria_pai": "b6702782-437a-4699-b910-af6058fa279a",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c4e80304-abe7-4a04-b820-ae9046d58880",
+      "versao": 0,
+      "nome": "2.1.7 Compra de Insumos",
+      "categoria_pai": "0f4afdb2-6d24-4f94-b19a-ecd327ba7cac",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "d49fbd0a-7143-44be-81ea-e4c4588047f6",
+      "versao": 0,
+      "nome": "2.1.8 Estorno de Compra de Mercadoria",
+      "categoria_pai": "b3624ef7-5134-495e-a505-42ed290caabf",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "fbeb7e16-cd6d-4ba0-b021-65d1e8b7f931",
+      "versao": 0,
+      "nome": "2.2.1 ICMS",
+      "categoria_pai": "e3ff06c4-eac0-4c14-8cc5-9516e9c60627",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "d118cb79-a7ff-4250-83d3-7c1325329d0c",
+      "versao": 0,
+      "nome": "2.2.2 ICMS-ST (Substituição Tributária)",
+      "categoria_pai": "e3ff06c4-eac0-4c14-8cc5-9516e9c60627",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "3b1acab2-9fd6-4fce-b9ac-d418c6355c5d",
+      "versao": 0,
+      "nome": "2.2.3 DIFAL (Diferencial de Alíquota)",
+      "categoria_pai": "e3ff06c4-eac0-4c14-8cc5-9516e9c60627",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "3d35a561-78c7-4f50-a0a0-6584989a9dc6",
+      "versao": 0,
+      "nome": "2.2.4 PIS",
+      "categoria_pai": "e3ff06c4-eac0-4c14-8cc5-9516e9c60627",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "b39886b5-33c2-472c-b883-3dacea5ad1ae",
+      "versao": 0,
+      "nome": "2.2.5 COFINS",
+      "categoria_pai": "e3ff06c4-eac0-4c14-8cc5-9516e9c60627",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "ad29f314-d95d-4211-80d7-809e6f5d2924",
+      "versao": 0,
+      "nome": "2.2.6 ISS (Serviços)",
+      "categoria_pai": "e3ff06c4-eac0-4c14-8cc5-9516e9c60627",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "2e3e4fae-a3a0-4c32-a07d-1997336b6023",
+      "versao": 0,
+      "nome": "2.2.7 Simples Nacional",
+      "categoria_pai": "e3ff06c4-eac0-4c14-8cc5-9516e9c60627",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "9cd1beda-e721-4612-a77e-b226cb8a7fa9",
+      "versao": 0,
+      "nome": "2.3.1 IPTU",
+      "categoria_pai": "5f4f44bf-5ff2-48cc-a759-5cef8f23c72b",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "5185008f-4306-4674-886c-289d5907fc48",
+      "versao": 0,
+      "nome": "2.3.2 IPVA e Licenciamento",
+      "categoria_pai": "5f4f44bf-5ff2-48cc-a759-5cef8f23c72b",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "62c03b6a-30f1-4e5b-9827-126a34fca052",
+      "versao": 0,
+      "nome": "2.3.3 Outros Impostos",
+      "categoria_pai": "5f4f44bf-5ff2-48cc-a759-5cef8f23c72b",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "2325291e-b215-45f2-869b-e269ba648af4",
+      "versao": 0,
+      "nome": "2.4.10 Vale Transporte (VT) e Vale Refeição (VR)",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "7402ccb5-60df-45c2-a43a-d247420510a3",
+      "versao": 0,
+      "nome": "2.4.11 Plano de Saúde",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "0bd63c45-82eb-466e-bed7-b25ac25d33b7",
+      "versao": 0,
+      "nome": "2.4.12 Seguro de Vida",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "e3ca0f9e-4b70-4a96-ac90-e9d446e70321",
+      "versao": 0,
+      "nome": "2.4.13 Treinamentos e Capacitação",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c419ecb2-f412-4f1c-85e1-1547f62c2499",
+      "versao": 0,
+      "nome": "2.4.14 Uniformes e EPIs",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "9488f628-1171-4042-9066-4c7fc60b807d",
+      "versao": 0,
+      "nome": "2.4.15 INSS",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "97794cdd-a65e-4d99-9f90-c963d1ff2d0a",
+      "versao": 0,
+      "nome": "2.4.16 Despesas com Influencer",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c67c8c6a-2812-4c1c-b781-abf5e7986fb2",
+      "versao": 0,
+      "nome": "2.4.1 Salários e Ordenados (CLT)",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c4a37bdc-4f02-40e9-be9a-b315fb897e68",
+      "versao": 0,
+      "nome": "2.4.2 Pró-Labore (Sócios)",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "44998c9d-d169-411a-b161-91e72900ec65",
+      "versao": 0,
+      "nome": "2.4.3 Prestadores de Serviço (PJ)",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "3bcbf9b0-c6be-4d50-b62b-093ae109d37b",
+      "versao": 0,
+      "nome": "2.4.4 Horas Extras",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "54ef75bd-7125-4a66-b1a8-d336e1fe4a99",
+      "versao": 0,
+      "nome": "2.4.5 Férias e 13º Salário",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "7b63577f-4b0a-4614-a98f-fbbb879f220c",
+      "versao": 0,
+      "nome": "2.4.6 Aviso Prévio e Rescisões",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "71f87321-c7fd-4ad0-9dee-3560284f3da6",
+      "versao": 0,
+      "nome": "2.4.7 FGTS",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "658db048-45e2-46ff-bab9-9516d06d205d",
+      "versao": 0,
+      "nome": "2.4.8 INSS Patronal",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "62c55223-91cd-4f69-a8bb-add60d9d045d",
+      "versao": 0,
+      "nome": "2.4.9 Rateio de Funcionários Compartilhados",
+      "categoria_pai": "9ee48a4e-89d2-41e0-b1c9-f5ab90473c78",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "9a014a1b-15ac-4f4f-b49d-fa01ef1cfcd7",
+      "versao": 0,
+      "nome": "2.5.10 Segurança e Vigilância",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "5b5b6ee5-9543-4e2e-a592-bd63be34dbc4",
+      "versao": 0,
+      "nome": "2.5.11 Seguros",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "e27deb0c-6481-47ce-918a-45ecd317e4f5",
+      "versao": 0,
+      "nome": "2.5.1 Aluguel",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "b62fbc16-d02c-45b7-9863-a49dfaf1030d",
+      "versao": 0,
+      "nome": "2.5.2 Condomínio",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "ce71827b-429a-4b97-a0d7-56fa32bbb181",
+      "versao": 0,
+      "nome": "2.5.3 Energia Elétrica",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "f6f914df-9ace-4fb3-8ea2-5c4e9d43cebb",
+      "versao": 0,
+      "nome": "2.5.4 Água e Esgoto",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "16a06c9e-1db4-42f4-98ef-9087cacbf6cf",
+      "versao": 0,
+      "nome": "2.5.5 Telefone e Internet",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "b3fe33c4-3f27-465a-be9e-e5d64709f0fe",
+      "versao": 0,
+      "nome": "2.5.6 Correios (Administrativo)",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c5b3a4ca-2c47-4f52-91d5-0acacd885023",
+      "versao": 0,
+      "nome": "2.5.7 Material de Escritório",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "2bf943ec-dbfb-4977-9655-e4e85f385b4a",
+      "versao": 0,
+      "nome": "2.5.8 Material de Limpeza",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "e1e7946a-575e-41d5-ab32-712a82097dae",
+      "versao": 0,
+      "nome": "2.5.9 Manutenção e Reparos",
+      "categoria_pai": "b2c31e95-85cd-43ae-be46-ea88e991f114",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "102f754b-036d-4c4f-ac54-859c808989a2",
+      "versao": 0,
+      "nome": "2.6.10 Manutenção de Sistemas",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "db220f94-da44-406b-a7d1-be7c0f24d9e6",
+      "versao": 0,
+      "nome": "2.6.1 Software e Licenças",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "b3f668fb-f088-4831-a670-fdbdee7867ed",
+      "versao": 0,
+      "nome": "2.6.2 ERP",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "ed6db967-ebad-4294-a58a-65dc9ee3cadb",
+      "versao": 0,
+      "nome": "2.6.3 Software de Automação",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "10893d40-e9f4-4d90-91a0-c5953c2fac63",
+      "versao": 0,
+      "nome": "2.6.4 Banco de Dados (Supabase)",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "193ed3ae-d851-48cf-9af1-53848f89383c",
+      "versao": 0,
+      "nome": "2.6.5 APIs e Integrações",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "965a5919-8dc4-4a14-b69b-06858aca5d19",
+      "versao": 0,
+      "nome": "2.6.6 Hospedagem de Sites",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "6df31c06-6660-40f6-8892-17762bf2b05f",
+      "versao": 0,
+      "nome": "2.6.7 Cloud Computing",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "6648bb2e-b662-403c-a327-a2b39a22ade2",
+      "versao": 0,
+      "nome": "2.6.8 Desenvolvimento de Software",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "6c95928c-5634-453b-9a49-5ea8d55bc046",
+      "versao": 0,
+      "nome": "2.6.9 Domínios e SSL",
+      "categoria_pai": "fb387a87-ca2b-42f9-ab35-0c7152883c27",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "707cb087-7456-409c-9c86-a214a66eba12",
+      "versao": 0,
+      "nome": "2.7.1 Google Ads",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "0827a1da-3f7c-46d7-b13c-ec715b13e209",
+      "versao": 0,
+      "nome": "2.7.2 Meta Ads",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "85b10aa6-c551-4ade-8309-d9a7e4cb43ec",
+      "versao": 0,
+      "nome": "2.7.3 Marketing em Marketplace",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "236b149d-17ba-4382-a1bc-87e14afa800f",
+      "versao": 0,
+      "nome": "2.7.3 Tiktok Ads",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "e3dc7ffe-fad0-4abf-844a-e87379c0d7a8",
+      "versao": 0,
+      "nome": "2.7.4 Anúncios MercadoLibre",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "a9eb69ea-a6fb-4c1a-8cc5-d55fa9b2db3e",
+      "versao": 0,
+      "nome": "2.7.4 Mercado Livre Ads",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "f0148eae-1269-4eb8-a2b0-6b948c7eb642",
+      "versao": 0,
+      "nome": "2.7.5 SEO e Conteúdo",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "b1936f43-019c-4a56-b46d-fa9d525ecf91",
+      "versao": 0,
+      "nome": "2.7.6 Design e Criação",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "33b20795-a35e-4eed-83e2-7dd66637ba06",
+      "versao": 0,
+      "nome": "2.7.7 Fotografia de Produtos",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "5865a0e2-030a-4027-b6fd-61239fdf7fd2",
+      "versao": 0,
+      "nome": "2.7.8 Agência de Marketing",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "b9daec03-3df6-4a1a-8b6c-d28b563777ab",
+      "versao": 0,
+      "nome": "2.7.9 Brindes e Materiais Promocionais",
+      "categoria_pai": "8e1e8f70-0e8a-47db-b57c-8d7dc051bfb2",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "af4bf85e-6389-412e-aaf7-d4fcad5c08c8",
+      "versao": 0,
+      "nome": "2.8.1 Comissões de Vendedores",
+      "categoria_pai": "4df6a828-6ccf-45c4-8804-6a6968467ceb",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "699d6072-031a-47bf-9aeb-563d1c2e8a41",
+      "versao": 0,
+      "nome": "2.8.2 Comissões de Marketplace",
+      "categoria_pai": "4df6a828-6ccf-45c4-8804-6a6968467ceb",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "cd1b669e-3c4c-44c1-af0e-ceb908c0dfb4",
+      "versao": 0,
+      "nome": "2.8.3 Bonificações e Prêmios",
+      "categoria_pai": "4df6a828-6ccf-45c4-8804-6a6968467ceb",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "0c0afdb6-5440-417f-852a-52390c079603",
+      "versao": 0,
+      "nome": "2.8.4 Viagens e Representação",
+      "categoria_pai": "4df6a828-6ccf-45c4-8804-6a6968467ceb",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "73c45078-4412-423b-bc92-4527c1de0e5b",
+      "versao": 0,
+      "nome": "2.8.5 Participação em Feiras",
+      "categoria_pai": "4df6a828-6ccf-45c4-8804-6a6968467ceb",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c823b289-5319-4b1c-9d50-1ba8597e3058",
+      "versao": 0,
+      "nome": "2.8.6 Amostras e Demonstrações",
+      "categoria_pai": "4df6a828-6ccf-45c4-8804-6a6968467ceb",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "105f5e22-adc1-458b-ba0c-3380c3780bbf",
+      "versao": 0,
+      "nome": "2.8.7 Reembolso Diversos (vendas)",
+      "categoria_pai": "4df6a828-6ccf-45c4-8804-6a6968467ceb",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "27c8de66-cbb2-4778-94a5-b0de4405ae68",
+      "versao": 0,
+      "nome": "2.9.10 Frete Full",
+      "categoria_pai": "f53d0c65-e7fe-4b19-909f-cf94777399ef",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "1f8d3708-18e7-4032-ac60-5d335a5b7b6a",
+      "versao": 0,
+      "nome": "2.9.1 Frete sobre Vendas (Saída)",
+      "categoria_pai": "f53d0c65-e7fe-4b19-909f-cf94777399ef",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "5a557ff1-4a0d-4e75-aca2-ad97eb8176ad",
+      "versao": 0,
+      "nome": "2.9.2 Correios (Envios)",
+      "categoria_pai": "f53d0c65-e7fe-4b19-909f-cf94777399ef",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "d335c837-82d4-4d06-86cc-151e557f2ddc",
+      "versao": 0,
+      "nome": "2.9.3 Transportadoras",
+      "categoria_pai": "f53d0c65-e7fe-4b19-909f-cf94777399ef",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "6ccbf8ed-e174-4da0-ac8d-0ed1b387cb32",
+      "versao": 0,
+      "nome": "2.9.4 MercadoEnvios",
+      "categoria_pai": "f53d0c65-e7fe-4b19-909f-cf94777399ef",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "45555273-f926-4858-bcd5-ebcd8d343ce4",
+      "versao": 0,
+      "nome": "2.9.5 Entrega Local",
+      "categoria_pai": "f53d0c65-e7fe-4b19-909f-cf94777399ef",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "c44962d6-751b-4a3d-acc0-6f8d008bd69f",
+      "versao": 0,
+      "nome": "2.9.7 Seguro de Transporte - Saída",
+      "categoria_pai": "f53d0c65-e7fe-4b19-909f-cf94777399ef",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "847dd6bb-f8d8-4227-9b69-4625493560d1",
+      "versao": 0,
+      "nome": "2.9.8 Armazenagem",
+      "categoria_pai": "f53d0c65-e7fe-4b19-909f-cf94777399ef",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "703b0b94-b4b7-447f-9d03-602f0beeda4c",
+      "versao": 0,
+      "nome": "2.9.9 Picking e Packing",
+      "categoria_pai": "f53d0c65-e7fe-4b19-909f-cf94777399ef",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "3d129ff3-1987-4200-bb8a-2d5948c7d639",
+      "versao": 0,
+      "nome": "3.1.1 Pagamento de dividendos\t",
+      "categoria_pai": "136b0e56-338e-48d7-86c1-af808ae68102",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "15864b3c-bad6-4ec0-b501-6d628f708efb",
+      "versao": 0,
+      "nome": "3.2.1 Estorno de Dividendos (+)",
+      "categoria_pai": "ef021310-0193-4f81-bf2d-bdb0fbc763e1",
+      "tipo": "RECEITA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    },
+    {
+      "id": "75aa9ef0-856a-4346-b747-f287fc6bdc11",
+      "versao": 0,
+      "nome": "TRASSS",
+      "categoria_pai": "8ff106b5-c0d4-44ff-ab38-839bc6ef5887",
+      "tipo": "DESPESA",
+      "entrada_dre": null,
+      "considera_custo_dre": false
+    }
+  ]
+}

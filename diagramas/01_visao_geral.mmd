@@ -1,0 +1,53 @@
+flowchart TD
+    ML["🛒 Mercado Pago / Mercado Livre"]
+
+    subgraph ENTRADA["Entradas de Dados"]
+        BF["Backfill Manual\nGET /backfill/{seller}\npor competência"]
+        DS["Sync Diário\n00:01 BRT\npor competência + última atualização"]
+    end
+
+    subgraph PROC["Processamento"]
+        PP["Processador Principal\nprocess_payment_webhook"]
+        CL["Classificador Avulso\nclassify_non_order_payment"]
+    end
+
+    subgraph FILA["Fila Persistente (ca_jobs)"]
+        EX["Executor da Fila\nCaWorker\npoll 1s · máx 9 req/s"]
+    end
+
+    subgraph CA["Conta Azul ERP"]
+        CR["Contas a Receber\nReceitas · Estornos de Taxa\nSubsídios"]
+        CP["Contas a Pagar\nComissões · Fretes\nEstornos de Receita"]
+        BX["Baixas\n(parcelas pagas)"]
+    end
+
+    subgraph AUX["Processos Auxiliares"]
+        BAI["Baixas\n10:00 BRT"]
+        FC["Fechamento Financeiro\n11:30 BRT"]
+        EXP["Export Legado ZIP\n(dias configurados)"]
+    end
+
+    subgraph BD["Banco de Dados (Supabase)"]
+        PAY["payments\n(vendas processadas)"]
+        JOBS["ca_jobs\n(fila de execução)"]
+        EXP2["mp_expenses\n(pagamentos avulsos)"]
+        FAT["faturamento\n(dashboard)"]
+    end
+
+    ML --> BF
+    ML --> DS
+    BF --> PP
+    DS --> PP
+    DS --> CL
+    PP --> FILA
+    PP --> PAY
+    CL --> EXP2
+    EX --> CR
+    EX --> CP
+    EX --> BX
+    EX --> PAY
+    JOBS --> EX
+    PP --> JOBS
+    BAI --> JOBS
+    FC --> BD
+    EXP --> ML

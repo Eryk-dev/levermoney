@@ -441,6 +441,28 @@ async def listar_centros_custo() -> list:
     return items
 
 
+async def listar_categorias() -> list:
+    """GET /v1/categorias — list all income/expense categories (paginated)."""
+    items = []
+    page = 1
+    while True:
+        resp = await _request_with_retry(
+            "get", f"{CA_API}/v1/categorias",
+            headers=await _headers(),
+            params={"pagina": page, "tamanho_pagina": 50},
+        )
+        data = resp.json()
+        batch = data.get("itens", data if isinstance(data, list) else [])
+        if not batch:
+            break
+        items.extend(batch)
+        total = data.get("itens_totais", len(items))
+        if len(items) >= total:
+            break
+        page += 1
+    return items
+
+
 async def criar_baixa(parcela_id: str, data_pagamento: str, valor: float, conta_financeira: str) -> dict:
     """POST /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa"""
     payload = {

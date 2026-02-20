@@ -1,0 +1,43 @@
+flowchart TD
+    TIMER(["⏰ 00:01 BRT\nSync Diário"])
+
+    TIMER --> CURSOR["Carrega cursor\ndo último sync\n(sync_state)"]
+    CURSOR --> WINDOW["Calcula janela:\nD-3 até ontem\n(reabre 1 dia do cursor)"]
+
+    WINDOW --> FETCH1["Busca por competência\n(date_approved)\nnovas vendas"]
+    WINDOW --> FETCH2["Busca por última atualização\n(date_last_updated)\ndevoluções · chargebacks"]
+
+    FETCH1 --> DEDUP["Deduplica por ID\nlast_updated prevalece\nem caso de duplicata"]
+    FETCH2 --> DEDUP
+
+    DEDUP --> EXISTING["Carrega todos os payments\nconhecidos do banco"]
+    EXISTING --> LOOP["Para cada venda\nordenada por atualização"]
+
+    LOOP --> HAS_ORDER{"Tem número\nde pedido?"}
+
+    HAS_ORDER -->|"SIM - venda normal"| REPROCESS{"Precisa\nreprocessar?"}
+    REPROCESS -->|"status mudou"| OK1["✓ Processa"]
+    REPROCESS -->|"detalhe mudou"| OK1
+    REPROCESS -->|"ainda pendente/na fila"| OK1
+    REPROCESS -->|"nada mudou + finalizado"| SKIP1["IGNORA"]
+
+    OK1 --> FILTERS{"Filtros\nnão-venda"}
+    FILTERS -->|"✗ frete comprador"| SKIP2["IGNORA"]
+    FILTERS -->|"✗ é compra"| SKIP3["IGNORA"]
+    FILTERS -->|"✓ passou"| PROCESS["process_payment_webhook\n(com dados prontos,\nsem nova chamada ML)"]
+
+    HAS_ORDER -->|"NÃO - pagamento avulso"| NON_ORDER{"Modo?"}
+    NON_ORDER -->|"legado"| SKIP4["IGNORA\n(legado trata)"]
+    NON_ORDER -->|"classifier"| STATUS_CHECK{"Status\naprovado?"}
+    STATUS_CHECK -->|"não"| SKIP5["IGNORA"]
+    STATUS_CHECK -->|"sim"| CLASSIFY["Classificador Automático\n→ mp_expenses"]
+
+    PROCESS --> CURSOR2["Salva cursor atualizado\nse zero erros"]
+
+    style SKIP1 fill:#ffcccc
+    style SKIP2 fill:#ffcccc
+    style SKIP3 fill:#ffcccc
+    style SKIP4 fill:#ffcccc
+    style SKIP5 fill:#ffcccc
+    style CLASSIFY fill:#cce5ff
+    style PROCESS fill:#d4edda

@@ -47,12 +47,16 @@ _last_ingestion_result: dict = {
 # CA category UUID mapping for extrato types
 # ---------------------------------------------------------------------------
 
-# Maps category code strings to CA_CATEGORIES keys.
-# "1.3.4" → estorno_taxa, "2.2.7" → tarifa_pagamento (closest for tax/DIFAL),
+# Maps category code strings to CA_CATEGORIES keys (or hardcoded UUIDs when
+# the category is not present in the CA_CATEGORIES dict).
+# "1.3.4" → estorno_taxa, "1.3.7" → estorno_frete,
+# "2.2.3" → DIFAL (hardcoded UUID — not in CA_CATEGORIES),
 # "2.8.2" → comissao_ml, "2.9.4" → frete_mercadoenvios
 _CA_CATEGORY_CODE_MAP: dict[str, str] = {
     "1.3.4": CA_CATEGORIES["estorno_taxa"],
-    "2.2.7": CA_CATEGORIES["tarifa_pagamento"],
+    "1.3.7": CA_CATEGORIES["estorno_frete"],
+    # 2.2.3 DIFAL (Diferencial de Alíquota ICMS) — UUID from ca_categories.json
+    "2.2.3": "3b1acab2-9fd6-4fce-b9ac-d418c6355c5d",
     "2.8.2": CA_CATEGORIES["comissao_ml"],
     "2.9.4": CA_CATEGORIES["frete_mercadoenvios"],
 }
@@ -85,16 +89,16 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("dinheiro recebido",                 "deposito_avulso",       "income",   None),
     # --- EXPENSES ---
     ("dinheiro retido",                   "dinheiro_retido",       "expense",  None),
-    ("diferenca da aliquota",             "difal",                 "expense",  "2.2.7"),
-    ("difal",                             "difal",                 "expense",  "2.2.7"),
+    ("diferenca da aliquota",             "difal",                 "expense",  "2.2.3"),
+    ("difal",                             "difal",                 "expense",  "2.2.3"),
     ("faturas vencidas",                  "faturas_ml",            "expense",  "2.8.2"),
     ("envio do mercado livre",            "debito_envio_ml",       "expense",  "2.9.4"),
     ("reclamacoes no mercado livre",      "debito_divida_disputa", "expense",  None),
     ("reclamações no mercado livre",      "debito_divida_disputa", "expense",  None),
     # Additional types found in real extratos (jan 2026)
     ("troca de produto",                  "debito_troca",          "expense",  None),
-    ("bonus por envio",                   "bonus_envio",           "income",   "1.3.4"),
-    ("bônus por envio",                   "bonus_envio",           "income",   "1.3.4"),
+    ("bonus por envio",                   "bonus_envio",           "income",   "1.3.7"),
+    ("bônus por envio",                   "bonus_envio",           "income",   "1.3.7"),
     ("compra mercado libre",              None,                    None,       None),
     ("transferencia enviada",             None,                    None,       None),
     ("transferência enviada",             None,                    None,       None),
@@ -483,6 +487,41 @@ def _batch_lookup_composite_expense_ids(
     return found
 
 
+def _batch_lookup_refunded_payment_ids(
+    db,
+    seller_slug: str,
+    ref_ids: list[str],
+) -> set[str]:
+    """Return set of reference_id strings for payments with ml_status='refunded'.
+
+    Used to prevent double-counting devoluções: when processor.py already created
+    estorno_receita (1.2.1) for a refunded payment, the extrato debito_divida_disputa
+    line for the same payment_id must be skipped to avoid duplicating the deduction.
+    """
+    found: set[str] = set()
+    numeric_ids: list[int] = []
+    for rid in ref_ids:
+        try:
+            numeric_ids.append(int(rid))
+        except (ValueError, TypeError):
+            continue
+
+    for i in range(0, len(numeric_ids), 100):
+        chunk = numeric_ids[i : i + 100]
+        result = (
+            db.table("payments")
+            .select("ml_payment_id")
+            .eq("seller_slug", seller_slug)
+            .in_("ml_payment_id", chunk)
+            .eq("ml_status", "refunded")
+            .execute()
+        )
+        for row in result.data or []:
+            found.add(str(row["ml_payment_id"]))
+
+    return found
+
+
 # ---------------------------------------------------------------------------
 # Core per-seller ingestion
 # ---------------------------------------------------------------------------
@@ -622,11 +661,15 @@ async def ingest_extrato_for_seller(
     payment_ids_in_db = _batch_lookup_payment_ids(db, seller_slug, all_ref_ids)
     expense_ids_in_db = _batch_lookup_expense_payment_ids(db, seller_slug, all_ref_ids)
     composite_ids_in_db = _batch_lookup_composite_expense_ids(db, seller_slug, composite_keys)
+    # Only needed for debito_divida_disputa deduplication — payments already
+    # handled as refund by processor.py must not generate a second 1.2.1 entry.
+    refunded_payment_ids_in_db = _batch_lookup_refunded_payment_ids(db, seller_slug, all_ref_ids)
 
     logger.info(
-        "extrato_ingester %s: found %d in payments, %d in mp_expenses (plain), %d in mp_expenses (composite)",
+        "extrato_ingester %s: found %d in payments (%d refunded), %d in mp_expenses (plain), %d in mp_expenses (composite)",
         seller_slug,
         len(payment_ids_in_db),
+        len(refunded_payment_ids_in_db),
         len(expense_ids_in_db),
         len(composite_ids_in_db),
     )
@@ -650,12 +693,24 @@ async def ingest_extrato_for_seller(
         #    supplementary line (e.g. dinheiro_retido on a payment that was
         #    also liberado). We still ingest it to capture the full picture.
         if ref_id in payment_ids_in_db:
-            # Exception: reembolso and entrada lines on the same ref_id are
-            # distinct cash events that complement the payment — always ingest.
-            if expense_type in ("reembolso_disputa", "reembolso_generico",
-                                "entrada_dinheiro", "dinheiro_retido",
-                                "debito_divida_disputa", "liberacao_cancelada"):
-                pass  # Fall through to insert
+            if expense_type == "debito_divida_disputa":
+                # Dispute deduplication: if processor.py already created estorno_receita
+                # (1.2.1 Devoluções) for this refunded payment, do NOT insert the extrato
+                # line — it would double-count the deduction in the DRE.
+                if ref_id in refunded_payment_ids_in_db:
+                    stats["already_covered"] += 1
+                    logger.debug(
+                        "extrato_ingester %s: %s debito_divida_disputa skipped — processor already refunded",
+                        seller_slug,
+                        ref_id,
+                    )
+                    continue
+                # Payment exists but was not refunded by processor — ingest the
+                # extrato line (dispute debit not yet reflected in CA).
+            elif expense_type in ("reembolso_disputa", "reembolso_generico",
+                                  "entrada_dinheiro", "dinheiro_retido",
+                                  "liberacao_cancelada"):
+                pass  # Distinct cash events that complement the payment — always ingest
             else:
                 # For most types, if the ref_id already has a payment record,
                 # the line is implicitly covered.

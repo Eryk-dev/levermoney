@@ -33,9 +33,21 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 function App() {
-  const [currentView, setCurrentView] = useState<ViewType>('geral');
+  const [currentView, setCurrentView] = useState<ViewType>(() => {
+    try {
+      const raw = localStorage.getItem('dashboard-current-view');
+      if (raw === 'geral' || raw === 'metas' || raw === 'entrada' || raw === 'linhas') return raw;
+    } catch { /* ignore */ }
+    return 'geral';
+  });
   const [showGoalEditor, setShowGoalEditor] = useState(false);
-  const [pieMode, setPieMode] = useState<'segmento' | 'grupo' | 'empresa'>('segmento');
+  const [pieMode, setPieMode] = useState<'segmento' | 'grupo' | 'empresa'>(() => {
+    try {
+      const raw = localStorage.getItem('dashboard-pie-mode');
+      if (raw === 'segmento' || raw === 'grupo' || raw === 'empresa') return raw;
+    } catch { /* ignore */ }
+    return 'segmento';
+  });
   const isMobile = useIsMobile();
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosHint, setShowIosHint] = useState(false);
@@ -79,6 +91,14 @@ function App() {
     clearCustomComparison,
     toggleGapCatchUp,
   } = useFilters(data, { yearlyGoals, setSelectedMonth, lines });
+
+  useEffect(() => {
+    try { localStorage.setItem('dashboard-current-view', currentView); } catch { /* ignore */ }
+  }, [currentView]);
+
+  useEffect(() => {
+    try { localStorage.setItem('dashboard-pie-mode', pieMode); } catch { /* ignore */ }
+  }, [pieMode]);
 
   const hasEntityFilter =
     filters.empresas.length > 0 ||

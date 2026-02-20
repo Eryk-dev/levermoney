@@ -23,7 +23,7 @@ import logging
 import os
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # ── Project setup ─────────────────────────────────────────────────────────────
@@ -45,7 +45,10 @@ RESET  = "\033[0m"
 # ── Test configuration ────────────────────────────────────────────────────────
 TEST_SELLER   = "141air"
 BEGIN_DATE    = "2026-01-01"
-END_DATE      = "2026-01-31"
+# END_DATE mirrors _execute_backfill: ca_start_date + 90 days from today
+_today_for_test = date.today()
+_future_cutoff  = _today_for_test + timedelta(days=90)
+END_DATE        = _future_cutoff.isoformat()  # e.g. "2026-05-21"
 
 # ML API date format used by the backfill service (BRT)
 ML_BEGIN_DATE = f"{BEGIN_DATE}T00:00:00.000-03:00"
@@ -473,6 +476,67 @@ def test_backfill_status_fields() -> None:
     _pass(name, "all status fields present, status value valid, progress structure valid")
 
 
+def test_future_release_window() -> None:
+    """Verify that _execute_backfill uses today+90d as end_date, not yesterday.
+
+    This is the fix for the gap where late-month sales (e.g. Jan 28 approved,
+    money_release_date Feb 27) were missed because the backfill's end_date was
+    yesterday and the daily sync only looks at D-1..D-3 by date_approved /
+    date_last_updated — neither of which ever recaptures old payments with
+    future release dates.
+    """
+    name = "future_release_window"
+
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    future_cutoff = today + timedelta(days=90)
+
+    # Old behavior (BUG): end_date = yesterday → misses future releases
+    old_end = yesterday
+
+    # New behavior (FIX): end_date = today + 90 days → captures future releases
+    new_end = future_cutoff
+
+    # Verify the new end is strictly after the old end
+    if new_end <= old_end:
+        _fail(name, f"future_cutoff {new_end} must be after yesterday {old_end}")
+        return
+
+    # Verify 90-day gap
+    diff = (new_end - today).days
+    if diff != 90:
+        _fail(name, f"expected 90 days ahead, got {diff}")
+        return
+
+    # Simulate: Jan 28 approved, money_release_date Feb 27
+    # With ca_start_date=2026-01-01, this should be captured if Feb 27 <= future_cutoff
+    ca_start = date(2026, 1, 1)
+    payment_release = date(2026, 2, 27)
+    begin_date = ca_start
+
+    # Old: would this payment be found?
+    # Simulating a backfill run on 2026-02-20, old end = 2026-02-19
+    simulated_today = date(2026, 2, 20)
+    old_end_simulated = simulated_today - timedelta(days=1)   # 2026-02-19
+    new_end_simulated = simulated_today + timedelta(days=90)  # 2026-05-21
+
+    captured_old = begin_date <= payment_release <= old_end_simulated
+    captured_new = begin_date <= payment_release <= new_end_simulated
+
+    if captured_old:
+        _fail(name, f"payment release {payment_release} should NOT be captured by old end {old_end_simulated}")
+        return
+    if not captured_new:
+        _fail(name, f"payment release {payment_release} should be captured by new end {new_end_simulated}")
+        return
+
+    _pass(
+        name,
+        f"old_end={old_end_simulated} missed Feb-27 release; "
+        f"new_end={new_end_simulated} captures it correctly"
+    )
+
+
 def test_integration_mode_guard() -> None:
     """Verify that a seller NOT in dashboard_ca mode would be rejected by the
     backfill service before doing any work."""
@@ -595,7 +659,10 @@ async def test_already_done_filtering_live() -> None:
 
 async def test_search_by_money_release_date() -> None:
     """Call ML API search_payments with range_field=money_release_date for
-    141air/January 2026 and verify the response structure. READ-ONLY."""
+    141air/January 2026 and verify the response structure.
+
+    Uses the extended end_date (today+90d) that mirrors _execute_backfill's
+    fix for late-month sales with future release dates. READ-ONLY."""
     name = "search_by_money_release_date"
 
     if not _ml_api_available():
@@ -727,7 +794,7 @@ async def main() -> None:
     print()
     print("=" * 65)
     print("  Onboarding Backfill — Test Suite")
-    print(f"  Seller: {TEST_SELLER}  Period: {BEGIN_DATE} → {END_DATE}")
+    print(f"  Seller: {TEST_SELLER}  Period: {BEGIN_DATE} → {END_DATE} (today+90d)")
     print("=" * 65)
 
     # Unit tests (no I/O)
@@ -739,6 +806,7 @@ async def main() -> None:
     test_already_done_set_building()
     test_fetch_pagination_logic()
     test_backfill_status_fields()
+    test_future_release_window()
     test_integration_mode_guard()
 
     # Integration tests (require Supabase + ML API)

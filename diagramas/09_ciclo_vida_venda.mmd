@@ -1,0 +1,36 @@
+stateDiagram-v2
+    [*] --> pending : Venda detectada\n(status desconhecido)
+
+    pending --> queued : Processador enfileirou\nreceita + comissão + frete\npara o Conta Azul
+
+    queued --> synced : CaWorker executou\ntodos os jobs do grupo\ncom sucesso ✓
+
+    queued --> queued : Job falhou mas\nainda tem tentativas\n(retry com backoff)
+
+    synced --> synced : Devolução parcial detectada\n→ enfileira estornos proporcionais
+
+    synced --> refunded : Devolução total\n→ enfileira estorno receita\n+ estorno taxa
+
+    pending --> skipped : status = cancelled\nou rejected
+
+    pending --> skipped_non_sale : Sem pedido\nou frete comprador\nou kit split não sincronizado
+
+    queued --> queued : Dead letter em algum job\n→ permanece queued\ncom nota de erro
+
+    note right of queued
+        payments.status = queued
+        ca_jobs criados para o grupo
+    end note
+
+    note right of synced
+        payments.status = synced
+        Todos ca_jobs = completed
+        Baixa pendente até
+        money_release_date
+    end note
+
+    note right of refunded
+        payments.status = queued
+        (volta para queued até
+        estornos completarem)
+    end note

@@ -1112,6 +1112,38 @@ EMPRESA/
 | Centro de Custo | `seller.dashboard_empresa` |
 | Observacoes | payment_id + external_reference + notas |
 
+### 11.13 Competencia de Devolucoes: DRE vs Painel ML
+
+O painel ML e nosso DRE usam **criterios de competencia diferentes** para devolucoes, gerando divergencia esperada.
+
+**Painel ML:** conta TODAS as devolucoes de vendas do mes, **independente de quando o estorno ocorreu**.
+Exemplo: venda aprovada em janeiro, devolvida em fevereiro → ML conta como devolucao de janeiro.
+
+**Nosso DRE:** conta devolucoes pela **data do estorno** (`date_last_updated` do refund em BRT).
+Exemplo: venda aprovada em janeiro, devolvida em fevereiro → estorno entra no DRE de fevereiro.
+
+**Consequencia:** nosso DRE de um mes mostra MENOS devolucoes que o painel ML, porque parte dos estornos so ocorre no mes seguinte.
+
+**Formula de reconciliacao:**
+```
+Painel ML (devol+cancel de vendas jan) ≈ DRE jan (estornos em jan) + DRE fev (estornos em fev de vendas jan) + by_admin
+```
+
+**Referencia Janeiro 2026 (validado 2026-02-20):**
+
+| Seller | Estorno total | + by_admin (≈ ML) | DRE jan | Diferido p/ DRE fev |
+|--------|-------------:|------------------:|--------:|--------------------:|
+| 141AIR | R$ 42.687 | R$ 43.043 | R$ 32.900 | R$ 9.787 |
+| NET-AIR | R$ 155.239 | R$ 159.991 | R$ 93.136 | R$ 62.103 |
+| NETPARTS-SP | R$ 107.485 | R$ 108.672 | R$ 65.334 | R$ 42.151 |
+| EASY-UTIL | R$ 14.609 | R$ 15.029 | R$ 10.528 | R$ 4.081 |
+
+**Notas:**
+- `by_admin` (kit split) e contado pelo ML como devolucao, mas nos pulamos (novos payments split cobrem a receita — ver 11.5b)
+- `cancelled`/`rejected` NAO entram como devolucao em nenhum dos dois (nunca foram vendas aprovadas)
+- Diferenca residual (< R$ 200 por seller) vem de by_admin parciais e arredondamentos
+- Este comportamento e **correto e intencional** — nao e bug
+
 ---
 
 ## 12. IDs Importantes

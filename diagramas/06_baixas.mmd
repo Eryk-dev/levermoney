@@ -1,0 +1,31 @@
+flowchart TD
+    TIMER(["⏰ 10:00 BRT\nBaixas Diárias"])
+
+    TIMER --> FETCH_CA["Busca parcelas EM ABERTO\nno Conta Azul\n(vencimento entre D-90 e hoje)"]
+    FETCH_CA --> FETCH_PAG["Contas a Pagar\n(comissões · fretes)"]
+    FETCH_CA --> FETCH_REC["Contas a Receber\n(receitas)"]
+
+    FETCH_PAG --> RELEASE["ReleaseChecker:\nVerifica liberação\nno ML antes de baixar"]
+    FETCH_REC --> RELEASE
+
+    RELEASE --> PRELOAD["1. Carrega status das vendas\ndo banco (cache)"]
+    PRELOAD --> RECHECK["2. Vendas com data passada\nmas ainda pendentes:\nconslta ML em tempo real"]
+    RECHECK --> CLASSIFY_R{"Classifica\ncada parcela"}
+
+    CLASSIFY_R -->|"liberado"| ALLOW["✓ Faz a baixa"]
+    CLASSIFY_R -->|"desconhecido\n(não encontrou no banco)"| ALLOW
+    CLASSIFY_R -->|"bypass"| ALLOW
+    CLASSIFY_R -->|"ainda pendente"| SKIP["⏭ PULA\n(dinheiro não chegou ainda)"]
+
+    ALLOW --> ENQUEUE["Enfileira baixa\nna Fila CA\n(ca_jobs)"]
+    ENQUEUE --> WORKER["Executor da Fila\nexecuta:\nPOST /parcelas/{id}/baixa\ndata_pagamento = vencimento\nvalor = nao_pago"]
+
+    WORKER --> CA_OK["✓ Parcela PAGA\nno Conta Azul"]
+
+    subgraph MOTIVO["Por que separado do processador?"]
+        NOTE["CA API rejeita baixas\ncom data_pagamento > hoje\n\nO processador cria receitas/despesas\nquando a venda é aprovada,\nmas a liberação pode ser futura.\n\nAs parcelas ficam EM ABERTO\naté a data chegar."]
+    end
+
+    style SKIP fill:#fff3cd
+    style CA_OK fill:#d4edda
+    style NOTE fill:#e2e3e5

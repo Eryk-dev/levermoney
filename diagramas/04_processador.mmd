@@ -1,0 +1,58 @@
+flowchart TD
+    ENTRY(["Processador Principal\nprocess_payment_webhook"])
+
+    ENTRY --> CONFIG["Busca config do seller\n(conta bancária, centro de custo)"]
+    CONFIG --> IDEM{"Já existe\nno banco?"}
+    IDEM -->|"não"| FETCH_ML["Busca dados\nno ML (se necessário)"]
+    IDEM -->|"sim"| FETCH_ML
+
+    FETCH_ML --> FILTERS{"Filtros\niniciais"}
+    FILTERS -->|"✗ sem pedido"| SKIP_NS["skipped_non_sale"]
+    FILTERS -->|"✗ frete comprador"| SKIP_NS
+    FILTERS -->|"✗ é compra"| SKIP_NS
+
+    FILTERS -->|"✓ passou"| STATUS{"Status\nda venda"}
+
+    STATUS -->|"aprovada\nou em mediação"| APPROVED["_process_approved"]
+    STATUS -->|"chargeback\n+ reembolsado ML"| APPROVED
+    STATUS -->|"devolvida\n+ kit split"| SPLIT{"Já estava\nsincronizada?"}
+    SPLIT -->|"sim"| REFUNDED["_process_refunded"]
+    SPLIT -->|"não"| SKIP_KIT["skipped_non_sale\n(novos pacotes cobrem)"]
+    STATUS -->|"devolvida\nou chargeback"| REFUNDED
+    STATUS -->|"cancelada\nou rejeitada"| SKIP_CANC["skipped"]
+
+    subgraph APPROVED_FLOW["Venda Aprovada"]
+        APPROVED --> PRECHECK{"Já\nsincronizada?"}
+        PRECHECK -->|"sim + devolução parcial"| PARTIAL["_process_partial_refund\nestornos proporcionais"]
+        PRECHECK -->|"sim + sem mudança"| UPDATE_FEES["Atualiza comissão/frete\nno banco apenas"]
+        PRECHECK -->|"não"| GET_ORDER["Busca pedido no ML\n(nome do produto)"]
+        GET_ORDER --> CALC["Calcula taxas\n(charges_details):\nComissão = taxas do vendedor\nFrete = custo seller\nNet diff = diferença"]
+        CALC --> ENQUEUE_A["Enfileira RECEITA\nprioridade 1\ncat. 1.1.1 MercadoLibre"]
+        ENQUEUE_A --> ENQUEUE_B{"Comissão\n> 0?"}
+        ENQUEUE_B -->|"sim"| ENQ_COM["Enfileira COMISSÃO\nprioridade 2\ncat. 2.8.2"]
+        ENQUEUE_B --> ENQUEUE_C{"Frete\n> 0?"}
+        ENQUEUE_C -->|"sim"| ENQ_FRT["Enfileira FRETE\nprioridade 2\ncat. 2.9.4"]
+        ENQUEUE_C --> ENQUEUE_D{"Subsídio ML?\n(líquido real > calculado)"}
+        ENQUEUE_D -->|"sim"| ENQ_SUB["Enfileira SUBSÍDIO\ncat. 1.3.7"]
+        ENQUEUE_D --> SAVE_Q["Salva como\nna fila (queued)"]
+    end
+
+    subgraph REFUNDED_FLOW["Venda Devolvida"]
+        REFUNDED --> IDEM_REF{"Já processada\ncomo devolvida?"}
+        IDEM_REF -->|"sim"| SKIP_REF["IGNORA\n(idempotência)"]
+        IDEM_REF -->|"não"| WAS_SYNCED{"Receita já\nfoi criada?"}
+        WAS_SYNCED -->|"não"| CREATE_FIRST["Cria receita+comissão+frete\nprimeiro"]
+        CREATE_FIRST --> CALC_REF["Estorno = mín(devolvido, bruto)"]
+        WAS_SYNCED -->|"sim"| CALC_REF
+        CALC_REF --> ENQ_EST["Enfileira ESTORNO RECEITA\ncat. 1.2.1 Devoluções"]
+        ENQ_EST --> FULL_REF{"Devolução\ntotal?"}
+        FULL_REF -->|"sim"| ENQ_TAX["Enfileira ESTORNO TAXA\ncat. 1.3.4"]
+        FULL_REF --> SAVE_Q2["Salva como\nna fila (queued)"]
+    end
+
+    style SKIP_NS fill:#ffcccc
+    style SKIP_KIT fill:#ffcccc
+    style SKIP_CANC fill:#ffcccc
+    style SKIP_REF fill:#ffcccc
+    style SAVE_Q fill:#d4edda
+    style SAVE_Q2 fill:#d4edda

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Simulacao de Onboarding 141AIR — Janeiro 2026
-==============================================
-Simula o que aconteceria se ativassemos 141air com ca_start_date=2026-01-01,
+Simulacao de Onboarding — Janeiro 2026 (Agnostico)
+===================================================
+Simula o que aconteceria se ativassemos um seller com ca_start_date=2026-01-01,
 range_field=money_release_date, e comparamos cada linha do extrato real contra
 o que o sistema produziria. Objetivo: provar 100% de cobertura.
 
@@ -11,13 +11,21 @@ Apenas leitura: dados ML cacheados + extrato real.
 
 Uso:
     cd "lever money claude v3"
-    python3 testes/simulate_onboarding_141air_jan2026.py
+    python3 testes/simulate_onboarding_141air_jan2026.py [--seller SLUG]
+
+    # Exemplos:
+    python3 testes/simulate_onboarding_141air_jan2026.py --seller net-air
+    python3 testes/simulate_onboarding_141air_jan2026.py --seller 141air
+    python3 testes/simulate_onboarding_141air_jan2026.py --seller netparts-sp
+    python3 testes/simulate_onboarding_141air_jan2026.py --seller easy-utilidades
+    python3 testes/simulate_onboarding_141air_jan2026.py --all   # roda todos
 """
 
 import sys
 import os
 import json
 import logging
+import argparse
 import unicodedata
 from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
@@ -45,20 +53,42 @@ logger = logging.getLogger("simulate_onboarding")
 # CONFIG
 # ══════════════════════════════════════════════════════════════
 
-SELLER_SLUG = "141air"
 CA_START_DATE = "2026-01-01"
 PERIOD_START = "2026-01-01"
-PERIOD_END = "2026-01-31"
 RANGE_FIELD = "money_release_date"
+# Backfill now extends to today + 90 days (mirrors _execute_backfill fix)
+_today = date.today()
+FUTURE_CUTOFF = (_today + timedelta(days=90)).isoformat()
+# For display/reconciliation, the extrato period stays Jan 2026
+EXTRATO_PERIOD_START = "2026-01-01"
+EXTRATO_PERIOD_END = "2026-01-31"
 
 EXTRATOS_DIR = PROJECT_ROOT / "testes" / "extratos"
 CACHE_DIR = PROJECT_ROOT / "testes" / "cache_jan2026"
-EXTRATO_FILE = EXTRATOS_DIR / "extrato janeiro 141Air.csv"
-CACHE_FILE = CACHE_DIR / f"{SELLER_SLUG}_payments.json"
+
+# Mapeamento seller_slug → nome do arquivo de extrato
+SELLER_EXTRATO_MAP = {
+    "141air":          "extrato janeiro 141Air.csv",
+    "net-air":         "extrato janeiro netair.csv",
+    "netparts-sp":     "extrato janeiro netparts.csv",
+    "easy-utilidades": "extrato janeiro Easyutilidades.csv",
+}
+
+ALL_SELLERS = list(SELLER_EXTRATO_MAP.keys())
 
 JAN_DATES = [(date(2026, 1, 1) + timedelta(days=i)).isoformat() for i in range(31)]
 
 BRT = timezone(timedelta(hours=-3))
+
+
+def get_seller_paths(seller_slug: str) -> tuple[Path, Path]:
+    """Retorna (extrato_file, cache_file) para o seller."""
+    extrato_name = SELLER_EXTRATO_MAP.get(seller_slug)
+    if not extrato_name:
+        print(f"ERRO: Seller '{seller_slug}' nao tem extrato mapeado.")
+        print(f"Sellers disponiveis: {', '.join(ALL_SELLERS)}")
+        sys.exit(1)
+    return EXTRATOS_DIR / extrato_name, CACHE_DIR / f"{seller_slug}_payments.json"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -176,11 +206,11 @@ def classify_extrato_category(tx_type: str) -> str:
     return "outro"
 
 
-def print_extrato_summary(summary: dict, transactions: list[dict]) -> None:
+def print_extrato_summary(summary: dict, transactions: list[dict], extrato_file: Path) -> None:
     print("\n" + "=" * 70)
     print("  FASE 1 — PARSE DO EXTRATO REAL")
     print("=" * 70)
-    print(f"\nArquivo: {EXTRATO_FILE.name}")
+    print(f"\nArquivo: {extrato_file.name}")
     print(f"\nResumo do periodo:")
     print(f"  Saldo inicial:  {fmt_brl(summary['initial_balance'])}")
     print(f"  Total creditos: {fmt_brl(summary['credits'])}")
@@ -371,7 +401,7 @@ def simulate_payment(payment: dict) -> dict:
 
 def print_backfill_summary(payments: list[dict], simulated: list[dict]) -> None:
     print("\n" + "=" * 70)
-    print("  FASE 2 — SIMULACAO DO BACKFILL (money_release_date jan/2026)")
+    print(f"  FASE 2 — SIMULACAO DO BACKFILL (money_release_date {PERIOD_START} → {FUTURE_CUTOFF[:10]})")
     print("=" * 70)
 
     print(f"\nTotal de payments na API (range_field=money_release_date): {len(payments)}")
@@ -748,6 +778,7 @@ def print_final_report(
     simulated: list[dict],
     ingestion: dict,
     daily: dict,
+    seller_slug: str = "",
 ) -> tuple[float, float]:
     """Imprime relatorio final consolidado. Retorna (total_diff, coverage_pct)."""
 
@@ -783,15 +814,17 @@ def print_final_report(
     total_system = sum(d["system_total"] for d in daily.values())
     total_diff = round(total_extrato_brl - total_system, 2)
 
+    seller_upper = seller_slug.upper()
     print("\n" + "=" * 70)
-    print("  SIMULACAO ONBOARDING 141AIR — Janeiro 2026 — RELATORIO FINAL")
+    print(f"  SIMULACAO ONBOARDING {seller_upper} — {CA_START_DATE} a {FUTURE_CUTOFF[:10]} — RELATORIO FINAL")
     print("=" * 70)
     print(f"\n  ca_start_date: {CA_START_DATE}")
     print(f"  range_field:   {RANGE_FIELD}")
-    print(f"  Periodo:       {PERIOD_START} a {PERIOD_END}")
+    print(f"  Janela backfill: {PERIOD_START} → {FUTURE_CUTOFF[:10]} (today+90d)")
+    print(f"  Extrato real:    {EXTRATO_PERIOD_START} a {EXTRATO_PERIOD_END}")
     print()
 
-    print("  PAYMENTS API (money_release_date jan/2026):")
+    print(f"  PAYMENTS API (money_release_date {PERIOD_START} → {FUTURE_CUTOFF[:10]}):")
     print(f"    Total payments:           {len(payments):>6}")
     print(f"    Orders aprovados:         {len(approved_sims):>6}  → receita {fmt_brl(total_receita)}")
     print(f"    Orders devolvidos:        {len(refunded_sims):>6}")
@@ -922,55 +955,77 @@ def print_gap_analysis(ingestion: dict) -> None:
 # MAIN
 # ══════════════════════════════════════════════════════════════
 
-def main():
+def run_seller(seller_slug: str) -> tuple[float, float]:
+    """Roda simulacao completa para um seller. Retorna (diff, coverage_pct)."""
+    seller_upper = seller_slug.upper()
+    extrato_file, cache_file = get_seller_paths(seller_slug)
+
     print("\n" + "=" * 70)
-    print("  SIMULACAO ONBOARDING 141AIR — JANEIRO 2026")
-    print(f"  Seller: {SELLER_SLUG}")
-    print(f"  Periodo: {PERIOD_START} a {PERIOD_END}")
+    print(f"  SIMULACAO ONBOARDING {seller_upper} — {PERIOD_START} → {FUTURE_CUTOFF[:10]}")
+    print(f"  Seller: {seller_slug}")
+    print(f"  Janela backfill: {PERIOD_START} → {FUTURE_CUTOFF[:10]} (today+90d)")
+    print(f"  Extrato real: {EXTRATO_PERIOD_START} a {EXTRATO_PERIOD_END}")
     print(f"  range_field: {RANGE_FIELD}")
     print("=" * 70)
 
     # ── Fase 1: Parse do extrato ──────────────────────────────
-    print(f"\nLendo extrato: {EXTRATO_FILE}")
-    if not EXTRATO_FILE.exists():
-        print(f"ERRO: Arquivo de extrato nao encontrado: {EXTRATO_FILE}")
-        sys.exit(1)
+    print(f"\nLendo extrato: {extrato_file}")
+    if not extrato_file.exists():
+        print(f"ERRO: Arquivo de extrato nao encontrado: {extrato_file}")
+        return float("inf"), 0.0
 
-    extrato_summary, extrato_transactions = parse_extrato(EXTRATO_FILE)
-    print_extrato_summary(extrato_summary, extrato_transactions)
+    extrato_summary, extrato_transactions = parse_extrato(extrato_file)
+    print_extrato_summary(extrato_summary, extrato_transactions, extrato_file)
 
     # ── Fase 2: Carrega payments do cache e simula ────────────
-    print(f"\nCarregando payments do cache: {CACHE_FILE}")
-    if not CACHE_FILE.exists():
-        print(f"ERRO: Cache nao encontrado: {CACHE_FILE}")
+    print(f"\nCarregando payments do cache: {cache_file}")
+    if not cache_file.exists():
+        print(f"ERRO: Cache nao encontrado: {cache_file}")
         print("Execute reconciliation_jan2026.py primeiro para gerar o cache.")
-        sys.exit(1)
+        return float("inf"), 0.0
 
-    with open(CACHE_FILE) as f:
+    with open(cache_file) as f:
         cache_data = json.load(f)
 
     payments = cache_data["payments"]
     fetch_counts = cache_data.get("counts", {})
     print(f"Cache carregado: {len(payments)} payments (range_fields: {list(fetch_counts.keys())})")
 
-    # Filtra apenas payments com money_release_date em janeiro 2026
-    # (o cache pode ter pagamentos de dezembro/fevereiro incluidos pelo lookback)
-    payments_jan = [
+    # Mirror actual backfill: fetch all payments with money_release_date >= ca_start_date
+    # The upper bound is today+90d but cache only has Dec/Jan data so we take everything
+    payments_in_window = [
         p for p in payments
-        if PERIOD_START <= (p.get("money_release_date") or "")[:10] <= PERIOD_END
+        if (p.get("money_release_date") or "")[:10] >= PERIOD_START
     ]
-    print(f"Payments com money_release_date em jan/2026: {len(payments_jan)}")
+    print(f"Payments com money_release_date >= {PERIOD_START}: {len(payments_in_window)}")
 
-    # Simula todos os payments
+    # Payments with money_release_date beyond Jan (newly captured by the +90d fix)
+    payments_future_release = [
+        p for p in payments_in_window
+        if (p.get("money_release_date") or "")[:10] > EXTRATO_PERIOD_END
+    ]
+    if payments_future_release:
+        print(f"\n[NOVO] Payments com release ALEM de {EXTRATO_PERIOD_END} (antes perdidos, agora capturados):")
+        print(f"  Total: {len(payments_future_release)} payments")
+        for p in payments_future_release[:10]:
+            pid = p.get("id")
+            status = p.get("status", "?")
+            release = (p.get("money_release_date") or "")[:10]
+            approved = (p.get("date_approved") or "")[:10]
+            amount = p.get("transaction_amount", 0)
+            print(f"  {pid}  approved={approved}  release={release}  status={status}  R$ {amount:,.2f}")
+        if len(payments_future_release) > 10:
+            print(f"  ... e mais {len(payments_future_release) - 10}")
+
+    # Simula todos os payments do cache (para completar o match com extrato)
     simulated = [simulate_payment(p) for p in payments]
-    simulated_jan = [simulate_payment(p) for p in payments_jan]
+    # Simula os payments dentro da janela do backfill
+    simulated_jan = [simulate_payment(p) for p in payments_in_window]
 
-    # Tambem simula payments que estao no cache mas com money_release_date fora de jan
-    # (para completar o match com extrato — alguns liberacoes podem ser de dez/2025)
-    # Usamos TODOS os payments para o sim_by_id
+    # Usamos TODOS os payments para o sim_by_id (match com extrato inclui dez/2025)
     sim_by_id = {str(s["payment_id"]): s for s in simulated}
 
-    print_backfill_summary(payments, simulated)
+    print_backfill_summary(payments_in_window, simulated_jan)
 
     # ── Fase 3: Simula o ingester de extrato ─────────────────
     ingestion = simulate_extrato_ingester(extrato_transactions, sim_by_id)
@@ -987,7 +1042,8 @@ def main():
     # ── Fase 5: Relatorio final ───────────────────────────────
     final_diff, coverage_pct = print_final_report(
         extrato_summary, extrato_transactions,
-        payments, simulated, ingestion, daily
+        payments_in_window, simulated_jan, ingestion, daily,
+        seller_slug=seller_slug,
     )
 
     # ── Analise de diffs (se houver) ──────────────────────────
@@ -1009,13 +1065,8 @@ def main():
             if not d or abs(d.get("diff", 0)) < 0.01:
                 continue
 
-            # Encontra as linhas do extrato nao casadas nesse dia
             day_unmatched = [
                 tx for tx in ingestion["ingested_gap"]
-                if tx["date"] == day
-            ]
-            day_internal = [
-                tx for tx in ingestion["skipped_internal"]
                 if tx["date"] == day
             ]
 
@@ -1028,15 +1079,61 @@ def main():
             print()
 
     print("\n" + "=" * 70)
-    print("  Simulacao concluida.")
+    print(f"  Simulacao {seller_upper} concluida.")
     print(f"  Coverage: {coverage_pct:.1f}%")
     print(f"  Diferenca total: {fmt_brl(final_diff)}")
 
     if coverage_pct >= 100.0 and abs(final_diff) < 0.01:
-        print("  STATUS: APROVADO — 100% de cobertura, diff = R$ 0,00")
+        print(f"  STATUS: APROVADO — 100% de cobertura, diff = R$ 0,00")
     else:
-        print("  STATUS: REVISAR — ver detalhes acima")
+        print(f"  STATUS: REVISAR — ver detalhes acima")
     print("=" * 70 + "\n")
+
+    return final_diff, coverage_pct
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Simulacao de Onboarding — Janeiro 2026")
+    parser.add_argument("--seller", type=str, default=None,
+                        help=f"Seller slug ({', '.join(ALL_SELLERS)})")
+    parser.add_argument("--all", action="store_true",
+                        help="Roda para todos os sellers")
+    args = parser.parse_args()
+
+    if args.all:
+        sellers = ALL_SELLERS
+    elif args.seller:
+        sellers = [args.seller]
+    else:
+        # Default: 141air (compatibilidade retroativa)
+        sellers = ["141air"]
+
+    results = {}
+    for slug in sellers:
+        diff, coverage = run_seller(slug)
+        results[slug] = {"diff": diff, "coverage": coverage}
+
+    # Sumario final se multiplos sellers
+    if len(sellers) > 1:
+        print("\n" + "=" * 70)
+        print("  SUMARIO FINAL — TODOS OS SELLERS")
+        print("=" * 70)
+        print()
+        print(f"  {'Seller':<20} {'Coverage':>10} {'Diff':>15} {'Status':>12}")
+        print(f"  {'-'*20} {'-'*10} {'-'*15} {'-'*12}")
+        all_ok = True
+        for slug in sellers:
+            r = results[slug]
+            status = "APROVADO" if r["coverage"] >= 100.0 and abs(r["diff"]) < 0.01 else "REVISAR"
+            if status != "APROVADO":
+                all_ok = False
+            print(f"  {slug:<20} {r['coverage']:>9.1f}% {fmt_brl(r['diff']):>15} {status:>12}")
+        print()
+        if all_ok:
+            print("  RESULTADO GERAL: TODOS APROVADOS")
+        else:
+            print("  RESULTADO GERAL: ALGUNS PRECISAM REVISAO")
+        print("=" * 70 + "\n")
 
 
 if __name__ == "__main__":

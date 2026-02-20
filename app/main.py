@@ -119,6 +119,48 @@ async def _ca_token_refresh_loop():
             logger.error(f"CA proactive token refresh failed: {e}")
 
 
+async def _ca_categories_scheduler():
+    """Sync CA categories daily at 02:00 BRT."""
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
+
+    from app.services.ca_categories_sync import sync_ca_categories
+
+    brt = ZoneInfo("America/Sao_Paulo")
+    target_hour = 2
+    target_minute = 0
+
+    # On startup: run immediately if past 02:00 BRT today, or if file doesn't exist
+    from pathlib import Path
+    categories_file = Path(__file__).resolve().parent.parent / "ca_categories.json"
+    now_brt = datetime.now(brt)
+    if not categories_file.exists() or (now_brt.hour, now_brt.minute) >= (target_hour, target_minute):
+        logger.info("CaCategories scheduler: running sync on startup")
+        try:
+            await sync_ca_categories()
+        except Exception as e:
+            logger.error("CaCategories startup sync failed: %s", e)
+
+    while True:
+        now_brt = datetime.now(brt)
+        if (now_brt.hour, now_brt.minute) < (target_hour, target_minute):
+            target = now_brt.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
+        else:
+            target = (now_brt + timedelta(days=1)).replace(
+                hour=target_hour, minute=target_minute, second=0, microsecond=0
+            )
+
+        wait_seconds = (target - now_brt).total_seconds()
+        logger.info("CaCategories scheduler: next sync in %.0fs (%s)", wait_seconds, target.isoformat())
+        await asyncio.sleep(wait_seconds)
+        try:
+            await sync_ca_categories()
+        except Exception as e:
+            logger.error("CaCategories daily sync failed: %s", e)
+
+
 async def _run_financial_closing():
     """Run financial closing for all active sellers using default D-1 window."""
     try:
@@ -252,7 +294,15 @@ async def _run_nightly_pipeline():
     except Exception as e:
         logger.error("NightlyPipeline: coverage check failed: %s", e, exc_info=True)
 
-    # 7. Financial closing
+    # 7. Sync CA categories
+    try:
+        from app.services.ca_categories_sync import sync_ca_categories
+        await sync_ca_categories()
+        logger.info("NightlyPipeline: CA categories sync done")
+    except Exception as e:
+        logger.error("NightlyPipeline: CA categories sync failed: %s", e, exc_info=True)
+
+    # 8. Financial closing
     await _run_financial_closing()
     logger.info("NightlyPipeline: finished target_day=%s", target_day)
 
@@ -288,6 +338,7 @@ async def lifespan(app):
     await worker.start()
     await syncer.start()
     ca_refresh_task = asyncio.create_task(_ca_token_refresh_loop())
+    ca_categories_task = asyncio.create_task(_ca_categories_scheduler())
     baixa_task = None
     daily_sync_task = None
     closing_task = None
@@ -306,6 +357,7 @@ async def lifespan(app):
     await worker.stop()
     await syncer.stop()
     ca_refresh_task.cancel()
+    ca_categories_task.cancel()
     if baixa_task:
         baixa_task.cancel()
     if daily_sync_task:

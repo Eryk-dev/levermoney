@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-DRE Simulacao 141AIR — Janeiro 2026 (Competencia)
-==================================================
+DRE Simulacao — Janeiro 2026 (Competencia) — Agnostico
+=======================================================
 Demonstracao do Resultado do Exercicio usando regime de competencia:
   - Receita reconhecida em date_approved (BRT), NAO em money_release_date
   - Despesas (comissao, frete) reconhecidas na mesma competencia da receita
@@ -15,23 +15,24 @@ DISTINCAO CRITICA:
     -> aparece no DRE de DEZEMBRO (nao de janeiro)
     -> aparece no caixa de JANEIRO
 
-Fontes de dados:
-  - Cache de payments: testes/cache_jan2026/141air_payments.json
-    (contém payments de dez/2025 e jan/2026 já baixados)
-  - Extrato real: testes/extratos/extrato janeiro 141Air.csv
-
 NAO grava nada no Conta Azul. NAO altera Supabase.
 Apenas leitura e calculo.
 
 Uso:
     cd "lever money claude v3"
-    python3 testes/simulate_dre_141air_jan2026.py
+    python3 testes/simulate_dre_141air_jan2026.py [--seller SLUG]
+
+    # Exemplos:
+    python3 testes/simulate_dre_141air_jan2026.py --seller net-air
+    python3 testes/simulate_dre_141air_jan2026.py --seller 141air
+    python3 testes/simulate_dre_141air_jan2026.py --all
 """
 
 import sys
 import os
 import json
 import logging
+import argparse
 from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 from collections import defaultdict
@@ -51,7 +52,6 @@ logging.basicConfig(
 logger = logging.getLogger("simulate_dre")
 
 # ── Constantes ────────────────────────────────────────────────────────────────
-SELLER_SLUG = "141air"
 JAN_START = "2026-01-01"
 JAN_END = "2026-01-31"
 DEC_START = "2025-12-01"
@@ -59,12 +59,30 @@ DEC_END = "2025-12-31"
 
 CACHE_DIR = PROJECT_ROOT / "testes" / "cache_jan2026"
 EXTRATOS_DIR = PROJECT_ROOT / "testes" / "extratos"
-CACHE_FILE = CACHE_DIR / f"{SELLER_SLUG}_payments.json"
-EXTRATO_FILE = EXTRATOS_DIR / "extrato janeiro 141Air.csv"
+
+# Mapeamento seller_slug → nome do arquivo de extrato
+SELLER_EXTRATO_MAP = {
+    "141air":          "extrato janeiro 141Air.csv",
+    "net-air":         "extrato janeiro netair.csv",
+    "netparts-sp":     "extrato janeiro netparts.csv",
+    "easy-utilidades": "extrato janeiro Easyutilidades.csv",
+}
+
+ALL_SELLERS = list(SELLER_EXTRATO_MAP.keys())
 
 BRT = timezone(timedelta(hours=-3))
 
 JAN_DATES = [(date(2026, 1, 1) + timedelta(days=i)).isoformat() for i in range(31)]
+
+
+def get_seller_paths(seller_slug: str) -> tuple[Path, Path]:
+    """Retorna (extrato_file, cache_file) para o seller."""
+    extrato_name = SELLER_EXTRATO_MAP.get(seller_slug)
+    if not extrato_name:
+        print(f"ERRO: Seller '{seller_slug}' nao tem extrato mapeado.")
+        print(f"Sellers disponiveis: {', '.join(ALL_SELLERS)}")
+        sys.exit(1)
+    return EXTRATOS_DIR / extrato_name, CACHE_DIR / f"{seller_slug}_payments.json"
 
 # Nomes de categorias CA para exibicao no DRE
 CA_CATEGORY_NAMES = {
@@ -349,26 +367,42 @@ def build_dre_from_simulated(
 ) -> dict:
     """
     Constroi o DRE de janeiro 2026 por competencia.
+
+    Mapeamento correto de tipos do extrato para linhas DRE:
+      dinheiro_retido      → SKIP (cash flow only; nets to zero com reembolso_reclamacoes)
+      liberacao_cancelada  → SKIP (reversao interna, neutro)
+      reembolso_disputa    → 1.3.4 Estornos de Taxas (dinheiro retido devolvido ao ganhar mediacao)
+      reembolso_generico   → 1.3.4 Estornos de Taxas
+      bonus_envio          → 1.3.7 Estorno de Frete
+      entrada_dinheiro     → 1.4.2 Outras Receitas Eventuais
+      deposito_avulso      → 1.4.2 Outras Receitas Eventuais
+      debito_divida_disputa → 1.2.1 Devolucoes (SKIP se payment ja foi refunded pelo processor)
+      debito_troca         → 1.2.1 Devolucoes
+      difal                → 2.2.3 DIFAL (Diferencial de Aliquota)  ← CORRECAO: antes era 2.2.7
+      faturas_ml           → 2.8.2 Comissoes Marketplace
+      debito_envio_ml      → 2.9.4 MercadoEnvios
+      subscription (non-order) → 2.14.12 Assinaturas
     """
 
     dre = {
         # RECEITAS (valores positivos)
         "venda_ml":             {"total": 0.0, "count": 0},
-        "devolucao":            {"total": 0.0, "count": 0},   # negativo nas receitas
-        "estorno_taxa":         {"total": 0.0, "count": 0},
-        "estorno_frete":        {"total": 0.0, "count": 0},
-        "cashback_ml":          {"total": 0.0, "count": 0},
-        "deposito_avulso":      {"total": 0.0, "count": 0},
-        "extrato_gap_income":   {"total": 0.0, "count": 0},
+        "devolucao":            {"total": 0.0, "count": 0},   # 1.2.1 — negativo nas receitas
+        "estorno_taxa":         {"total": 0.0, "count": 0},   # 1.3.4
+        "estorno_frete":        {"total": 0.0, "count": 0},   # 1.3.7
+        "cashback_ml":          {"total": 0.0, "count": 0},   # 1.3.4
+        "outras_receitas":      {"total": 0.0, "count": 0},   # 1.4.2
+        "deposito_avulso":      {"total": 0.0, "count": 0},   # 1.4.2
+        "extrato_gap_income":   {"total": 0.0, "count": 0},   # outros creditos
 
         # DESPESAS (valores positivos, apresentados como negativos no DRE)
-        "comissao_ml":          {"total": 0.0, "count": 0},
-        "frete_mercadoenvios":  {"total": 0.0, "count": 0},
-        "tarifa_pagamento":     {"total": 0.0, "count": 0},
-        "subscription_saas":    {"total": 0.0, "count": 0},
-        "bill_payment":         {"total": 0.0, "count": 0},
-        "collection_ml":        {"total": 0.0, "count": 0},
-        "extrato_gap_expense":  {"total": 0.0, "count": 0},
+        "comissao_ml":          {"total": 0.0, "count": 0},   # 2.8.2
+        "frete_mercadoenvios":  {"total": 0.0, "count": 0},   # 2.9.4
+        "difal_icms":           {"total": 0.0, "count": 0},   # 2.2.3 DIFAL
+        "subscription_saas":    {"total": 0.0, "count": 0},   # 2.14.12
+        "bill_payment":         {"total": 0.0, "count": 0},   # 2.x.x boletos
+        "collection_ml":        {"total": 0.0, "count": 0},   # 2.8.2 faturas/cobrancas
+        "extrato_gap_expense":  {"total": 0.0, "count": 0},   # outros debitos
     }
 
     # Cross-month tracking
@@ -377,6 +411,12 @@ def build_dre_from_simulated(
         "jan_approved_feb_release": [],   # DRE jan, caixa fev
         "jan_approved_jan_release": [],   # DRE jan, caixa jan
     }
+
+    # IDs de payments refunded em jan pelo processor (para evitar dupla contagem com extrato)
+    refunded_payment_ids: set[str] = set()
+    for sim in simulated_jan:
+        if sim["action"] == "REFUNDED":
+            refunded_payment_ids.add(str(sim["payment_id"]))
 
     # ── ORDERS APROVADOS em jan (DRE jan) ─────────────────────────────────────
     for sim in simulated_jan:
@@ -477,8 +517,9 @@ def build_dre_from_simulated(
                 dre["extrato_gap_income"]["count"] += 1
         elif direction == "expense":
             if exp_type == "darf":
-                dre["tarifa_pagamento"]["total"] += amount
-                dre["tarifa_pagamento"]["count"] += 1
+                # DARF via non-order → 2.2.3 DIFAL (ou imposto similar)
+                dre["difal_icms"]["total"] += amount
+                dre["difal_icms"]["count"] += 1
             elif exp_type == "subscription":
                 dre["subscription_saas"]["total"] += amount
                 dre["subscription_saas"]["count"] += 1
@@ -493,31 +534,63 @@ def build_dre_from_simulated(
                 dre["bill_payment"]["count"] += 1
         # direction == "transfer": nao afeta DRE (movimentacao de saldo)
 
-    # ── GAPS DO EXTRATO (linhas nao cobertas pela API) ────────────────────────
+    # ── GAPS DO EXTRATO — CATEGORIZACAO CORRIGIDA ─────────────────────────────
+    # Nota: dinheiro_retido e liberacao_cancelada sao omitidos do DRE pois
+    # representam apenas movimentacao de caixa (se anulam).
+    # debito_divida_disputa so entra se o payment NAO foi ja processado como
+    # refunded pelo processor (evita dupla contagem da linha 1.2.1).
     for gap in extrato_gaps:
         amount = abs(gap.get("amount", 0.0))
         direction = gap.get("direction")
         exp_type = gap.get("expense_type", "")
         gap_date = gap.get("date", "")
+        ref_id = gap.get("reference_id", "")
 
         if not gap_date or gap_date[:7] != "2026-01":
             continue
 
+        # Cash-flow-only: neutros no DRE (retido + reembolso se anulam)
+        if exp_type in ("dinheiro_retido", "liberacao_cancelada"):
+            continue
+
         if direction == "income":
-            if exp_type == "deposito_avulso":
-                dre["deposito_avulso"]["total"] += amount
-                dre["deposito_avulso"]["count"] += 1
+            if exp_type in ("reembolso_disputa", "reembolso_generico"):
+                # Dinheiro retido devolvido (ganhou mediacao) → 1.3.4 Estornos
+                dre["estorno_taxa"]["total"] += amount
+                dre["estorno_taxa"]["count"] += 1
+            elif exp_type == "bonus_envio":
+                # Bonus por envio rapido → 1.3.7 Estorno de Frete
+                dre["estorno_frete"]["total"] += amount
+                dre["estorno_frete"]["count"] += 1
+            elif exp_type in ("entrada_dinheiro", "deposito_avulso"):
+                # Credito avulso → 1.4.2 Outras Receitas
+                dre["outras_receitas"]["total"] += amount
+                dre["outras_receitas"]["count"] += 1
             else:
                 dre["extrato_gap_income"]["total"] += amount
                 dre["extrato_gap_income"]["count"] += 1
+
         elif direction == "expense":
             if exp_type == "difal":
-                dre["tarifa_pagamento"]["total"] += amount
-                dre["tarifa_pagamento"]["count"] += 1
-            elif exp_type in ("debito_divida_disputa", "faturas_ml", "debito_envio_ml",
-                              "liberacao_cancelada", "dinheiro_retido"):
-                dre["extrato_gap_expense"]["total"] += amount
-                dre["extrato_gap_expense"]["count"] += 1
+                # DIFAL ICMS → 2.2.3 (corrigido de 2.2.7)
+                dre["difal_icms"]["total"] += amount
+                dre["difal_icms"]["count"] += 1
+            elif exp_type in ("debito_divida_disputa", "debito_troca"):
+                # Devolucao/Cancelamento → 1.2.1
+                # POREM: skip se processor.py ja gerou estorno_receita (1.2.1) para este payment
+                if ref_id in refunded_payment_ids:
+                    # Ja contabilizado como estorno no processamento de orders
+                    continue
+                dre["devolucao"]["total"] += amount
+                dre["devolucao"]["count"] += 1
+            elif exp_type == "faturas_ml":
+                # Fatura vencida ML → 2.8.2 Comissoes/Cobrancas
+                dre["collection_ml"]["total"] += amount
+                dre["collection_ml"]["count"] += 1
+            elif exp_type == "debito_envio_ml":
+                # Debito retroativo de envio → 2.9.4 MercadoEnvios
+                dre["frete_mercadoenvios"]["total"] += amount
+                dre["frete_mercadoenvios"]["count"] += 1
             else:
                 dre["extrato_gap_expense"]["total"] += amount
                 dre["extrato_gap_expense"]["count"] += 1
@@ -534,7 +607,7 @@ def build_dre_from_simulated(
             "money_release_date": sim.get("money_release_date"),
         })
 
-    return {"dre": dre, "cross_month": cross_month}
+    return {"dre": dre, "cross_month": cross_month, "refunded_ids": refunded_payment_ids}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -667,10 +740,12 @@ def print_dre_report(
     simulated_dec_jan_cash: list[dict],
     non_order_jan: list[dict],
     extrato_gaps: list[dict],
+    seller_slug: str = "",
 ) -> None:
     """Imprime o DRE formatado."""
     dre = dre_data["dre"]
     cross_month = dre_data["cross_month"]
+    seller_upper = seller_slug.upper()
 
     # ── Calcula totais ────────────────────────────────────────────────────────
     total_receita_bruta = dre["venda_ml"]["total"]
@@ -678,7 +753,7 @@ def print_dre_report(
     total_estorno_taxa = dre["estorno_taxa"]["total"]
     total_estorno_frete = dre["estorno_frete"]["total"]
     total_cashback = dre["cashback_ml"]["total"]
-    total_deposito = dre["deposito_avulso"]["total"]
+    total_outras = dre["outras_receitas"]["total"] + dre["deposito_avulso"]["total"]
     total_gap_income = dre["extrato_gap_income"]["total"]
 
     total_receitas_liquidas = (
@@ -687,13 +762,13 @@ def print_dre_report(
         + total_estorno_taxa
         + total_estorno_frete
         + total_cashback
-        + total_deposito
+        + total_outras
         + total_gap_income
     )
 
     total_comissao = dre["comissao_ml"]["total"]
     total_frete = dre["frete_mercadoenvios"]["total"]
-    total_tarifa = dre["tarifa_pagamento"]["total"]
+    total_difal = dre["difal_icms"]["total"]
     total_sub = dre["subscription_saas"]["total"]
     total_boleto = dre["bill_payment"]["total"]
     total_cobranca = dre["collection_ml"]["total"]
@@ -702,7 +777,7 @@ def print_dre_report(
     total_despesas = (
         total_comissao
         + total_frete
-        + total_tarifa
+        + total_difal
         + total_sub
         + total_boleto
         + total_cobranca
@@ -723,9 +798,10 @@ def print_dre_report(
     W = 70
     line = "=" * W
 
+    dre_title = f"DRE - {seller_upper} - JANEIRO 2026 (COMPETENCIA)"
     print()
     print("+" + line + "+")
-    print("|" + f"{'DRE - 141AIR - JANEIRO 2026 (COMPETENCIA)':^{W}}" + "|")
+    print("|" + f"{dre_title:^{W}}" + "|")
     print("+" + line + "+")
     print("|" + " " * W + "|")
 
@@ -755,9 +831,10 @@ def print_dre_report(
     if total_cashback > 0:
         dre_row("1.3.4  (+) Cashback / Ressarcimento ML", total_cashback)
         dre_note(f"({dre['cashback_ml']['count']} cashbacks)")
-    if total_deposito > 0:
-        dre_row("1.x.x  (+) Depositos / Aportes Avulsos", total_deposito)
-        dre_note(f"({dre['deposito_avulso']['count']} depositos)")
+    if total_outras > 0:
+        n_outras = dre["outras_receitas"]["count"] + dre["deposito_avulso"]["count"]
+        dre_row("1.4.2  (+) Outras Receitas Eventuais",   total_outras)
+        dre_note(f"({n_outras} entradas: depositos avulsos, creditos ML)")
     if total_gap_income > 0:
         dre_row("1.3.x  (+) Outros Creditos (extrato)",  total_gap_income)
         dre_note(f"({dre['extrato_gap_income']['count']} creditos do extrato)")
@@ -775,21 +852,22 @@ def print_dre_report(
     dre_row("2.8.2  Comissoes Marketplace",          -total_comissao)
     dre_note(f"({dre['comissao_ml']['count']} lancamentos de comissao ML)")
     dre_row("2.9.4  MercadoEnvios (Frete Seller)",   -total_frete)
-    dre_note(f"({dre['frete_mercadoenvios']['count']} lancamentos de frete)")
-    if total_tarifa > 0:
-        dre_row("2.2.7  Tarifas / Impostos (DIFAL)",    -total_tarifa)
-        dre_note(f"({dre['tarifa_pagamento']['count']} lancamentos - DIFAL + non-orders)")
+    dre_note(f"({dre['frete_mercadoenvios']['count']} lancamentos de frete + debito_envio_ml)")
+    if total_difal > 0:
+        dre_row("2.2.3  DIFAL (Diferencial de Aliquota)", -total_difal)
+        dre_note(f"({dre['difal_icms']['count']} lancamentos DIFAL ICMS)")
     if total_sub > 0:
-        dre_row("2.6.x  Assinaturas SaaS",              -total_sub)
+        dre_row("2.14.12 Assinaturas (SaaS)",            -total_sub)
         dre_note(f"({dre['subscription_saas']['count']} assinaturas - Supabase, Claude.ai, Notion)")
     if total_boleto > 0:
         dre_row("2.x.x  Boletos / Outras Despesas",     -total_boleto)
         dre_note(f"({dre['bill_payment']['count']} boletos e outras despesas MP)")
     if total_cobranca > 0:
-        dre_row("2.8.2  Cobrancas ML",                  -total_cobranca)
+        dre_row("2.8.2  Faturas/Cobrancas ML",           -total_cobranca)
+        dre_note(f"({dre['collection_ml']['count']} faturas vencidas ML + cobrancas)")
     if total_gap_expense > 0:
         dre_row("2.x.x  Outros Debitos (extrato)",      -total_gap_expense)
-        dre_note(f"({dre['extrato_gap_expense']['count']} linhas do extrato: reclamacoes, envios, faturas)")
+        dre_note(f"({dre['extrato_gap_expense']['count']} outros debitos nao classificados)")
 
     print("|" + " " * W + "|")
     print("|" + f"{'':5}{'─' * 45}{'─'*20}" + "|")
@@ -847,13 +925,14 @@ def print_category_breakdown(
     print(f"  {'Categoria':<45} {'Qtd':>5}  {'Total (R$)':>15}")
     print(f"  {'-'*45} {'-'*5}  {'-'*15}")
     receita_cats = [
-        ("venda_ml", "1.1.1 Receita Bruta ML", True),
-        ("devolucao", "1.2.1 (-) Devolucoes", False),
-        ("estorno_taxa", "1.3.4 (+) Estornos de Taxas", True),
-        ("estorno_frete", "1.3.7 (+) Estorno de Frete", True),
-        ("cashback_ml", "1.3.4 (+) Cashback ML", True),
-        ("deposito_avulso", "1.x.x (+) Depositos Avulsos", True),
-        ("extrato_gap_income", "1.3.x (+) Outros Creditos", True),
+        ("venda_ml",           "1.1.1 Receita Bruta ML",           True),
+        ("devolucao",          "1.2.1 (-) Devolucoes",             False),
+        ("estorno_taxa",       "1.3.4 (+) Estornos de Taxas",      True),
+        ("estorno_frete",      "1.3.7 (+) Estorno de Frete",       True),
+        ("cashback_ml",        "1.3.4 (+) Cashback ML",            True),
+        ("outras_receitas",    "1.4.2 (+) Outras Receitas",        True),
+        ("deposito_avulso",    "1.4.2 (+) Depositos Avulsos",      True),
+        ("extrato_gap_income", "1.3.x (+) Outros Creditos",        True),
     ]
     for key, label, positive in receita_cats:
         data = dre.get(key, {"total": 0.0, "count": 0})
@@ -868,12 +947,12 @@ def print_category_breakdown(
     print(f"  {'Categoria':<45} {'Qtd':>5}  {'Total (R$)':>15}")
     print(f"  {'-'*45} {'-'*5}  {'-'*15}")
     despesa_cats = [
-        ("comissao_ml", "2.8.2 Comissoes Marketplace"),
-        ("frete_mercadoenvios", "2.9.4 MercadoEnvios Frete"),
-        ("tarifa_pagamento", "2.2.7 Tarifas/DIFAL"),
-        ("subscription_saas", "2.6.x Assinaturas SaaS"),
-        ("bill_payment", "2.x.x Boletos/Outras"),
-        ("collection_ml", "2.8.2 Cobrancas ML"),
+        ("comissao_ml",        "2.8.2 Comissoes Marketplace"),
+        ("frete_mercadoenvios","2.9.4 MercadoEnvios Frete"),
+        ("difal_icms",         "2.2.3 DIFAL (Diferencial de Aliquota)"),
+        ("subscription_saas",  "2.14.12 Assinaturas SaaS"),
+        ("bill_payment",       "2.x.x Boletos/Outras"),
+        ("collection_ml",      "2.8.2 Faturas/Cobrancas ML"),
         ("extrato_gap_expense", "2.x.x Outros Debitos (extrato)"),
     ]
     for key, label in despesa_cats:
@@ -916,6 +995,210 @@ def print_category_breakdown(
         for key, v in sorted(gap_types.items()):
             print(f"  {key:<45} {v['count']:>5}  {v['total']:>14,.2f}")
         print()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECAO: DFC — Demonstrativo de Fluxo de Caixa
+# ══════════════════════════════════════════════════════════════════════════════
+
+def print_dfc_report(
+    extrato_transactions: list[dict],
+    extrato_summary: dict,
+    seller_slug: str = "",
+) -> None:
+    """
+    Imprime o DFC (Demonstrativo de Fluxo de Caixa) de janeiro 2026.
+
+    O DFC mostra a MOVIMENTACAO REAL do caixa do dia, extraida diretamente
+    do account_statement (extrato ML/MP). Diferente do DRE (competencia),
+    o DFC registra quando o dinheiro efetivamente entrou ou saiu.
+
+    Categorias de fluxo:
+      OPERACIONAL:
+        + Liberacoes de vendas (pagamentos aprovados liberados)
+        + Reembolsos recebidos (disputas ganhas, tarifas)
+        + Bonus por envio
+        + Entrada de dinheiro / Deposito avulso
+        - DIFAL, faturas vencidas, debito envio
+        - Dinheiro retido (garantia disputa — saida temporaria)
+        - Debito por divida de disputa / troca
+        - Liberacao cancelada
+      FINANCEIRO / TRANSFERENCIAS:
+        - PIX enviados, transferencias enviadas
+        + PIX recebidos, transferencias recebidas
+      NAO IDENTIFICADO:
+        Linhas sem match nas regras (tipo=other)
+
+    Validacao: saldo_inicial + DFC_total = saldo_final
+    """
+    jan_txs = [tx for tx in extrato_transactions if tx["date"][:7] == "2026-01"]
+
+    # Classifica cada linha do extrato
+    dfc = {
+        "liberacao_vendas":    {"total": 0.0, "count": 0},   # entradas: liberacoes approved
+        "reembolso":           {"total": 0.0, "count": 0},   # entradas: reembolsos
+        "bonus_envio":         {"total": 0.0, "count": 0},   # entradas: bonus
+        "deposito_avulso":     {"total": 0.0, "count": 0},   # entradas: depositos
+        "entrada_outros":      {"total": 0.0, "count": 0},   # entradas: outros creditos
+        "difal":               {"total": 0.0, "count": 0},   # saidas operacional
+        "faturas_ml":          {"total": 0.0, "count": 0},   # saidas operacional
+        "debito_envio_ml":     {"total": 0.0, "count": 0},   # saidas operacional
+        "dinheiro_retido":     {"total": 0.0, "count": 0},   # saidas temporarias
+        "liberacao_cancelada": {"total": 0.0, "count": 0},   # saidas (cancelamento)
+        "debito_disputa":      {"total": 0.0, "count": 0},   # saidas: disputas perdidas
+        "pagamento_conta":     {"total": 0.0, "count": 0},   # saidas: boletos pagos
+        "subscription_mp":     {"total": 0.0, "count": 0},   # saidas: assinaturas MP
+        "pix_saida":           {"total": 0.0, "count": 0},   # transferencias saida
+        "pix_entrada":         {"total": 0.0, "count": 0},   # transferencias entrada
+        "transferencia_saldo": {"total": 0.0, "count": 0},   # transferencias internas
+        "nao_identificado":    {"total": 0.0, "count": 0},   # outros
+    }
+
+    for tx in jan_txs:
+        amount = tx["amount"]
+        t = _normalize_text(tx["type"])
+
+        if "liberacao de dinheiro cancelada" in t:
+            dfc["liberacao_cancelada"]["total"] += amount
+            dfc["liberacao_cancelada"]["count"] += 1
+        elif "liberacao de dinheiro" in t:
+            dfc["liberacao_vendas"]["total"] += amount
+            dfc["liberacao_vendas"]["count"] += 1
+        elif "reembolso" in t or "bonus por envio" in t or "bônus por envio" in t:
+            if "bonus" in t or "bônus" in t:
+                dfc["bonus_envio"]["total"] += amount
+                dfc["bonus_envio"]["count"] += 1
+            else:
+                dfc["reembolso"]["total"] += amount
+                dfc["reembolso"]["count"] += 1
+        elif "dinheiro retido" in t:
+            dfc["dinheiro_retido"]["total"] += amount
+            dfc["dinheiro_retido"]["count"] += 1
+        elif "diferenca da aliquota" in t or "difal" in t:
+            dfc["difal"]["total"] += amount
+            dfc["difal"]["count"] += 1
+        elif "faturas vencidas" in t:
+            dfc["faturas_ml"]["total"] += amount
+            dfc["faturas_ml"]["count"] += 1
+        elif "envio do mercado livre" in t:
+            dfc["debito_envio_ml"]["total"] += amount
+            dfc["debito_envio_ml"]["count"] += 1
+        elif "reclamacoes no mercado livre" in t or "reclamações no mercado livre" in t:
+            dfc["debito_disputa"]["total"] += amount
+            dfc["debito_disputa"]["count"] += 1
+        elif "troca de produto" in t:
+            dfc["debito_disputa"]["total"] += amount
+            dfc["debito_disputa"]["count"] += 1
+        elif "dinheiro recebido" in t or "entrada de dinheiro" in t:
+            dfc["deposito_avulso"]["total"] += amount
+            dfc["deposito_avulso"]["count"] += 1
+        elif "transferencia recebida" in t or "transferência recebida" in t:
+            dfc["pix_entrada"]["total"] += amount
+            dfc["pix_entrada"]["count"] += 1
+        elif ("transferencia pix" in t or "pix enviado" in t
+              or "transferencia enviada" in t or "transferência enviada" in t):
+            dfc["pix_saida"]["total"] += amount
+            dfc["pix_saida"]["count"] += 1
+        elif "transferencia de saldo" in t or "transferência de saldo" in t:
+            dfc["transferencia_saldo"]["total"] += amount
+            dfc["transferencia_saldo"]["count"] += 1
+        elif "pagamento de conta" in t:
+            dfc["pagamento_conta"]["total"] += amount
+            dfc["pagamento_conta"]["count"] += 1
+        elif "pagamento cartao" in t or "pagamento cartão" in t:
+            dfc["pagamento_conta"]["total"] += amount
+            dfc["pagamento_conta"]["count"] += 1
+        elif "compra mercado libre" in t or "compra de " in t:
+            dfc["pagamento_conta"]["total"] += amount
+            dfc["pagamento_conta"]["count"] += 1
+        elif "pagamento" in t:
+            # Pagamentos de assinaturas SaaS via MP (Supabase, Claude.ai, Notion)
+            dfc["subscription_mp"]["total"] += amount
+            dfc["subscription_mp"]["count"] += 1
+        else:
+            dfc["nao_identificado"]["total"] += amount
+            dfc["nao_identificado"]["count"] += 1
+
+    # Calcula grupos
+    total_entradas_op = (dfc["liberacao_vendas"]["total"] + dfc["reembolso"]["total"]
+                         + dfc["bonus_envio"]["total"] + dfc["deposito_avulso"]["total"]
+                         + dfc["entrada_outros"]["total"])
+    total_saidas_op = (dfc["difal"]["total"] + dfc["faturas_ml"]["total"]
+                       + dfc["debito_envio_ml"]["total"] + dfc["dinheiro_retido"]["total"]
+                       + dfc["liberacao_cancelada"]["total"] + dfc["debito_disputa"]["total"]
+                       + dfc["pagamento_conta"]["total"] + dfc["subscription_mp"]["total"])
+    total_transf = (dfc["pix_saida"]["total"] + dfc["pix_entrada"]["total"]
+                    + dfc["transferencia_saldo"]["total"])
+    total_nao_id = dfc["nao_identificado"]["total"]
+    total_dfc = total_entradas_op + total_saidas_op + total_transf + total_nao_id
+
+    variacao = extrato_summary["final_balance"] - extrato_summary["initial_balance"]
+
+    print("\n" + "=" * 70)
+    print(f"  DFC — {seller_slug.upper()} — DEMONSTRATIVO DE FLUXO DE CAIXA — JAN/2026")
+    print("=" * 70)
+    print()
+    print(f"  Saldo inicial (31/12/2025):     {fmt_brl(extrato_summary['initial_balance'])}")
+    print()
+
+    def dfc_row(label: str, value: float, indent: int = 4) -> None:
+        s = "" if value >= 0 else ""  # sign is implicit in fmt_brl
+        print(f"  {' '*indent}{label:<43} {fmt_brl(value):>15}")
+
+    def dfc_sub(label: str, value: float, count: int) -> None:
+        if abs(value) >= 0.01:
+            print(f"    {'  ' + label:<45} {fmt_brl(value):>15}  ({count}x)")
+
+    # ATIVIDADES OPERACIONAIS
+    print(f"  {'ATIVIDADES OPERACIONAIS'}")
+    print(f"    {'Entradas:':}")
+    dfc_sub("(+) Liberacoes de vendas aprovadas", dfc["liberacao_vendas"]["total"], dfc["liberacao_vendas"]["count"])
+    dfc_sub("(+) Reembolsos (disputas, tarifas)", dfc["reembolso"]["total"], dfc["reembolso"]["count"])
+    dfc_sub("(+) Bonus por envio rapido", dfc["bonus_envio"]["total"], dfc["bonus_envio"]["count"])
+    dfc_sub("(+) Depositos avulsos / Entrada", dfc["deposito_avulso"]["total"], dfc["deposito_avulso"]["count"])
+    dfc_row("= Total entradas operacionais:", total_entradas_op)
+    print()
+    print(f"    {'Saidas:':}")
+    dfc_sub("(-) Dinheiro retido (garantia disputa)", dfc["dinheiro_retido"]["total"], dfc["dinheiro_retido"]["count"])
+    dfc_sub("(-) Debito por disputa / troca", dfc["debito_disputa"]["total"], dfc["debito_disputa"]["count"])
+    dfc_sub("(-) DIFAL ICMS", dfc["difal"]["total"], dfc["difal"]["count"])
+    dfc_sub("(-) Faturas vencidas ML", dfc["faturas_ml"]["total"], dfc["faturas_ml"]["count"])
+    dfc_sub("(-) Debito envio ML retroativo", dfc["debito_envio_ml"]["total"], dfc["debito_envio_ml"]["count"])
+    dfc_sub("(-) Liberacao cancelada", dfc["liberacao_cancelada"]["total"], dfc["liberacao_cancelada"]["count"])
+    dfc_sub("(-) Pagamentos de conta (boletos)", dfc["pagamento_conta"]["total"], dfc["pagamento_conta"]["count"])
+    dfc_sub("(-) Assinaturas SaaS via MP", dfc["subscription_mp"]["total"], dfc["subscription_mp"]["count"])
+    dfc_row("= Total saidas operacionais:", total_saidas_op)
+    print()
+    dfc_row("FLUXO OPERACIONAL LIQUIDO:", total_entradas_op + total_saidas_op)
+    print()
+
+    # TRANSFERENCIAS E FINANCIAMENTOS
+    if abs(total_transf) >= 0.01:
+        print(f"  {'TRANSFERENCIAS / ATIVIDADES FINANCEIRAS'}")
+        dfc_sub("PIX / Transferencias enviadas", dfc["pix_saida"]["total"], dfc["pix_saida"]["count"])
+        dfc_sub("PIX / Transferencias recebidas", dfc["pix_entrada"]["total"], dfc["pix_entrada"]["count"])
+        dfc_sub("Transferencias de saldo internas", dfc["transferencia_saldo"]["total"], dfc["transferencia_saldo"]["count"])
+        dfc_row("= Total transferencias:", total_transf)
+        print()
+
+    if abs(total_nao_id) >= 0.01:
+        print(f"  {'NAO IDENTIFICADO'}")
+        dfc_sub("Linhas sem classificacao", dfc["nao_identificado"]["total"], dfc["nao_identificado"]["count"])
+        print()
+
+    print(f"  {'─'*65}")
+    print(f"  {'VARIACAO LIQUIDA DE CAIXA (DFC total):':<43} {fmt_brl(total_dfc):>15}")
+    print(f"  {'Variacao extrato (final - inicial):':<43} {fmt_brl(variacao):>15}")
+    diff = round(total_dfc - variacao, 2)
+    status = "OK ✓" if abs(diff) < 0.02 else f"DIVERGENCIA: {fmt_brl(diff)}"
+    print(f"  {'Diferenca DFC vs extrato:':<43} {fmt_brl(diff):>15}  {status}")
+    print()
+    print(f"  Saldo final (31/01/2026):       {fmt_brl(extrato_summary['final_balance'])}")
+    print()
+    print(f"  Nota: 'dinheiro_retido' e 'reembolso_reclamacoes' se anulam no DFC total.")
+    print(f"  O DRE exclui essas linhas pois sao neutras economicamente.")
+    print("=" * 70)
+    print()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1096,28 +1379,32 @@ def print_payments_summary(
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
-def main():
+def run_seller_dre(seller_slug: str) -> dict:
+    """Roda DRE completo para um seller. Retorna dict com resultado."""
+    seller_upper = seller_slug.upper()
+    extrato_file, cache_file = get_seller_paths(seller_slug)
+
     print()
     print("=" * 70)
-    print("  DRE SIMULACAO — 141AIR — JANEIRO 2026 (COMPETENCIA)")
-    print(f"  Seller: {SELLER_SLUG}")
+    print(f"  DRE SIMULACAO — {seller_upper} — JANEIRO 2026 (COMPETENCIA)")
+    print(f"  Seller: {seller_slug}")
     print(f"  Periodo DRE: {JAN_START} a {JAN_END}")
     print(f"  Criterio: date_approved em BRT (regime de competencia)")
     print("=" * 70)
 
     # ── Verificar arquivos ────────────────────────────────────────────────────
-    if not CACHE_FILE.exists():
-        print(f"\nERRO: Cache nao encontrado: {CACHE_FILE}")
+    if not cache_file.exists():
+        print(f"\nERRO: Cache nao encontrado: {cache_file}")
         print("Execute reconciliation_jan2026.py primeiro para gerar o cache.")
-        sys.exit(1)
+        return {"error": "cache not found"}
 
-    if not EXTRATO_FILE.exists():
-        print(f"\nERRO: Extrato nao encontrado: {EXTRATO_FILE}")
-        sys.exit(1)
+    if not extrato_file.exists():
+        print(f"\nERRO: Extrato nao encontrado: {extrato_file}")
+        return {"error": "extrato not found"}
 
     # ── Fase 1: Carrega cache de payments ────────────────────────────────────
-    print(f"\nCarregando payments do cache: {CACHE_FILE.name}")
-    with open(CACHE_FILE) as f:
+    print(f"\nCarregando payments do cache: {cache_file.name}")
+    with open(cache_file) as f:
         cache_data = json.load(f)
 
     payments_all = cache_data["payments"]
@@ -1126,14 +1413,12 @@ def main():
     print(f"Contagens do cache: {counts}")
 
     # ── Filtra por periodo usando date_approved ───────────────────────────────
-    # Payments com date_approved em janeiro 2026 (DRE de janeiro)
     payments_jan = [
         p for p in payments_all
         if _to_brt_date(p.get("date_approved") or p.get("date_created", ""))[:7] == "2026-01"
     ]
     print(f"Payments com date_approved (BRT) em jan/2026: {len(payments_jan)}")
 
-    # Payments com date_approved em dezembro 2025 (para analise de caixa de jan)
     payments_dec = [
         p for p in payments_all
         if _to_brt_date(p.get("date_approved") or p.get("date_created", ""))[:7] == "2025-12"
@@ -1147,9 +1432,7 @@ def main():
     simulated_dec = [simulate_payment_for_dre(p) for p in payments_dec]
     simulated_all = [simulate_payment_for_dre(p) for p in payments_all]
 
-    # Non-orders com competencia em jan (subset dos simulated_jan)
     non_order_jan = [s for s in simulated_jan if s["action"] == "NON_ORDER"]
-    # Dec aprovados com release em jan (para o caixa de jan)
     simulated_dec_jan_cash = [
         s for s in simulated_dec
         if s["action"] in ("APPROVED", "CHARGED_BACK_REIMBURSED")
@@ -1161,8 +1444,8 @@ def main():
     print(f"  Dec aprovados, release jan: {len(simulated_dec_jan_cash)}")
 
     # ── Fase 3: Parse do extrato ─────────────────────────────────────────────
-    print(f"\nLendo extrato: {EXTRATO_FILE.name}")
-    extrato_summary, extrato_transactions = parse_extrato(EXTRATO_FILE)
+    print(f"\nLendo extrato: {extrato_file.name}")
+    extrato_summary, extrato_transactions = parse_extrato(extrato_file)
     jan_transactions = [tx for tx in extrato_transactions if tx["date"][:7] == "2026-01"]
     print(f"Total linhas extrato: {len(extrato_transactions)}")
     print(f"Linhas de janeiro: {len(jan_transactions)}")
@@ -1193,40 +1476,50 @@ def main():
         dre_data, extrato_summary, extrato_transactions,
         caixa_data, simulated_jan, simulated_dec_jan_cash,
         non_order_jan, extrato_gaps,
+        seller_slug=seller_slug,
     )
     print_category_breakdown(simulated_jan, non_order_jan, extrato_gaps, dre_data)
+    print_dfc_report(extrato_transactions, extrato_summary, seller_slug)
     print_cross_month_analysis(dre_data, simulated_jan, simulated_dec)
 
     # ── RESUMO FINAL ──────────────────────────────────────────────────────────
     dre = dre_data["dre"]
     cross_month = dre_data["cross_month"]
+    refunded_ids = dre_data.get("refunded_ids", set())
 
     total_receita_bruta = dre["venda_ml"]["total"]
     total_devolucao = dre["devolucao"]["total"]
     total_estorno_taxa = dre["estorno_taxa"]["total"]
     total_estorno_frete = dre["estorno_frete"]["total"]
     total_cashback = dre["cashback_ml"]["total"]
-    total_deposito = dre["deposito_avulso"]["total"]
+    total_outras = dre["outras_receitas"]["total"] + dre["deposito_avulso"]["total"]
     total_gap_income = dre["extrato_gap_income"]["total"]
     total_receitas = (total_receita_bruta - total_devolucao + total_estorno_taxa
-                      + total_estorno_frete + total_cashback + total_deposito + total_gap_income)
+                      + total_estorno_frete + total_cashback + total_outras + total_gap_income)
     total_despesas = (dre["comissao_ml"]["total"] + dre["frete_mercadoenvios"]["total"]
-                      + dre["tarifa_pagamento"]["total"] + dre["subscription_saas"]["total"]
+                      + dre["difal_icms"]["total"] + dre["subscription_saas"]["total"]
                       + dre["bill_payment"]["total"] + dre["collection_ml"]["total"]
                       + dre["extrato_gap_expense"]["total"])
     resultado = total_receitas - total_despesas
 
     print("\n" + "=" * 70)
-    print("  RESUMO EXECUTIVO — DRE 141AIR JANEIRO 2026")
+    print(f"  RESUMO EXECUTIVO — DRE {seller_upper} JANEIRO 2026")
     print("=" * 70)
     print()
     print(f"  Receita bruta (1.1.1):          {fmt_brl(total_receita_bruta)}")
     print(f"  (-) Devolucoes (1.2.1):         {fmt_brl(-total_devolucao)}")
+    if dre["devolucao"]["count"] > 0:
+        from_proc = sum(1 for s in simulated_jan if s["action"] == "REFUNDED"
+                       and s.get("competencia_estorno", "")[:7] == "2026-01")
+        from_extrato = dre["devolucao"]["count"] - from_proc
+        print(f"    (processor.py: {from_proc} refunds | extrato: {from_extrato} debito_divida/troca | sem duplic.)")
     print(f"  (+) Estornos de taxas (1.3.4):  {fmt_brl(total_estorno_taxa)}")
+    if total_estorno_frete > 0:
+        print(f"  (+) Estorno de Frete (1.3.7):   {fmt_brl(total_estorno_frete)}")
     if total_cashback > 0:
         print(f"  (+) Cashback ML (1.3.4):        {fmt_brl(total_cashback)}")
-    if total_deposito > 0:
-        print(f"  (+) Depositos avulsos:          {fmt_brl(total_deposito)}")
+    if total_outras > 0:
+        print(f"  (+) Outras receitas (1.4.2):    {fmt_brl(total_outras)}")
     if total_gap_income > 0:
         print(f"  (+) Outros creditos extrato:    {fmt_brl(total_gap_income)}")
     print(f"  ─────────────────────────────────────────────────────")
@@ -1234,14 +1527,14 @@ def main():
     print()
     print(f"  (-) Comissoes ML (2.8.2):       {fmt_brl(-dre['comissao_ml']['total'])}")
     print(f"  (-) Frete seller (2.9.4):       {fmt_brl(-dre['frete_mercadoenvios']['total'])}")
-    if dre["tarifa_pagamento"]["total"] > 0:
-        print(f"  (-) DIFAL/Tarifas (2.2.7):      {fmt_brl(-dre['tarifa_pagamento']['total'])}")
+    if dre["difal_icms"]["total"] > 0:
+        print(f"  (-) DIFAL ICMS (2.2.3):         {fmt_brl(-dre['difal_icms']['total'])}")
     if dre["subscription_saas"]["total"] > 0:
-        print(f"  (-) Assinaturas SaaS (2.6.x):   {fmt_brl(-dre['subscription_saas']['total'])}")
+        print(f"  (-) Assinaturas (2.14.12):      {fmt_brl(-dre['subscription_saas']['total'])}")
     if dre["bill_payment"]["total"] > 0:
         print(f"  (-) Boletos/Outras (2.x.x):     {fmt_brl(-dre['bill_payment']['total'])}")
     if dre["collection_ml"]["total"] > 0:
-        print(f"  (-) Cobrancas ML (2.8.2):       {fmt_brl(-dre['collection_ml']['total'])}")
+        print(f"  (-) Faturas/Cobrancas ML:       {fmt_brl(-dre['collection_ml']['total'])}")
     if dre["extrato_gap_expense"]["total"] > 0:
         print(f"  (-) Outros debitos extrato:     {fmt_brl(-dre['extrato_gap_expense']['total'])}")
     print(f"  ─────────────────────────────────────────────────────")
@@ -1268,11 +1561,49 @@ def main():
     print(f"    Saldo final:                  {fmt_brl(extrato_summary['final_balance'])}")
     print()
     print("=" * 70)
-    print("  Simulacao DRE concluida.")
+    print(f"  Simulacao DRE {seller_upper} concluida.")
     print("  Criterio: date_approved convertido para BRT = regime de competencia.")
-    print("  O DRE de caixa (money_release_date) esta em simulate_onboarding_141air_jan2026.py")
     print("=" * 70)
     print()
+
+    return {"resultado": resultado, "receitas": total_receitas, "despesas": total_despesas}
+
+
+def main():
+    parser = argparse.ArgumentParser(description="DRE Simulacao — Janeiro 2026 (Competencia)")
+    parser.add_argument("--seller", type=str, default=None,
+                        help=f"Seller slug ({', '.join(ALL_SELLERS)})")
+    parser.add_argument("--all", action="store_true",
+                        help="Roda para todos os sellers")
+    args = parser.parse_args()
+
+    if args.all:
+        sellers = ALL_SELLERS
+    elif args.seller:
+        sellers = [args.seller]
+    else:
+        sellers = ["141air"]
+
+    results = {}
+    for slug in sellers:
+        result = run_seller_dre(slug)
+        results[slug] = result
+
+    if len(sellers) > 1:
+        print("\n" + "=" * 70)
+        print("  SUMARIO FINAL DRE — TODOS OS SELLERS")
+        print("=" * 70)
+        print()
+        print(f"  {'Seller':<20} {'Receitas':>15} {'Despesas':>15} {'Resultado':>15}")
+        print(f"  {'-'*20} {'-'*15} {'-'*15} {'-'*15}")
+        for slug in sellers:
+            r = results[slug]
+            if "error" in r:
+                print(f"  {slug:<20} {'ERRO':>15} {r['error']}")
+            else:
+                print(f"  {slug:<20} {fmt_brl(r['receitas']):>15} "
+                      f"{fmt_brl(-r['despesas']):>15} {fmt_brl(r['resultado']):>15}")
+        print("=" * 70 + "\n")
 
 
 if __name__ == "__main__":

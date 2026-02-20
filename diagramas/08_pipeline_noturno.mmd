@@ -1,0 +1,31 @@
+flowchart TD
+    TIMER(["⏰ 00:01 BRT\nPipeline Noturno\n(quando habilitado)"])
+
+    TIMER --> S1["1. Sync Diário\nD-3 até ontem\npara todos os sellers"]
+    S1 --> S2["2. Validação de Taxas\nCompara comissão calculada\nvs release report ML\nCria ajustes CA para diferenças"]
+    S2 --> S3["3. Ingestão de Extrato\nLinhas do account_statement\nnão cobertas por vendas\nnem despesas avulsas\n→ mp_expenses"]
+    S3 --> S4["4. Baixas\nParcelas vencidas\nde todos os sellers"]
+    S4 --> S5{"Dia da semana\npermite legado?\n(seg/qui por padrão)"}
+    S5 -->|"sim"| S5A["5. Export Legado ZIP\nBaixa account_statement\nGera XLSX\nFaz upload"]
+    S5 -->|"não"| S5B["5. Pula legado\nhoje"]
+    S5A --> S6["6. Cobertura do Extrato\nVerifica 100% das linhas\ntratadas por vendas\nou despesas avulsas"]
+    S5B --> S6
+    S6 --> S7["7. Fechamento Financeiro\nGera relatório por seller:\nLane Auto: payments + ca_jobs\nLane Manual: mp_expenses + batches"]
+
+    S7 --> DONE(["✓ Pipeline concluído\nPróximo: D+1 às 00:01"])
+
+    subgraph ALTERNATIVA["Modo Normal (sem pipeline)"]
+        A1["Daily Sync\n00:01 BRT"]
+        A2["Baixas\n10:00 BRT"]
+        A3["Fechamento Financeiro\n11:30 BRT"]
+        A4["Export Legado\n(hora configurável)"]
+        A1 -.->|"independentes"| A2
+        A2 -.-> A3
+        A3 -.-> A4
+    end
+
+    style DONE fill:#d4edda
+    style A1 fill:#e2e3e5
+    style A2 fill:#e2e3e5
+    style A3 fill:#e2e3e5
+    style A4 fill:#e2e3e5
