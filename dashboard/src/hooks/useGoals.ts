@@ -50,7 +50,7 @@ export function useGoals() {
 
     loadGoals();
 
-    // Subscribe to realtime changes
+    // Subscribe to realtime changes + visibility refetch + polling fallback
     const channel = supabase
       .channel('goals-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'goals' }, () => {
@@ -58,7 +58,18 @@ export function useGoals() {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') loadGoals();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    const poll = setInterval(loadGoals, 60_000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(poll);
+    };
   }, []);
 
   // Default to current month, but can be overridden

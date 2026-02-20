@@ -48,7 +48,7 @@ export function useRevenueLines(yearlyGoals: CompanyYearlyGoal[]) {
 
     loadLines();
 
-    // Subscribe to realtime changes
+    // Subscribe to realtime changes + visibility refetch + polling fallback
     const channel = supabase
       .channel('revenue-lines-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'revenue_lines' }, () => {
@@ -56,7 +56,18 @@ export function useRevenueLines(yearlyGoals: CompanyYearlyGoal[]) {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') loadLines();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    const poll = setInterval(loadLines, 60_000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(poll);
+    };
   }, []);
 
   // Ensure any goal entries exist in the line list
