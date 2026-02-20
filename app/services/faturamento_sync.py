@@ -105,22 +105,27 @@ class FaturamentoSyncer:
         issues and handles environments where on_conflict may intermittently fail.
         """
         db = get_db()
-        payload = {
-            "empresa": empresa,
-            "data": date_str,
-            "valor": valor,
-            "source": "sync",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
         last_error: str | None = None
 
         for attempt in range(1, 4):
+            write_time = datetime.now(timezone.utc)
+            payload = {
+                "empresa": empresa,
+                "data": date_str,
+                "valor": valor,
+                "source": "sync",
+                "updated_at": write_time.isoformat(),
+            }
             try:
                 db.table("faturamento").upsert(
                     payload,
                     on_conflict="empresa,data",
                 ).execute()
-                return True, None
+                if self._verify_persisted_row(db, empresa, date_str, valor, write_time):
+                    return True, None
+                raise RuntimeError(
+                    "upsert_not_persisted (check SUPABASE_SERVICE_ROLE_KEY and RLS policies)"
+                )
             except Exception as e:
                 last_error = str(e)
                 logger.warning(
@@ -146,7 +151,12 @@ class FaturamentoSyncer:
                         db.table("faturamento").update(payload).eq("id", row_id).execute()
                     else:
                         db.table("faturamento").insert(payload).execute()
-                    return True, None
+
+                    if self._verify_persisted_row(db, empresa, date_str, valor, write_time):
+                        return True, None
+                    raise RuntimeError(
+                        "fallback_not_persisted (update/insert returned without effective write)"
+                    )
                 except Exception as fallback_exc:
                     last_error = f"{e} | fallback={fallback_exc}"
                     logger.warning(
@@ -162,3 +172,43 @@ class FaturamentoSyncer:
 
         logger.error("Supabase upsert failed %s/%s after retries: %s", empresa, date_str, last_error)
         return False, last_error
+
+    @staticmethod
+    def _verify_persisted_row(
+        db,
+        empresa: str,
+        date_str: str,
+        expected_valor: float,
+        min_updated_at: datetime,
+    ) -> bool:
+        """Validate that a write actually persisted (guards against silent no-op updates)."""
+        try:
+            row = (
+                db.table("faturamento")
+                .select("valor,updated_at")
+                .eq("empresa", empresa)
+                .eq("data", date_str)
+                .limit(1)
+                .execute()
+            )
+            if not row.data:
+                return False
+
+            current = row.data[0]
+            db_valor = float(current.get("valor") or 0)
+            if abs(db_valor - float(expected_valor)) > 0.009:
+                return False
+
+            raw_ts = current.get("updated_at")
+            if not raw_ts:
+                return False
+
+            ts_norm = raw_ts.replace("Z", "+00:00") if isinstance(raw_ts, str) else str(raw_ts)
+            updated_at = datetime.fromisoformat(ts_norm)
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+
+            # Small tolerance for serialization/rounding drift.
+            return updated_at >= (min_updated_at - timedelta(seconds=5))
+        except Exception:
+            return False

@@ -29,6 +29,25 @@ function isHtmlRequest(request) {
   return request.headers.get('accept')?.includes('text/html');
 }
 
+function isApiPath(pathname) {
+  const apiPrefixes = [
+    '/admin',
+    '/dashboard',
+    '/auth',
+    '/health',
+    '/webhooks',
+    '/backfill',
+    '/baixas',
+    '/queue',
+    '/expenses',
+    '/docs',
+    '/openapi.json',
+    '/redoc',
+    '/install',
+  ];
+  return apiPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
@@ -36,6 +55,12 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   if (url.origin === self.location.origin) {
+    // Never cache API responses; always hit network for fresh data.
+    if (isApiPath(url.pathname)) {
+      event.respondWith(fetch(request, { cache: 'no-store' }));
+      return;
+    }
+
     if (isHtmlRequest(request)) {
       // Network-first for HTML, fallback to cached shell
       event.respondWith(

@@ -115,6 +115,10 @@ export function useAdmin() {
     if (token) h['X-Admin-Token'] = token;
     return h;
   }, [token]);
+  const noStore = useCallback((): RequestInit => ({
+    headers: headers(),
+    cache: 'no-store',
+  }), [headers]);
 
   const login = useCallback(async (password: string): Promise<boolean> => {
     try {
@@ -142,14 +146,14 @@ export function useAdmin() {
   const loadSellers = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/sellers`, { headers: headers() });
+      const res = await fetch(`${API_BASE}/admin/sellers`, noStore());
       if (res.status === 401) { logout(); return; }
       const data = await res.json();
       setSellers(data);
     } catch (e) {
       console.error('Failed to load sellers:', e);
     }
-  }, [token, headers, logout]);
+  }, [token, noStore, logout]);
 
   const approveSeller = useCallback(async (id: string, config: SellerConfig) => {
     if (!token) return;
@@ -188,14 +192,14 @@ export function useAdmin() {
     });
     if (res.ok) {
       const data = await res.json();
-      setSyncStatus({ last_sync: new Date().toISOString(), results: data.results });
+      setSyncStatus({ last_sync: data.last_sync ?? new Date().toISOString(), results: data.results });
     }
   }, [token, headers]);
 
   const loadSyncStatus = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/sync/status`, { headers: headers() });
+      const res = await fetch(`${API_BASE}/admin/sync/status`, noStore());
       if (res.ok) {
         const data = await res.json();
         setSyncStatus(data);
@@ -203,14 +207,14 @@ export function useAdmin() {
     } catch (e) {
       console.error('Failed to load sync status:', e);
     }
-  }, [token, headers]);
+  }, [token, noStore]);
 
   // ── CA Resources ──────────────────────────────────────────
 
   const loadCaAccounts = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/ca/contas-financeiras`, { headers: headers() });
+      const res = await fetch(`${API_BASE}/admin/ca/contas-financeiras`, noStore());
       if (res.ok) {
         const data = await res.json();
         setCaAccounts(data);
@@ -218,12 +222,12 @@ export function useAdmin() {
     } catch (e) {
       console.error('Failed to load CA accounts:', e);
     }
-  }, [token, headers]);
+  }, [token, noStore]);
 
   const loadCaCostCenters = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/admin/ca/centros-custo`, { headers: headers() });
+      const res = await fetch(`${API_BASE}/admin/ca/centros-custo`, noStore());
       if (res.ok) {
         const data = await res.json();
         setCaCostCenters(data);
@@ -231,7 +235,7 @@ export function useAdmin() {
     } catch (e) {
       console.error('Failed to load CA cost centers:', e);
     }
-  }, [token, headers]);
+  }, [token, noStore]);
 
   // ── Persistence: Goals & Revenue Lines ────────────────────
 
@@ -298,7 +302,7 @@ export function useAdmin() {
   const getInstallLink = useCallback(async (): Promise<{ url: string }> => {
     if (!token) return { url: '' };
     try {
-      const res = await fetch(`${API_BASE}/admin/onboarding/install-link`, { headers: headers() });
+      const res = await fetch(`${API_BASE}/admin/onboarding/install-link`, noStore());
       if (res.ok) return await res.json();
       // Fallback: construct the URL from the current origin
       const origin = window.location.origin;
@@ -307,7 +311,7 @@ export function useAdmin() {
       const origin = window.location.origin;
       return { url: `${origin}/auth/ml/install` };
     }
-  }, [token, headers]);
+  }, [token, noStore]);
 
   const activateSeller = useCallback(async (
     slug: string,
@@ -369,7 +373,7 @@ export function useAdmin() {
       };
     }
     try {
-      const res = await fetch(`${API_BASE}/admin/sellers/${slug}/backfill-status`, { headers: headers() });
+      const res = await fetch(`${API_BASE}/admin/sellers/${slug}/backfill-status`, noStore());
       if (res.ok) return await res.json();
     } catch (e) {
       console.error('Failed to get backfill status:', e);
@@ -380,7 +384,7 @@ export function useAdmin() {
       ca_backfill_completed_at: null,
       ca_backfill_progress: null,
     };
-  }, [token, headers]);
+  }, [token, noStore]);
 
   const retryBackfill = useCallback(async (slug: string): Promise<{ status: string }> => {
     if (!token) return { status: 'error' };
@@ -409,6 +413,27 @@ export function useAdmin() {
       loadCaCostCenters();
     }
   }, [isAuthenticated, loadSellers, loadSyncStatus, loadCaAccounts, loadCaCostCenters]);
+
+  // Keep admin panel fresh (sync status + sellers) without manual reload.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const refresh = () => {
+      void loadSellers();
+      void loadSyncStatus();
+    };
+
+    const poll = setInterval(refresh, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isAuthenticated, loadSellers, loadSyncStatus]);
 
   const pendingSellers = sellers.filter(s => s.onboarding_status === 'pending_approval');
   const activeSellers = sellers.filter(s => s.onboarding_status === 'active');

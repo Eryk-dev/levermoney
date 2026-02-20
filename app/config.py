@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     # Supabase
     supabase_url: str = ""
+    # Prefer service role key for backend writes. Falls back to SUPABASE_KEY
+    # for legacy deployments, but that may be read-only under RLS.
+    supabase_service_role_key: str = ""
     supabase_key: str = ""
 
     # Server

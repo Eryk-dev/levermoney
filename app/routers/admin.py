@@ -255,7 +255,7 @@ async def trigger_sync():
     if not _syncer:
         raise HTTPException(status_code=503, detail="Syncer not initialized")
     results = await _syncer.sync_all()
-    return {"results": results}
+    return {"last_sync": _syncer.last_sync, "results": results}
 
 
 @router.get("/sync/status", dependencies=[Depends(require_admin)])
