@@ -23,22 +23,34 @@ export function useSupabaseFaturamento(options: UseSupabaseOptions = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch all data from Supabase
+  // Fetch all data from Supabase (paginated to bypass server max_rows limit)
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const { data: rows, error: fetchError } = await supabase
-        .from('faturamento')
-        .select('*')
-        .order('data', { ascending: false })
-        .limit(10000);
+      const PAGE_SIZE = 1000;
+      let allRows: FaturamentoRow[] = [];
+      let from = 0;
+      let hasMore = true;
 
-      if (fetchError) throw fetchError;
+      while (hasMore) {
+        const { data: rows, error: fetchError } = await supabase
+          .from('faturamento')
+          .select('*')
+          .order('data', { ascending: false })
+          .range(from, from + PAGE_SIZE - 1);
+
+        if (fetchError) throw fetchError;
+
+        const batch = rows || [];
+        allRows = allRows.concat(batch);
+        hasMore = batch.length === PAGE_SIZE;
+        from += PAGE_SIZE;
+      }
 
       // Convert to FaturamentoRecord format
-      const records: FaturamentoRecord[] = (rows || [])
+      const records: FaturamentoRecord[] = allRows
         .filter((row: FaturamentoRow) => {
           const value = Number(row.valor);
           const isValid = Number.isFinite(value) && value >= 0;
