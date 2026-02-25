@@ -638,3 +638,13 @@
   padding: 0 3px;
   border-radius: 2px;
 }
+
+
+/* ── Form error message ───────────────────────────────── */
+
+.formError {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  margin-top: var(--space-1);
+  margin-bottom: 0;
+}

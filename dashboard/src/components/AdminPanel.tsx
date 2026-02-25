@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { formatBRL } from '../utils/dataParser';
 import { LogOut, RefreshCw, Check, X, Zap, Settings, Copy, ArrowUpCircle, RotateCcw } from 'lucide-react';
-import type { CaAccount, CaCostCenter, ActivateSellerConfig, UpgradeToCAConfig, BackfillStatus } from '../hooks/useAdmin';
+import type { CaAccount, CaCostCenter, ActivateSellerConfig, UpgradeToCAConfig, BackfillStatus, ExtratoProcessedStats } from '../hooks/useAdmin';
 import type { RevenueLine } from '../types';
 import styles from './AdminPanel.module.css';
 
@@ -72,8 +72,8 @@ interface AdminPanelProps {
   onLogout: () => void;
   // V3 onboarding
   getInstallLink: () => Promise<{ url: string }>;
-  activateSeller: (slug: string, config: ActivateSellerConfig) => Promise<{ status: string; backfill_triggered: boolean }>;
-  upgradeToCA: (slug: string, config: UpgradeToCAConfig) => Promise<{ status: string; backfill_triggered: boolean }>;
+  activateSeller: (slug: string, config: ActivateSellerConfig) => Promise<{ status: string; backfill_triggered: boolean; extrato_processed?: ExtratoProcessedStats | null; error_detail?: string }>;
+  upgradeToCA: (slug: string, config: UpgradeToCAConfig) => Promise<{ status: string; backfill_triggered: boolean; extrato_processed?: ExtratoProcessedStats | null; error_detail?: string }>;
   getBackfillStatus: (slug: string) => Promise<BackfillStatus>;
   retryBackfill: (slug: string) => Promise<{ status: string }>;
   loadSellers: () => Promise<void>;
@@ -107,6 +107,7 @@ interface ActivationForm {
   ca_start_month: number; // 1-12
   ca_conta_bancaria: string;
   ca_centro_custo_variavel: string;
+  extrato_csv: File | null;
 }
 
 // V3 Upgrade form (for active dashboard_only sellers)
@@ -117,6 +118,7 @@ interface UpgradeForm {
   ca_start_month: number; // 1-12
   ca_conta_bancaria: string;
   ca_centro_custo_variavel: string;
+  extrato_csv: File | null;
 }
 
 // ── Month picker helpers ──────────────────────────────────────
@@ -226,8 +228,10 @@ export function AdminPanel({
   const [installLink, setInstallLink] = useState<string>('');
   const [linkCopied, setLinkCopied] = useState(false);
   const [activationForm, setActivationForm] = useState<ActivationForm | null>(null);
+  const [activationError, setActivationError] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
   const [upgradeForm, setUpgradeForm] = useState<UpgradeForm | null>(null);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false);
   const [backfillStatuses, setBackfillStatuses] = useState<Record<string, BackfillStatus>>({});
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -413,6 +417,7 @@ export function AdminPanel({
   // ── V3 Activation form ────────────────────────────────────
 
   const openActivationForm = (s: Seller) => {
+    setActivationError(null);
     setActivationForm({
       sellerId: s.id,
       sellerSlug: s.slug,
@@ -427,6 +432,7 @@ export function AdminPanel({
       ca_start_month: currentMonth,
       ca_conta_bancaria: '',
       ca_centro_custo_variavel: '',
+      extrato_csv: null,
     });
   };
 
@@ -469,8 +475,16 @@ export function AdminPanel({
         config.ca_conta_bancaria = activationForm.ca_conta_bancaria;
         config.ca_centro_custo_variavel = activationForm.ca_centro_custo_variavel;
         config.ca_start_date = buildStartDate(activationForm.ca_start_year, activationForm.ca_start_month);
+        config.extrato_csv = activationForm.extrato_csv ?? undefined;
       }
-      await activateSeller(activationForm.sellerSlug, config);
+      const result = await activateSeller(activationForm.sellerSlug, config);
+      if (result.status === 'error') {
+        setActivationError(result.error_detail ?? 'Erro ao ativar seller');
+        return;
+      }
+      if (result.extrato_processed) {
+        window.alert('Extrato processado: ' + result.extrato_processed.newly_ingested + ' linhas novas ingeridas.');
+      }
       setActivationForm(null);
     } finally {
       setActivating(false);
@@ -480,12 +494,13 @@ export function AdminPanel({
   const isActivationNewLine = activationForm?.selectedLine === NEW_LINE_VALUE;
   const isCAMode = activationForm?.integration_mode === 'dashboard_ca';
   const isCAModeValid = !isCAMode || (
-    activationForm.ca_conta_bancaria !== '' && activationForm.ca_centro_custo_variavel !== ''
+    activationForm.ca_conta_bancaria !== '' && activationForm.ca_centro_custo_variavel !== '' && activationForm.extrato_csv !== null
   );
 
   // ── V3 Upgrade form ───────────────────────────────────────
 
   const openUpgradeForm = (s: Seller) => {
+    setUpgradeError(null);
     setUpgradeForm({
       sellerSlug: s.slug,
       sellerName: s.dashboard_empresa || s.name,
@@ -493,20 +508,29 @@ export function AdminPanel({
       ca_start_month: currentMonth,
       ca_conta_bancaria: s.ca_conta_bancaria || '',
       ca_centro_custo_variavel: s.ca_centro_custo_variavel || '',
+      extrato_csv: null,
     });
   };
 
   const handleUpgradeSubmit = async () => {
     if (!upgradeForm) return;
-    if (!upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel) return;
+    if (!upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel || !upgradeForm.extrato_csv) return;
     setUpgrading(true);
     try {
       const config: UpgradeToCAConfig = {
         ca_conta_bancaria: upgradeForm.ca_conta_bancaria,
         ca_centro_custo_variavel: upgradeForm.ca_centro_custo_variavel,
         ca_start_date: buildStartDate(upgradeForm.ca_start_year, upgradeForm.ca_start_month),
+        extrato_csv: upgradeForm.extrato_csv!,
       };
-      await upgradeToCA(upgradeForm.sellerSlug, config);
+      const result = await upgradeToCA(upgradeForm.sellerSlug, config);
+      if (result.status === 'error') {
+        setUpgradeError(result.error_detail ?? 'Erro ao fazer upgrade do seller');
+        return;
+      }
+      if (result.extrato_processed) {
+        window.alert('Extrato processado: ' + result.extrato_processed.newly_ingested + ' linhas novas ingeridas.');
+      }
       setUpgradeForm(null);
     } finally {
       setUpgrading(false);
@@ -746,7 +770,7 @@ export function AdminPanel({
                 <button
                   type="button"
                   className={`${styles.modeBtn} ${activationForm.integration_mode === 'dashboard_only' ? styles.modeBtnActive : ''}`}
-                  onClick={() => setActivationForm({ ...activationForm, integration_mode: 'dashboard_only' })}
+                  onClick={() => setActivationForm({ ...activationForm, integration_mode: 'dashboard_only', extrato_csv: null })}
                 >
                   Dashboard only
                 </button>
@@ -821,8 +845,22 @@ export function AdminPanel({
                     ))}
                   </select>
                 </label>
+
+                <label className={styles.formLabel}>
+                  Extrato MP (account_statement CSV)
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={e => setActivationForm({ ...activationForm!, extrato_csv: e.target.files?.[0] ?? null })}
+                  />
+                </label>
+                {activationForm.extrato_csv && (
+                  <span className={styles.startDatePreview}>✓ {activationForm.extrato_csv.name}</span>
+                )}
               </>
             )}
+
+            {activationError && <p className={styles.formError}>{activationError}</p>}
 
             <div className={styles.modalActions}>
               <button
@@ -1057,12 +1095,26 @@ export function AdminPanel({
               </select>
             </label>
 
+            <label className={styles.formLabel}>
+              Extrato MP (account_statement CSV) *
+              <input
+                type="file"
+                accept=".csv"
+                onChange={e => setUpgradeForm({ ...upgradeForm!, extrato_csv: e.target.files?.[0] ?? null })}
+              />
+            </label>
+            {upgradeForm.extrato_csv && (
+              <span className={styles.startDatePreview}>✓ {upgradeForm.extrato_csv.name}</span>
+            )}
+
+            {upgradeError && <p className={styles.formError}>{upgradeError}</p>}
+
             <div className={styles.modalActions}>
               <button
                 type="button"
                 className={styles.approveBtn}
                 onClick={handleUpgradeSubmit}
-                disabled={upgrading || !upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel}
+                disabled={upgrading || !upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel || !upgradeForm.extrato_csv}
               >
                 {upgrading ? 'Salvando...' : 'Salvar e Iniciar Backfill'}
               </button>
