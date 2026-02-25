@@ -5,11 +5,11 @@ Authentication via X-Admin-Token header verified against bcrypt hash in admin_co
 import asyncio
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
-from fastapi import APIRouter, Depends, HTTPException, Header, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Header, Query, UploadFile
 from pydantic import BaseModel
 
 from app.config import settings
@@ -38,6 +38,11 @@ from app.services.extrato_ingester import (
     get_last_ingestion_result,
     ingest_extrato_all_sellers,
     ingest_extrato_for_seller,
+)
+from app.services.extrato_onboarding import (
+    process_onboarding_extrato,
+    upload_extrato_to_drive,
+    validate_extrato_period,
 )
 from app.services.onboarding_backfill import (
     get_backfill_status,
@@ -505,37 +510,42 @@ async def list_ca_categories():
 # ── Onboarding V2 ────────────────────────────────────────────
 
 
-class ActivateSellerRequest(BaseModel):
-    integration_mode: str  # "dashboard_only" | "dashboard_ca"
-    name: str | None = None
-    dashboard_empresa: str | None = None
-    dashboard_grupo: str = "OUTROS"
-    dashboard_segmento: str = "OUTROS"
-    ca_conta_bancaria: str | None = None
-    ca_centro_custo_variavel: str | None = None
-    ca_start_date: str | None = None  # YYYY-MM-DD, must be 1st of month
-
-
-@router.post("/sellers/{slug}/activate", dependencies=[Depends(require_admin)])
-async def activate_seller_v2(slug: str, req: ActivateSellerRequest):
+@router.post("/sellers/{slug}/activate")
+async def activate_seller_v2(
+    slug: str,
+    integration_mode: str = Form(...),
+    name: str | None = Form(None),
+    dashboard_empresa: str | None = Form(None),
+    dashboard_grupo: str = Form("OUTROS"),
+    dashboard_segmento: str = Form("OUTROS"),
+    ca_conta_bancaria: str | None = Form(None),
+    ca_centro_custo_variavel: str | None = Form(None),
+    ca_start_date: str | None = Form(None),
+    extrato_csv: UploadFile | None = File(None),
+    _=Depends(require_admin),
+):
     """Activate a seller (pending_approval or any status) with V2 integration mode.
 
     For dashboard_ca: requires ca_conta_bancaria, ca_centro_custo_variavel,
-    ca_start_date (must be the 1st of a month). Triggers onboarding backfill
-    as a background task.
+    ca_start_date (must be the 1st of a month), and an extrato CSV upload.
+    Triggers onboarding backfill as a background task.
 
-    Returns {"status": "ok", "backfill_triggered": true/false}.
+    Returns {"status": "ok", "backfill_triggered": true/false, "extrato_processed": ...}.
     """
-    if req.integration_mode not in ("dashboard_only", "dashboard_ca"):
+    if integration_mode not in ("dashboard_only", "dashboard_ca"):
         raise HTTPException(
             status_code=400,
             detail="integration_mode must be 'dashboard_only' or 'dashboard_ca'",
         )
 
-    if req.integration_mode == "dashboard_ca":
+    if integration_mode == "dashboard_ca":
         missing = [
-            f for f in ("ca_conta_bancaria", "ca_centro_custo_variavel", "ca_start_date")
-            if not getattr(req, f)
+            f for f, v in (
+                ("ca_conta_bancaria", ca_conta_bancaria),
+                ("ca_centro_custo_variavel", ca_centro_custo_variavel),
+                ("ca_start_date", ca_start_date),
+            )
+            if not v
         ]
         if missing:
             raise HTTPException(
@@ -545,17 +555,30 @@ async def activate_seller_v2(slug: str, req: ActivateSellerRequest):
         # Validate ca_start_date is the 1st of a month
         try:
             from datetime import date as _date
-            _parsed = _date.fromisoformat(req.ca_start_date)
+            _parsed = _date.fromisoformat(ca_start_date)
             if _parsed.day != 1:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"ca_start_date must be the 1st of a month, got {req.ca_start_date}",
+                    detail=f"ca_start_date must be the 1st of a month, got {ca_start_date}",
                 )
         except ValueError:
             raise HTTPException(
                 status_code=400,
-                detail=f"ca_start_date is not a valid date: {req.ca_start_date}",
+                detail=f"ca_start_date is not a valid date: {ca_start_date}",
             )
+
+        # Require extrato CSV upload for dashboard_ca
+        if extrato_csv is None or not extrato_csv.filename:
+            raise HTTPException(
+                status_code=400,
+                detail="dashboard_ca requires extrato_csv file upload (account_statement CSV)",
+            )
+
+        # Read and validate extrato period coverage
+        csv_bytes = await extrato_csv.read()
+        is_valid, error_msg, _period_info = validate_extrato_period(csv_bytes, ca_start_date)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
 
     db = get_db()
 
@@ -568,31 +591,55 @@ async def activate_seller_v2(slug: str, req: ActivateSellerRequest):
 
     # Build update payload
     update_data: dict = {
-        "integration_mode": req.integration_mode,
+        "integration_mode": integration_mode,
         "onboarding_status": "active",
         "active": True,
     }
-    if req.name:
-        update_data["name"] = req.name
-    if req.dashboard_empresa:
-        update_data["dashboard_empresa"] = req.dashboard_empresa
-    update_data["dashboard_grupo"] = req.dashboard_grupo
-    update_data["dashboard_segmento"] = req.dashboard_segmento
-    if req.integration_mode == "dashboard_ca":
-        update_data["ca_conta_bancaria"] = req.ca_conta_bancaria
-        update_data["ca_centro_custo_variavel"] = req.ca_centro_custo_variavel
-        update_data["ca_start_date"] = req.ca_start_date
+    if name:
+        update_data["name"] = name
+    if dashboard_empresa:
+        update_data["dashboard_empresa"] = dashboard_empresa
+    update_data["dashboard_grupo"] = dashboard_grupo
+    update_data["dashboard_segmento"] = dashboard_segmento
+    if integration_mode == "dashboard_ca":
+        update_data["ca_conta_bancaria"] = ca_conta_bancaria
+        update_data["ca_centro_custo_variavel"] = ca_centro_custo_variavel
+        update_data["ca_start_date"] = ca_start_date
         update_data["ca_backfill_status"] = "pending"
 
     db.table("sellers").update(update_data).eq("slug", slug).execute()
-    logger.info("activate_seller_v2 %s: mode=%s", slug, req.integration_mode)
+    logger.info("activate_seller_v2 %s: mode=%s", slug, integration_mode)
+
+    # Process extrato into mp_expenses (must run BEFORE backfill)
+    extrato_processed = None
+    if integration_mode == "dashboard_ca":
+        extrato_processed = process_onboarding_extrato(slug, csv_bytes, ca_start_date)
+        logger.info(
+            "activate_seller_v2 %s: extrato processed — newly_ingested=%d",
+            slug,
+            extrato_processed.get("newly_ingested", 0),
+        )
+
+        # Upload raw CSV to Google Drive for audit (best-effort)
+        _brt = timezone(timedelta(hours=-3))
+        _yesterday = (datetime.now(_brt) - timedelta(days=1)).strftime("%Y-%m-%d")
+        drive_result = upload_extrato_to_drive(slug, csv_bytes, ca_start_date, _yesterday)
+        if drive_result:
+            try:
+                db.table("sellers").update(
+                    {"extrato_onboarding_drive_url": drive_result["web_view_link"]}
+                ).eq("slug", slug).execute()
+            except Exception as exc:
+                logger.warning(
+                    "activate_seller_v2 %s: could not save drive URL — %s", slug, exc
+                )
 
     # Create revenue_line and goals (only if not already present)
-    empresa = req.dashboard_empresa or seller.get("dashboard_empresa")
+    empresa = dashboard_empresa or seller.get("dashboard_empresa")
     if empresa:
         from datetime import datetime as _dt
-        grupo = req.dashboard_grupo
-        segmento = req.dashboard_segmento
+        grupo = dashboard_grupo
+        segmento = dashboard_segmento
 
         db.table("revenue_lines").upsert(
             {
@@ -625,43 +672,55 @@ async def activate_seller_v2(slug: str, req: ActivateSellerRequest):
         logger.warning("activate_seller_v2 %s: failed to configure release report: %s", slug, exc)
 
     backfill_triggered = False
-    if req.integration_mode == "dashboard_ca":
+    if integration_mode == "dashboard_ca":
         asyncio.create_task(run_onboarding_backfill(slug))
         backfill_triggered = True
         logger.info("activate_seller_v2 %s: onboarding backfill task launched", slug)
 
-    return {"status": "ok", "backfill_triggered": backfill_triggered}
+    return {
+        "status": "ok",
+        "backfill_triggered": backfill_triggered,
+        "extrato_processed": extrato_processed,
+    }
 
 
-class UpgradeToCaRequest(BaseModel):
-    ca_conta_bancaria: str
-    ca_centro_custo_variavel: str
-    ca_start_date: str  # YYYY-MM-DD, must be 1st of month
-
-
-@router.post("/sellers/{slug}/upgrade-to-ca", dependencies=[Depends(require_admin)])
-async def upgrade_seller_to_ca(slug: str, req: UpgradeToCaRequest):
+@router.post("/sellers/{slug}/upgrade-to-ca")
+async def upgrade_seller_to_ca(
+    slug: str,
+    ca_conta_bancaria: str = Form(...),
+    ca_centro_custo_variavel: str = Form(...),
+    ca_start_date: str = Form(...),
+    extrato_csv: UploadFile = File(...),
+    _=Depends(require_admin),
+):
     """Upgrade an active dashboard_only seller to dashboard_ca integration.
 
+    Requires an extrato CSV upload covering ca_start_date through D-1.
     Validates that the seller is active and currently in dashboard_only mode.
     Sets CA config fields and launches the onboarding backfill in the background.
 
-    Returns {"status": "ok", "backfill_triggered": true}.
+    Returns {"status": "ok", "backfill_triggered": true, "extrato_processed": ...}.
     """
     # Validate ca_start_date is the 1st of a month
     try:
         from datetime import date as _date
-        _parsed = _date.fromisoformat(req.ca_start_date)
+        _parsed = _date.fromisoformat(ca_start_date)
         if _parsed.day != 1:
             raise HTTPException(
                 status_code=400,
-                detail=f"ca_start_date must be the 1st of a month, got {req.ca_start_date}",
+                detail=f"ca_start_date must be the 1st of a month, got {ca_start_date}",
             )
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"ca_start_date is not a valid date: {req.ca_start_date}",
+            detail=f"ca_start_date is not a valid date: {ca_start_date}",
         )
+
+    # Read and validate extrato period coverage
+    csv_bytes = await extrato_csv.read()
+    is_valid, error_msg, _period_info = validate_extrato_period(csv_bytes, ca_start_date)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
 
     db = get_db()
     result = db.table("sellers").select("*").eq("slug", slug).limit(1).execute()
@@ -682,18 +741,44 @@ async def upgrade_seller_to_ca(slug: str, req: UpgradeToCaRequest):
 
     update_data = {
         "integration_mode": "dashboard_ca",
-        "ca_conta_bancaria": req.ca_conta_bancaria,
-        "ca_centro_custo_variavel": req.ca_centro_custo_variavel,
-        "ca_start_date": req.ca_start_date,
+        "ca_conta_bancaria": ca_conta_bancaria,
+        "ca_centro_custo_variavel": ca_centro_custo_variavel,
+        "ca_start_date": ca_start_date,
         "ca_backfill_status": "pending",
     }
     db.table("sellers").update(update_data).eq("slug", slug).execute()
-    logger.info("upgrade_seller_to_ca %s: ca_start_date=%s", slug, req.ca_start_date)
+    logger.info("upgrade_seller_to_ca %s: ca_start_date=%s", slug, ca_start_date)
+
+    # Process extrato into mp_expenses (must run BEFORE backfill)
+    extrato_processed = process_onboarding_extrato(slug, csv_bytes, ca_start_date)
+    logger.info(
+        "upgrade_seller_to_ca %s: extrato processed — newly_ingested=%d",
+        slug,
+        extrato_processed.get("newly_ingested", 0),
+    )
+
+    # Upload raw CSV to Google Drive for audit (best-effort)
+    _brt = timezone(timedelta(hours=-3))
+    _yesterday = (datetime.now(_brt) - timedelta(days=1)).strftime("%Y-%m-%d")
+    drive_result = upload_extrato_to_drive(slug, csv_bytes, ca_start_date, _yesterday)
+    if drive_result:
+        try:
+            db.table("sellers").update(
+                {"extrato_onboarding_drive_url": drive_result["web_view_link"]}
+            ).eq("slug", slug).execute()
+        except Exception as exc:
+            logger.warning(
+                "upgrade_seller_to_ca %s: could not save drive URL — %s", slug, exc
+            )
 
     asyncio.create_task(run_onboarding_backfill(slug))
     logger.info("upgrade_seller_to_ca %s: onboarding backfill task launched", slug)
 
-    return {"status": "ok", "backfill_triggered": True}
+    return {
+        "status": "ok",
+        "backfill_triggered": True,
+        "extrato_processed": extrato_processed,
+    }
 
 
 @router.get("/sellers/{slug}/backfill-status", dependencies=[Depends(require_admin)])
