@@ -104,7 +104,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Mostly a verification story with minimal code changes (just a comment). The key insight: _load_already_done reads mp_expenses.payment_id without source filter (lines 547-565 of onboarding_backfill.py), so extrato composite keys like '123456:df' ARE included in the done set. However, these composite keys won't collide with numeric payment IDs from the Payments API — they serve different idempotency purposes. The real protection is that process_extrato_csv_text does its own check-before-insert with composite keys."
     }
   ]

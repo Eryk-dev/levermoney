@@ -17,3 +17,34 @@ Started: Wed Feb 25 11:31:26 -03 2026
   - process_extrato_csv_text does not need seller config dict — only seller_slug string. The thin wrapper keeps the seller existence check.
   - expense_ids_in_db variable is computed but not used in the upsert loop (pre-existing unused var). Left as-is to preserve behavior.
 ---
+
+## 2026-02-25 - US-002, US-003
+- Created app/services/extrato_onboarding.py with:
+  - validate_extrato_period(csv_bytes, ca_start_date) -> tuple[bool, str, dict]: checks CSV covers ca_start_date through D-1
+  - process_onboarding_extrato(seller_slug, csv_bytes, ca_start_date) -> dict: decodes + delegates to process_extrato_csv_text
+  - upload_extrato_to_drive(seller_slug, csv_bytes, ca_start_date, end_date) -> dict|None: uploads to root/onboarding/<seller>/ folder
+- BRT constant defined as timezone(timedelta(hours=-3))
+- **Learnings:**
+  - upload_extrato_to_drive uses lazy imports (_build_gdrive_client etc.) so GDrive deps not required at module load time
+  - _gdrive_upload_bytes signature: (service, parent_id, name, content, mimetype, drive_id)
+---
+
+## 2026-02-25 - US-004, US-005
+- Modified activate_seller_v2: removed ActivateSellerRequest model, converted to Form/File multipart
+  - For dashboard_ca: validates extrato_csv present, reads bytes, calls validate_extrato_period, then processes + uploads before backfill
+  - Added extrato_processed to response dict
+- Modified upgrade_seller_to_ca: removed UpgradeToCaRequest model, extrato_csv always required (File(...))
+  - Same processing pattern: validate → update DB → process extrato → upload drive → backfill
+- Added timedelta to admin.py datetime import; added File, Form, UploadFile to FastAPI imports
+- **Learnings:**
+  - When converting from dependencies=[Depends(require_admin)] to form endpoints, move to _=Depends(require_admin) in function signature (both equivalent in FastAPI)
+  - csv_bytes must be read before any DB operations (await extrato_csv.read()), then reused for both processing and Drive upload
+---
+
+## 2026-02-25 - US-006
+- Added clarifying comment to _load_already_done() in onboarding_backfill.py explaining that mp_expenses is queried without source filter
+- No code changes to backfill-retry endpoint (already correct)
+- **Learnings:**
+  - Composite extrato keys ("123456:df") are NOT added to the done set (int() raises ValueError, caught silently) — intentional; protected by process_extrato_csv_text's check-before-insert
+  - Numeric extrato reference_ids (plain numbers like "123456789") ARE added to done set if they appear in mp_expenses
+---
