@@ -185,7 +185,7 @@ def _normalize_text(text: str) -> str:
     return ascii_text.lower()
 
 
-def _parse_account_statement(csv_text: str) -> tuple[dict, list[dict]]:
+def parse_account_statement(csv_text: str) -> tuple[dict, list[dict]]:
     """Parse account_statement CSV into (summary, transactions).
 
     The file has two sections separated by a blank line:
@@ -527,57 +527,39 @@ def _batch_lookup_refunded_payment_ids(
 # ---------------------------------------------------------------------------
 
 
-async def ingest_extrato_for_seller(
+def process_extrato_csv_text(
     seller_slug: str,
+    csv_text: str,
     begin_date: str,
     end_date: str,
 ) -> dict:
-    """Ingest account_statement lines not covered by existing records.
+    """Process account_statement CSV text into mp_expenses gap lines.
 
-    Pipeline:
-      1. Download account_statement (release_report) via ML API.
-      2. Parse all transaction lines.
-      3. Classify each line using EXTRATO_CLASSIFICATION_RULES.
-      4. Skip lines already covered (known patterns: liberação, PIX, boleto).
-      5. Batch-lookup remaining reference_ids against payments + mp_expenses.
-      6. For truly uncovered lines: build row and upsert into mp_expenses.
+    Reusable core ingestion pipeline called by both the nightly pipeline
+    (via ingest_extrato_for_seller) and the onboarding flow
+    (via extrato_onboarding.process_onboarding_extrato).
+
+    Steps:
+      2. Parse CSV via parse_account_statement.
+      3. Filter by date range.
+      4. Classify each line using EXTRATO_CLASSIFICATION_RULES.
+      5. Batch-lookup reference_ids against payments + mp_expenses.
+      6. Upsert uncovered gap lines into mp_expenses.
       7. Return stats dict.
-
-    Idempotency: same-REFERENCE_ID lines with different expense_types use
-    composite payment_id strings (e.g. "123456789:df") to avoid collisions.
-    Re-running the ingester for the same period is safe.
 
     Args:
         seller_slug: Seller identifier.
+        csv_text:    Decoded text content of the account_statement CSV.
         begin_date:  ISO date string YYYY-MM-DD (inclusive start).
         end_date:    ISO date string YYYY-MM-DD (inclusive end).
 
     Returns:
         Stats dict with keys: seller, total_lines, skipped_internal,
-        already_covered, newly_ingested, errors, by_type.
+        already_covered, newly_ingested, errors, by_type, summary.
     """
     db = get_db()
-    seller = get_seller_config(db, seller_slug)
-    if not seller:
-        return {"seller": seller_slug, "error": "seller_not_found"}
 
-    # 1. Download account_statement (reuses the same release_report pipeline)
-    csv_bytes = await _get_or_create_report(seller_slug, begin_date, end_date)
-    if not csv_bytes:
-        logger.error("extrato_ingester %s: could not obtain account_statement", seller_slug)
-        return {"seller": seller_slug, "error": "report_not_available"}
-
-    # 2. Parse CSV
-    try:
-        csv_text = csv_bytes.decode("utf-8-sig")  # Handle BOM
-    except UnicodeDecodeError:
-        try:
-            csv_text = csv_bytes.decode("latin-1")
-        except UnicodeDecodeError as exc:
-            logger.error("extrato_ingester %s: cannot decode CSV — %s", seller_slug, exc)
-            return {"seller": seller_slug, "error": f"decode_error: {exc}"}
-
-    summary, transactions = _parse_account_statement(csv_text)
+    summary, transactions = parse_account_statement(csv_text)
 
     if not transactions:
         logger.info("extrato_ingester %s: no transactions found in statement", seller_slug)
@@ -810,6 +792,54 @@ async def ingest_extrato_for_seller(
     })
     logger.info("extrato_ingester %s: by_type=%s", seller_slug, dict(by_type))
     return result
+
+
+async def ingest_extrato_for_seller(
+    seller_slug: str,
+    begin_date: str,
+    end_date: str,
+) -> dict:
+    """Ingest account_statement lines not covered by existing records.
+
+    Thin wrapper: downloads and decodes the account_statement CSV, then
+    delegates to process_extrato_csv_text for the core processing.
+
+    Idempotency: same-REFERENCE_ID lines with different expense_types use
+    composite payment_id strings (e.g. "123456789:df") to avoid collisions.
+    Re-running the ingester for the same period is safe.
+
+    Args:
+        seller_slug: Seller identifier.
+        begin_date:  ISO date string YYYY-MM-DD (inclusive start).
+        end_date:    ISO date string YYYY-MM-DD (inclusive end).
+
+    Returns:
+        Stats dict with keys: seller, total_lines, skipped_internal,
+        already_covered, newly_ingested, errors, by_type.
+    """
+    db = get_db()
+    seller = get_seller_config(db, seller_slug)
+    if not seller:
+        return {"seller": seller_slug, "error": "seller_not_found"}
+
+    # 1. Download account_statement (reuses the same release_report pipeline)
+    csv_bytes = await _get_or_create_report(seller_slug, begin_date, end_date)
+    if not csv_bytes:
+        logger.error("extrato_ingester %s: could not obtain account_statement", seller_slug)
+        return {"seller": seller_slug, "error": "report_not_available"}
+
+    # 2. Decode bytes to text (utf-8-sig with latin-1 fallback)
+    try:
+        csv_text = csv_bytes.decode("utf-8-sig")  # Handle BOM
+    except UnicodeDecodeError:
+        try:
+            csv_text = csv_bytes.decode("latin-1")
+        except UnicodeDecodeError as exc:
+            logger.error("extrato_ingester %s: cannot decode CSV — %s", seller_slug, exc)
+            return {"seller": seller_slug, "error": f"decode_error: {exc}"}
+
+    # 3. Delegate core processing to the reusable function
+    return process_extrato_csv_text(seller_slug, csv_text, begin_date, end_date)
 
 
 # ---------------------------------------------------------------------------
