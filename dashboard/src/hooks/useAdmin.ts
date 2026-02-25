@@ -60,6 +60,13 @@ export interface CaCostCenter {
 
 // V3 Onboarding types
 
+export interface ExtratoProcessedStats {
+  newly_ingested: number;
+  total_lines: number;
+  already_covered: number;
+  errors: number;
+}
+
 export interface BackfillProgress {
   total: number;
   processed: number;
@@ -86,12 +93,14 @@ export interface ActivateSellerConfig {
   ca_conta_bancaria?: string;
   ca_centro_custo_variavel?: string;
   ca_start_date?: string; // YYYY-MM-01
+  extrato_csv?: File;
 }
 
 export interface UpgradeToCAConfig {
   ca_conta_bancaria: string;
   ca_centro_custo_variavel: string;
   ca_start_date: string; // YYYY-MM-01
+  extrato_csv: File;
 }
 
 const TOKEN_KEY = 'lever-admin-token';
@@ -316,18 +325,28 @@ export function useAdmin() {
   const activateSeller = useCallback(async (
     slug: string,
     config: ActivateSellerConfig,
-  ): Promise<{ status: string; backfill_triggered: boolean }> => {
+  ): Promise<{ status: string; backfill_triggered: boolean; extrato_processed?: ExtratoProcessedStats | null; error_detail?: string }> => {
     if (!token) return { status: 'error', backfill_triggered: false };
     try {
+      const fd = new FormData();
+      fd.append('integration_mode', config.integration_mode ?? '');
+      fd.append('name', config.name ?? '');
+      fd.append('dashboard_empresa', config.dashboard_empresa ?? '');
+      fd.append('dashboard_grupo', config.dashboard_grupo ?? '');
+      fd.append('dashboard_segmento', config.dashboard_segmento ?? '');
+      fd.append('ca_conta_bancaria', config.ca_conta_bancaria ?? '');
+      fd.append('ca_centro_custo_variavel', config.ca_centro_custo_variavel ?? '');
+      fd.append('ca_start_date', config.ca_start_date ?? '');
+      if (config.extrato_csv) fd.append('extrato_csv', config.extrato_csv, config.extrato_csv.name);
       const res = await fetch(`${API_BASE}/admin/sellers/${slug}/activate`, {
         method: 'POST',
-        headers: headers(),
-        body: JSON.stringify(config),
+        headers: { 'X-Admin-Token': token ?? '' },
+        body: fd,
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         console.error('Failed to activate seller:', errData);
-        return { status: 'error', backfill_triggered: false };
+        return { status: 'error', backfill_triggered: false, error_detail: errData.detail ?? 'Erro desconhecido' };
       }
       const data = await res.json();
       await loadSellers();
@@ -336,23 +355,28 @@ export function useAdmin() {
       console.error('Failed to activate seller:', e);
       return { status: 'error', backfill_triggered: false };
     }
-  }, [token, headers, loadSellers]);
+  }, [token, loadSellers]);
 
   const upgradeToCA = useCallback(async (
     slug: string,
     config: UpgradeToCAConfig,
-  ): Promise<{ status: string; backfill_triggered: boolean }> => {
+  ): Promise<{ status: string; backfill_triggered: boolean; extrato_processed?: ExtratoProcessedStats | null; error_detail?: string }> => {
     if (!token) return { status: 'error', backfill_triggered: false };
     try {
+      const fd = new FormData();
+      fd.append('ca_conta_bancaria', config.ca_conta_bancaria ?? '');
+      fd.append('ca_centro_custo_variavel', config.ca_centro_custo_variavel ?? '');
+      fd.append('ca_start_date', config.ca_start_date ?? '');
+      if (config.extrato_csv) fd.append('extrato_csv', config.extrato_csv, config.extrato_csv.name);
       const res = await fetch(`${API_BASE}/admin/sellers/${slug}/upgrade-to-ca`, {
         method: 'POST',
-        headers: headers(),
-        body: JSON.stringify(config),
+        headers: { 'X-Admin-Token': token ?? '' },
+        body: fd,
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         console.error('Failed to upgrade seller to CA:', errData);
-        return { status: 'error', backfill_triggered: false };
+        return { status: 'error', backfill_triggered: false, error_detail: errData.detail ?? 'Erro desconhecido' };
       }
       const data = await res.json();
       await loadSellers();
@@ -361,7 +385,7 @@ export function useAdmin() {
       console.error('Failed to upgrade seller to CA:', e);
       return { status: 'error', backfill_triggered: false };
     }
-  }, [token, headers, loadSellers]);
+  }, [token, loadSellers]);
 
   const getBackfillStatus = useCallback(async (slug: string): Promise<BackfillStatus> => {
     if (!token) {
