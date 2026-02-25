@@ -1,50 +1,37 @@
-# Ralph Progress Log
-Started: Wed Feb 25 11:31:26 -03 2026
----
-
 ## Codebase Patterns
-- extrato_ingester.py: parse_account_statement is already public (no underscore). The _parse_account_statement call site was a stale bug.
-- extrato_ingester.py: process_extrato_csv_text is now a sync (not async) function — the core logic is all sync DB calls. Only ingest_extrato_for_seller is async (needs await for _get_or_create_report).
-- No venv found at project root — use system python3 for syntax checks.
+- useAdmin.ts hooks: DO NOT use headers() helper for FormData calls (it sets Content-Type: application/json). Build { 'X-Admin-Token': token } manually.
+- FormData + fetch: omit Content-Type header entirely; the browser sets the correct multipart boundary automatically.
+- FastAPI multipart endpoints: string fields use Form(), files use File(). Empty string appends are fine for optional Form(None) fields.
 
-## 2026-02-25 - US-001
-- Extracted core CSV-to-mp_expenses logic from ingest_extrato_for_seller into new public function process_extrato_csv_text(seller_slug, csv_text, begin_date, end_date) -> dict
-- ingest_extrato_for_seller is now a thin async wrapper: download → decode → delegate to process_extrato_csv_text
-- Fixed stale _parse_account_statement call (function was already renamed to parse_account_statement at line 188)
-- Files changed: app/services/extrato_ingester.py
+# Ralph Progress Log
+Started: Wed Feb 25 17:43:25 -03 2026
+---
+
+## 2026-02-25 17:52 - US-F02, US-F03, US-F04
+- Implemented together since all 3 touch AdminPanel.tsx and build on each other
+- US-F02: Added extrato_csv: File | null to ActivationForm interface; file input inside isCAMode block; isCAModeValid now requires extrato_csv; reset extrato_csv when toggling to dashboard_only mode
+- US-F03: Added extrato_csv: File | null to UpgradeForm interface; file input after Centro de Custo CA; disabled button when no extrato_csv
+- US-F04: Added activationError/upgradeError state; on error set error and keep modal open; on success window.alert extrato summary then close; render error messages before modalActions; added .formError CSS class to AdminPanel.module.css
+- Also updated AdminPanelProps to use new return types (extrato_processed, error_detail) and imported ExtratoProcessedStats
+- Files changed: dashboard/src/components/AdminPanel.tsx, dashboard/src/components/AdminPanel.module.css
 - **Learnings for future iterations:**
-  - parse_account_statement was already public before this PR — the _parse_account_statement reference on line 580 was a pre-existing bug in a modified (M) file
-  - process_extrato_csv_text does not need seller config dict — only seller_slug string. The thin wrapper keeps the seller existence check.
-  - expense_ids_in_db variable is computed but not used in the upsert loop (pre-existing unused var). Left as-is to preserve behavior.
+  - CSS variables --danger, --text-sm, --space-1 all confirmed present in dashboard/src/index.css
+  - The file input uses onChange only (no ref needed); e.target.files?.[0] pattern works cleanly
+  - startDatePreview CSS class already exists and works for the filename display preview
+
 ---
 
-## 2026-02-25 - US-002, US-003
-- Created app/services/extrato_onboarding.py with:
-  - validate_extrato_period(csv_bytes, ca_start_date) -> tuple[bool, str, dict]: checks CSV covers ca_start_date through D-1
-  - process_onboarding_extrato(seller_slug, csv_bytes, ca_start_date) -> dict: decodes + delegates to process_extrato_csv_text
-  - upload_extrato_to_drive(seller_slug, csv_bytes, ca_start_date, end_date) -> dict|None: uploads to root/onboarding/<seller>/ folder
-- BRT constant defined as timezone(timedelta(hours=-3))
-- **Learnings:**
-  - upload_extrato_to_drive uses lazy imports (_build_gdrive_client etc.) so GDrive deps not required at module load time
-  - _gdrive_upload_bytes signature: (service, parent_id, name, content, mimetype, drive_id)
----
-
-## 2026-02-25 - US-004, US-005
-- Modified activate_seller_v2: removed ActivateSellerRequest model, converted to Form/File multipart
-  - For dashboard_ca: validates extrato_csv present, reads bytes, calls validate_extrato_period, then processes + uploads before backfill
-  - Added extrato_processed to response dict
-- Modified upgrade_seller_to_ca: removed UpgradeToCaRequest model, extrato_csv always required (File(...))
-  - Same processing pattern: validate → update DB → process extrato → upload drive → backfill
-- Added timedelta to admin.py datetime import; added File, Form, UploadFile to FastAPI imports
-- **Learnings:**
-  - When converting from dependencies=[Depends(require_admin)] to form endpoints, move to _=Depends(require_admin) in function signature (both equivalent in FastAPI)
-  - csv_bytes must be read before any DB operations (await extrato_csv.read()), then reused for both processing and Drive upload
----
-
-## 2026-02-25 - US-006
-- Added clarifying comment to _load_already_done() in onboarding_backfill.py explaining that mp_expenses is queried without source filter
-- No code changes to backfill-retry endpoint (already correct)
-- **Learnings:**
-  - Composite extrato keys ("123456:df") are NOT added to the done set (int() raises ValueError, caught silently) — intentional; protected by process_extrato_csv_text's check-before-insert
-  - Numeric extrato reference_ids (plain numbers like "123456789") ARE added to done set if they appear in mp_expenses
+## 2026-02-25 17:47 - US-F01
+- Added ExtratoProcessedStats interface above BackfillProgress in useAdmin.ts
+- Extended ActivateSellerConfig with extrato_csv?: File
+- Extended UpgradeToCAConfig with extrato_csv: File
+- Updated return types for activateSeller and upgradeToCA to include extrato_processed and error_detail
+- Converted both functions from JSON body to FormData, with individual fd.append() for each string field
+- Used { 'X-Admin-Token': token ?? '' } headers (no Content-Type) for multipart calls
+- On !res.ok: reads errData and returns error_detail from errData.detail
+- Removed unused `headers` dependency from both useCallback deps arrays
+- Files changed: dashboard/src/hooks/useAdmin.ts
+- **Learnings for future iterations:**
+  - The `headers` useCallback is NOT used in activateSeller/upgradeToCA anymore; remove it from deps
+  - TypeScript: `config.extrato_csv` in UpgradeToCAConfig is `File` (required), not `File | undefined`; the `if (config.extrato_csv)` guard still works and avoids ts errors
 ---

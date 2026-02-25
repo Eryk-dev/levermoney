@@ -1,111 +1,81 @@
 {
-  "project": "Lever Money Conciliador V3",
-  "branchName": "ralph/extrato-onboarding",
-  "description": "Require account_statement CSV upload during onboarding for dashboard_ca sellers. Process CSV to seed mp_expenses with historical gap lines, validate period coverage (ca_start_date to D-1), and store original in Google Drive.",
+  "project": "Lever Money Conciliador V3 — Dashboard Admin",
+  "branchName": "ralph/extrato-onboarding-frontend",
+  "description": "Adapt the Admin Panel frontend to send multipart/form-data (instead of JSON) to the activate and upgrade-to-ca endpoints, add a required CSV file upload field in both modals for dashboard_ca mode, and display clear error/success feedback about extrato period coverage and ingestion results.",
   "userStories": [
     {
-      "id": "US-001",
-      "title": "Refactor extrato_ingester: extract reusable CSV processing function",
-      "description": "As a developer, I want the core CSV-to-mp_expenses processing logic extracted into a standalone public function so that both the nightly pipeline and the onboarding flow can reuse it without duplication.",
+      "id": "US-F01",
+      "title": "Adapt activateSeller and upgradeToCA hooks to send FormData",
+      "description": "As a developer, I want the activateSeller and upgradeToCA functions in useAdmin.ts to send FormData instead of JSON so that the FastAPI backend (which now expects multipart/form-data) receives the fields and the extrato CSV file correctly.",
       "acceptanceCriteria": [
-        "In app/services/extrato_ingester.py, create a new PUBLIC function process_extrato_csv_text(seller_slug: str, csv_text: str, begin_date: str, end_date: str) -> dict that contains the core logic currently inside ingest_extrato_for_seller (steps 2 through 6: parse CSV via _parse_account_statement, filter by date range, classify lines, batch lookups against payments + mp_expenses, upsert gap lines)",
-        "The existing ingest_extrato_for_seller() becomes a thin wrapper that: (1) downloads CSV via _get_or_create_report, (2) decodes bytes to text (utf-8-sig with latin-1 fallback), (3) calls process_extrato_csv_text(seller_slug, csv_text, begin_date, end_date), (4) returns the result",
-        "process_extrato_csv_text returns the exact same stats dict format as before: {seller, total_lines, skipped_internal, already_covered, newly_ingested, errors, by_type, summary}",
-        "No behavior change in the nightly pipeline — ingest_extrato_for_seller and ingest_extrato_all_sellers continue working identically",
-        "Also rename _parse_account_statement to parse_account_statement (remove leading underscore) to make it public, and update ALL internal call sites in the same file",
-        "Typecheck passes"
+        "In dashboard/src/hooks/useAdmin.ts, add interface ExtratoProcessedStats { newly_ingested: number; total_lines: number; already_covered: number; errors: number; } above the existing interfaces",
+        "Extend ActivateSellerConfig interface with field extrato_csv?: File",
+        "Extend UpgradeToCAConfig interface with field extrato_csv: File",
+        "Update the return type of activateSeller to Promise<{ status: string; backfill_triggered: boolean; extrato_processed?: ExtratoProcessedStats | null; error_detail?: string }>",
+        "Update the return type of upgradeToCA to the same shape as activateSeller",
+        "In activateSeller, replace the JSON fetch body with FormData: create fd = new FormData(), append each string field with fd.append(key, value ?? ''), and if config.extrato_csv append fd.append('extrato_csv', config.extrato_csv, config.extrato_csv.name)",
+        "The fetch call in activateSeller must use headers: { 'X-Admin-Token': token ?? '' } WITHOUT Content-Type (browser sets multipart boundary automatically when body is FormData)",
+        "On !res.ok in activateSeller, read errData = await res.json().catch(() => ({})) and return { status: 'error', backfill_triggered: false, error_detail: errData.detail ?? 'Erro desconhecido' }",
+        "Apply the exact same FormData conversion and error handling to upgradeToCA",
+        "Typecheck passes (run: cd dashboard && npx tsc --noEmit)"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Pure refactor — no new features. The function split point is right after the csv_text decode in ingest_extrato_for_seller (around line 580). Everything from parse_account_statement() call through the upsert loop goes into process_extrato_csv_text. The wrapper just does: download -> decode -> delegate. Keep all private helper functions (_classify_extrato_line, _build_expense_from_extrato, _batch_lookup_*) private — they are called internally by process_extrato_csv_text."
+      "notes": "CRITICAL: The FastAPI endpoints now use Form() and File() parameters instead of a Pydantic JSON body. Sending Content-Type: application/json will cause a 422 Unprocessable Entity. The headers() helper in useAdmin sets Content-Type: application/json — do NOT use it for these two fetch calls. Build a plain object { 'X-Admin-Token': token } for headers instead. All string fields from ActivateSellerConfig must be appended individually: integration_mode, name, dashboard_empresa, dashboard_grupo, dashboard_segmento, ca_conta_bancaria, ca_centro_custo_variavel, ca_start_date. Skip appending if value is undefined/null (or append empty string — FastAPI Form(None) accepts empty string as None). Files live at: dashboard/src/hooks/useAdmin.ts"
     },
     {
-      "id": "US-002",
-      "title": "Create extrato_onboarding.py with validate and process functions",
-      "description": "As the system, I want a new service module that validates an uploaded extrato CSV covers the required period and processes it into mp_expenses, so that onboarding endpoints can call it as a single entry point.",
+      "id": "US-F02",
+      "title": "Add extrato CSV upload field to the Activation modal",
+      "description": "As an admin, I want a file upload input inside the activation modal (visible only in dashboard_ca mode) so I can attach the account_statement CSV before confirming activation.",
       "acceptanceCriteria": [
-        "Create new file app/services/extrato_onboarding.py",
-        "Import parse_account_statement and process_extrato_csv_text from app.services.extrato_ingester",
-        "Create function validate_extrato_period(csv_bytes: bytes, ca_start_date: str) -> tuple[bool, str, dict] that: (a) decodes CSV bytes trying utf-8-sig first then latin-1, (b) calls parse_account_statement to get (summary, transactions), (c) extracts min and max date from transactions list, (d) computes yesterday = (datetime.now(BRT) - timedelta(days=1)).strftime('%Y-%m-%d'), (e) returns tuple of (is_valid, error_message, info_dict) where info_dict has keys min_date, max_date, line_count, summary",
-        "Validation rejects with descriptive message if: no transactions parsed, min(date) > ca_start_date (gap at start), max(date) < yesterday (gap at end). Accepts if min(date) <= ca_start_date AND max(date) >= yesterday",
-        "Create function process_onboarding_extrato(seller_slug: str, csv_bytes: bytes, ca_start_date: str) -> dict that: (a) decodes CSV bytes (same utf-8-sig then latin-1 fallback), (b) computes yesterday as end_date, (c) calls process_extrato_csv_text(seller_slug, csv_text, ca_start_date, yesterday), (d) returns the stats dict",
-        "BRT timezone constant defined as timezone(timedelta(hours=-3))",
-        "Uses logger = logging.getLogger(__name__) for all logging",
+        "In dashboard/src/components/AdminPanel.tsx, find the ActivationForm local interface (or type) and add field extrato_csv: File | null",
+        "In openActivationForm (or wherever activationForm state is initialized), set extrato_csv: null in the initial state object",
+        "Inside the {isCAMode && (...)} JSX block in the activation modal, after the Centro de Custo CA field and before the modalActions div, add a <label className={styles.formLabel}> with text 'Extrato MP (account_statement CSV)' containing an <input type='file' accept='.csv' onChange={e => setActivationForm({ ...activationForm!, extrato_csv: e.target.files?.[0] ?? null })} />",
+        "Below the file input, conditionally render the selected filename: {activationForm.extrato_csv && <span className={styles.startDatePreview}>✓ {activationForm.extrato_csv.name}</span>}",
+        "Update isCAModeValid to also require extrato_csv: const isCAModeValid = !isCAMode || (activationForm.ca_conta_bancaria !== '' && activationForm.ca_centro_custo_variavel !== '' && activationForm.extrato_csv !== null)",
+        "In handleActivationSubmit, when integration_mode === 'dashboard_ca', add extrato_csv: activationForm.extrato_csv ?? undefined to the config object passed to activateSeller",
+        "When the mode toggle switches from dashboard_ca to dashboard_only (onClick of the dashboard_only button), also reset extrato_csv: null in setActivationForm",
         "Typecheck passes"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Depends on US-001 (parse_account_statement and process_extrato_csv_text must be public). The validation only checks date range coverage, not balance reconciliation (out of scope per PRD). Error messages should be user-friendly, e.g. 'Extrato comeca em 2026-02-01 mas ca_start_date e 2026-01-01. Faltam dados de 2026-01-01 a 2026-01-31.'"
+      "notes": "Depends on US-F01 (ActivateSellerConfig must already have extrato_csv?: File). The file input does not need a ref — the onChange handler is sufficient. The startDatePreview CSS class already exists in AdminPanel.module.css and gives a small muted text style, reuse it for the filename display. File: dashboard/src/components/AdminPanel.tsx"
     },
     {
-      "id": "US-003",
-      "title": "Add Google Drive upload function for onboarding extrato",
-      "description": "As an admin, I want the uploaded extrato CSV stored in Google Drive for audit purposes, organized in a per-seller folder structure.",
+      "id": "US-F03",
+      "title": "Add extrato CSV upload field to the Upgrade-to-CA modal",
+      "description": "As an admin, I want a required file upload input in the Upgrade to CA modal so I can attach the historical extrato CSV before launching the backfill.",
       "acceptanceCriteria": [
-        "In app/services/extrato_onboarding.py, add function upload_extrato_to_drive(seller_slug: str, csv_bytes: bytes, ca_start_date: str, end_date: str) -> dict | None",
-        "Import from app.services.legacy_daily_export: _build_gdrive_client, _gdrive_ensure_folder, _gdrive_upload_bytes",
-        "Import settings from app.config for reading legacy_daily_google_drive_root_folder_id and legacy_daily_google_drive_id",
-        "Function flow: (1) check if settings.legacy_daily_google_drive_root_folder_id is set, if empty/None log warning 'Google Drive not configured, skipping extrato upload' and return None, (2) build gdrive client via _build_gdrive_client(), (3) get drive_id from settings.legacy_daily_google_drive_id, (4) ensure folder chain: root -> 'onboarding' -> seller_slug, (5) upload CSV bytes with filename extrato_{ca_start_date}_to_{end_date}.csv and mimetype text/csv, (6) return dict with keys: file_id (from uploaded['id']), web_view_link (from uploaded.get('webViewLink'))",
-        "If any step fails, catch exception, log error with exc_info=True, and return None (non-fatal for the onboarding flow)",
+        "In dashboard/src/components/AdminPanel.tsx, find the UpgradeForm local interface (or type) and add field extrato_csv: File | null",
+        "In openUpgradeForm, set extrato_csv: null in the initial upgradeForm state",
+        "Inside the {upgradeForm && (...)} JSX modal, after the Centro de Custo CA field and before the modalActions div, add a <label className={styles.formLabel}> with text 'Extrato MP (account_statement CSV) *' and an <input type='file' accept='.csv' onChange={e => setUpgradeForm({ ...upgradeForm!, extrato_csv: e.target.files?.[0] ?? null })} />",
+        "Below the file input, conditionally render filename: {upgradeForm.extrato_csv && <span className={styles.startDatePreview}>✓ {upgradeForm.extrato_csv.name}</span>}",
+        "Update the disabled condition on the 'Salvar e Iniciar Backfill' button to also require upgradeForm.extrato_csv: disabled={upgrading || !upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel || !upgradeForm.extrato_csv}",
+        "In handleUpgradeSubmit, add extrato_csv: upgradeForm.extrato_csv! to the UpgradeToCAConfig passed to upgradeToCA",
         "Typecheck passes"
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Depends on US-002 (same file). Reuses proven Google Drive helpers from legacy_daily_export.py. The _gdrive_ensure_folder function already handles creating folders idempotently. The _gdrive_upload_bytes function already handles removing existing files with the same name before uploading. Pass drive_id to all gdrive functions for shared drive support."
+      "notes": "Depends on US-F01 (UpgradeToCAConfig must already have extrato_csv: File). Since extrato_csv is always required for upgrade (there is no mode toggle here), File(...) is always required — no conditional rendering needed. File: dashboard/src/components/AdminPanel.tsx"
     },
     {
-      "id": "US-004",
-      "title": "Modify activate endpoint to accept multipart form data with extrato CSV",
-      "description": "As an admin, I want the POST /admin/sellers/{slug}/activate endpoint to accept a file upload alongside the activation fields, so that dashboard_ca activations include the required extrato.",
+      "id": "US-F04",
+      "title": "Display extrato error and success feedback in both modals",
+      "description": "As an admin, I want to see a clear error message inside the modal if the extrato CSV does not cover the required period, and a success summary of how many lines were ingested after a successful activation or upgrade.",
       "acceptanceCriteria": [
-        "In app/routers/admin.py, change activate_seller_v2 from Pydantic JSON body to multipart form data",
-        "Remove the ActivateSellerRequest Pydantic model class",
-        "New function signature uses Form() for each field and File() for upload: async def activate_seller_v2(slug: str, integration_mode: str = Form(...), name: str | None = Form(None), dashboard_empresa: str | None = Form(None), dashboard_grupo: str = Form('OUTROS'), dashboard_segmento: str = Form('OUTROS'), ca_conta_bancaria: str | None = Form(None), ca_centro_custo_variavel: str | None = Form(None), ca_start_date: str | None = Form(None), extrato_csv: UploadFile | None = File(None), _=Depends(require_admin))",
-        "Add imports at top of admin.py: from fastapi import File, UploadFile (alongside existing imports), and from app.services.extrato_onboarding import validate_extrato_period, process_onboarding_extrato, upload_extrato_to_drive",
-        "When integration_mode == 'dashboard_ca': return HTTP 400 if extrato_csv is None or extrato_csv.filename is empty; read csv_bytes = await extrato_csv.read(); call validate_extrato_period(csv_bytes, ca_start_date) and return 400 with the error message if invalid",
-        "When integration_mode == 'dashboard_only': skip all extrato validation and processing",
-        "Processing order inside the endpoint: (1) validate fields + CSV period, (2) update seller in DB, (3) process extrato into mp_expenses via process_onboarding_extrato, (4) upload to Drive via upload_extrato_to_drive and if result is not None update seller.extrato_onboarding_drive_url, (5) create revenue_line + goals, (6) configure release report, (7) launch backfill task",
-        "Response dict includes new key extrato_processed with the stats dict from process_onboarding_extrato (or None if dashboard_only)",
-        "All existing activation logic (seller update, revenue_line, goals, release report config, backfill launch) remains unchanged in behavior",
+        "In AdminPanel.tsx, add two new state variables near the other modal states: const [activationError, setActivationError] = useState<string | null>(null); and const [upgradeError, setUpgradeError] = useState<string | null>(null)",
+        "In openActivationForm (wherever activationForm is set to initial state), also call setActivationError(null)",
+        "In openUpgradeForm, also call setUpgradeError(null)",
+        "In handleActivationSubmit: if the result from activateSeller has status === 'error', call setActivationError(result.error_detail ?? 'Erro ao ativar seller') and do NOT close the modal (do not call setActivationForm(null)). If status === 'ok', optionally call window.alert with extrato summary then close: if (result.extrato_processed) { window.alert('Extrato processado: ' + result.extrato_processed.newly_ingested + ' linhas novas ingeridas.'); } setActivationForm(null);",
+        "In handleUpgradeSubmit: same pattern — on error set upgradeError and keep modal open; on success optionally alert then setUpgradeForm(null)",
+        "In the activation modal JSX, render the error message just before the modalActions div: {activationError && <p className={styles.formError}>{activationError}</p>}",
+        "In the upgrade modal JSX, render the error message just before the modalActions div: {upgradeError && <p className={styles.formError}>{upgradeError}</p>}",
+        "In dashboard/src/components/AdminPanel.module.css, add the class: .formError { color: var(--danger); font-size: var(--text-sm); margin-top: var(--space-1); margin-bottom: 0; }",
         "Typecheck passes"
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Depends on US-002 and US-003. CRITICAL: extrato processing (step 3) must happen BEFORE backfill launch (step 7) so the backfill finds extrato lines as 'already done' in mp_expenses and does not duplicate them. The ca_start_date validation (must be 1st of month) stays as-is. When writing the Drive URL to sellers, use: db.table('sellers').update({'extrato_onboarding_drive_url': drive_result['web_view_link']}).eq('slug', slug).execute(). The column extrato_onboarding_drive_url may not exist yet in Supabase — the code should handle this gracefully (try/except on the update, log warning if fails)."
-    },
-    {
-      "id": "US-005",
-      "title": "Modify upgrade-to-ca endpoint to accept multipart with required extrato CSV",
-      "description": "As an admin, I want the POST /admin/sellers/{slug}/upgrade-to-ca endpoint to require an extrato CSV upload, matching the activate endpoint behavior.",
-      "acceptanceCriteria": [
-        "In app/routers/admin.py, change upgrade_seller_to_ca from Pydantic JSON body to multipart form data",
-        "Remove the UpgradeToCaRequest Pydantic model class",
-        "New signature: async def upgrade_seller_to_ca(slug: str, ca_conta_bancaria: str = Form(...), ca_centro_custo_variavel: str = Form(...), ca_start_date: str = Form(...), extrato_csv: UploadFile = File(...), _=Depends(require_admin))",
-        "extrato_csv is always required for upgrade (File(...) not File(None)) since upgrade-to-ca always targets dashboard_ca mode",
-        "Read csv_bytes = await extrato_csv.read(), call validate_extrato_period(csv_bytes, ca_start_date), return 400 if invalid",
-        "Processing order: (1) validate fields + CSV, (2) update seller, (3) process extrato via process_onboarding_extrato, (4) upload to Drive and update seller.extrato_onboarding_drive_url if successful, (5) launch backfill task",
-        "Response includes extrato_processed field with stats dict",
-        "All existing upgrade validation and logic remains unchanged (seller exists, is active, not already dashboard_ca, ca_start_date is 1st of month)",
-        "Typecheck passes"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "Depends on US-002 and US-003. Very similar to US-004 but simpler since extrato is always required (no conditional on integration_mode). Same critical ordering: extrato processing before backfill launch."
-    },
-    {
-      "id": "US-006",
-      "title": "Verify backfill-retry idempotency with extrato source lines",
-      "description": "As an admin, I want backfill retries to work seamlessly without re-uploading the extrato, with no duplicate mp_expenses lines.",
-      "acceptanceCriteria": [
-        "The backfill-retry endpoint (POST /admin/sellers/{slug}/backfill-retry) does NOT require extrato_csv — confirm no changes needed to its signature",
-        "In app/services/onboarding_backfill.py, confirm that _load_already_done() queries mp_expenses.payment_id WITHOUT filtering by source column, so source='extrato' lines are naturally included in the already-done set",
-        "In app/services/extrato_ingester.py, confirm that process_extrato_csv_text handles duplicate composite keys gracefully via the existing check-before-insert pattern (existing_check query + upsert logic)",
-        "Add a clarifying comment in _load_already_done() in onboarding_backfill.py (around line 546, before the mp_expenses query block) that says: '# Includes both API-originated (source=payments_api) and extrato (source=extrato) lines from onboarding'",
-        "Typecheck passes"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Mostly a verification story with minimal code changes (just a comment). The key insight: _load_already_done reads mp_expenses.payment_id without source filter (lines 547-565 of onboarding_backfill.py), so extrato composite keys like '123456:df' ARE included in the done set. However, these composite keys won't collide with numeric payment IDs from the Payments API — they serve different idempotency purposes. The real protection is that process_extrato_csv_text does its own check-before-insert with composite keys."
+      "notes": "Depends on US-F01 (error_detail and extrato_processed fields in return type), US-F02 and US-F03 (modal JSX structure). The --danger CSS variable is already defined in the dashboard's index.css as #ef4444. The --text-sm and --space-1 variables are also already defined. Use window.alert for the success message to keep complexity low — no toast library needed. Files: dashboard/src/components/AdminPanel.tsx and dashboard/src/components/AdminPanel.module.css"
     }
   ]
 }
