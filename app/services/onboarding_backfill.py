@@ -542,6 +542,10 @@ def _load_already_done(db, seller_slug: str) -> set[int]:
             break
         page_start += page_limit
 
+    # Includes both API-originated (source=payments_api) and extrato (source=extrato) lines from onboarding.
+    # Numeric payment_ids (e.g. "123456789") are added to done; composite extrato keys
+    # (e.g. "123456789:df") raise ValueError and are silently ignored — they use a separate
+    # idempotency mechanism inside process_extrato_csv_text (check-before-insert with composite keys).
     # From mp_expenses table (non-order payments already classified)
     page_start = 0
     while True:

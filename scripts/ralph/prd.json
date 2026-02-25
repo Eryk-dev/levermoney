@@ -1,0 +1,111 @@
+{
+  "project": "Lever Money Conciliador V3",
+  "branchName": "ralph/extrato-onboarding",
+  "description": "Require account_statement CSV upload during onboarding for dashboard_ca sellers. Process CSV to seed mp_expenses with historical gap lines, validate period coverage (ca_start_date to D-1), and store original in Google Drive.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Refactor extrato_ingester: extract reusable CSV processing function",
+      "description": "As a developer, I want the core CSV-to-mp_expenses processing logic extracted into a standalone public function so that both the nightly pipeline and the onboarding flow can reuse it without duplication.",
+      "acceptanceCriteria": [
+        "In app/services/extrato_ingester.py, create a new PUBLIC function process_extrato_csv_text(seller_slug: str, csv_text: str, begin_date: str, end_date: str) -> dict that contains the core logic currently inside ingest_extrato_for_seller (steps 2 through 6: parse CSV via _parse_account_statement, filter by date range, classify lines, batch lookups against payments + mp_expenses, upsert gap lines)",
+        "The existing ingest_extrato_for_seller() becomes a thin wrapper that: (1) downloads CSV via _get_or_create_report, (2) decodes bytes to text (utf-8-sig with latin-1 fallback), (3) calls process_extrato_csv_text(seller_slug, csv_text, begin_date, end_date), (4) returns the result",
+        "process_extrato_csv_text returns the exact same stats dict format as before: {seller, total_lines, skipped_internal, already_covered, newly_ingested, errors, by_type, summary}",
+        "No behavior change in the nightly pipeline — ingest_extrato_for_seller and ingest_extrato_all_sellers continue working identically",
+        "Also rename _parse_account_statement to parse_account_statement (remove leading underscore) to make it public, and update ALL internal call sites in the same file",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Pure refactor — no new features. The function split point is right after the csv_text decode in ingest_extrato_for_seller (around line 580). Everything from parse_account_statement() call through the upsert loop goes into process_extrato_csv_text. The wrapper just does: download -> decode -> delegate. Keep all private helper functions (_classify_extrato_line, _build_expense_from_extrato, _batch_lookup_*) private — they are called internally by process_extrato_csv_text."
+    },
+    {
+      "id": "US-002",
+      "title": "Create extrato_onboarding.py with validate and process functions",
+      "description": "As the system, I want a new service module that validates an uploaded extrato CSV covers the required period and processes it into mp_expenses, so that onboarding endpoints can call it as a single entry point.",
+      "acceptanceCriteria": [
+        "Create new file app/services/extrato_onboarding.py",
+        "Import parse_account_statement and process_extrato_csv_text from app.services.extrato_ingester",
+        "Create function validate_extrato_period(csv_bytes: bytes, ca_start_date: str) -> tuple[bool, str, dict] that: (a) decodes CSV bytes trying utf-8-sig first then latin-1, (b) calls parse_account_statement to get (summary, transactions), (c) extracts min and max date from transactions list, (d) computes yesterday = (datetime.now(BRT) - timedelta(days=1)).strftime('%Y-%m-%d'), (e) returns tuple of (is_valid, error_message, info_dict) where info_dict has keys min_date, max_date, line_count, summary",
+        "Validation rejects with descriptive message if: no transactions parsed, min(date) > ca_start_date (gap at start), max(date) < yesterday (gap at end). Accepts if min(date) <= ca_start_date AND max(date) >= yesterday",
+        "Create function process_onboarding_extrato(seller_slug: str, csv_bytes: bytes, ca_start_date: str) -> dict that: (a) decodes CSV bytes (same utf-8-sig then latin-1 fallback), (b) computes yesterday as end_date, (c) calls process_extrato_csv_text(seller_slug, csv_text, ca_start_date, yesterday), (d) returns the stats dict",
+        "BRT timezone constant defined as timezone(timedelta(hours=-3))",
+        "Uses logger = logging.getLogger(__name__) for all logging",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Depends on US-001 (parse_account_statement and process_extrato_csv_text must be public). The validation only checks date range coverage, not balance reconciliation (out of scope per PRD). Error messages should be user-friendly, e.g. 'Extrato comeca em 2026-02-01 mas ca_start_date e 2026-01-01. Faltam dados de 2026-01-01 a 2026-01-31.'"
+    },
+    {
+      "id": "US-003",
+      "title": "Add Google Drive upload function for onboarding extrato",
+      "description": "As an admin, I want the uploaded extrato CSV stored in Google Drive for audit purposes, organized in a per-seller folder structure.",
+      "acceptanceCriteria": [
+        "In app/services/extrato_onboarding.py, add function upload_extrato_to_drive(seller_slug: str, csv_bytes: bytes, ca_start_date: str, end_date: str) -> dict | None",
+        "Import from app.services.legacy_daily_export: _build_gdrive_client, _gdrive_ensure_folder, _gdrive_upload_bytes",
+        "Import settings from app.config for reading legacy_daily_google_drive_root_folder_id and legacy_daily_google_drive_id",
+        "Function flow: (1) check if settings.legacy_daily_google_drive_root_folder_id is set, if empty/None log warning 'Google Drive not configured, skipping extrato upload' and return None, (2) build gdrive client via _build_gdrive_client(), (3) get drive_id from settings.legacy_daily_google_drive_id, (4) ensure folder chain: root -> 'onboarding' -> seller_slug, (5) upload CSV bytes with filename extrato_{ca_start_date}_to_{end_date}.csv and mimetype text/csv, (6) return dict with keys: file_id (from uploaded['id']), web_view_link (from uploaded.get('webViewLink'))",
+        "If any step fails, catch exception, log error with exc_info=True, and return None (non-fatal for the onboarding flow)",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Depends on US-002 (same file). Reuses proven Google Drive helpers from legacy_daily_export.py. The _gdrive_ensure_folder function already handles creating folders idempotently. The _gdrive_upload_bytes function already handles removing existing files with the same name before uploading. Pass drive_id to all gdrive functions for shared drive support."
+    },
+    {
+      "id": "US-004",
+      "title": "Modify activate endpoint to accept multipart form data with extrato CSV",
+      "description": "As an admin, I want the POST /admin/sellers/{slug}/activate endpoint to accept a file upload alongside the activation fields, so that dashboard_ca activations include the required extrato.",
+      "acceptanceCriteria": [
+        "In app/routers/admin.py, change activate_seller_v2 from Pydantic JSON body to multipart form data",
+        "Remove the ActivateSellerRequest Pydantic model class",
+        "New function signature uses Form() for each field and File() for upload: async def activate_seller_v2(slug: str, integration_mode: str = Form(...), name: str | None = Form(None), dashboard_empresa: str | None = Form(None), dashboard_grupo: str = Form('OUTROS'), dashboard_segmento: str = Form('OUTROS'), ca_conta_bancaria: str | None = Form(None), ca_centro_custo_variavel: str | None = Form(None), ca_start_date: str | None = Form(None), extrato_csv: UploadFile | None = File(None), _=Depends(require_admin))",
+        "Add imports at top of admin.py: from fastapi import File, UploadFile (alongside existing imports), and from app.services.extrato_onboarding import validate_extrato_period, process_onboarding_extrato, upload_extrato_to_drive",
+        "When integration_mode == 'dashboard_ca': return HTTP 400 if extrato_csv is None or extrato_csv.filename is empty; read csv_bytes = await extrato_csv.read(); call validate_extrato_period(csv_bytes, ca_start_date) and return 400 with the error message if invalid",
+        "When integration_mode == 'dashboard_only': skip all extrato validation and processing",
+        "Processing order inside the endpoint: (1) validate fields + CSV period, (2) update seller in DB, (3) process extrato into mp_expenses via process_onboarding_extrato, (4) upload to Drive via upload_extrato_to_drive and if result is not None update seller.extrato_onboarding_drive_url, (5) create revenue_line + goals, (6) configure release report, (7) launch backfill task",
+        "Response dict includes new key extrato_processed with the stats dict from process_onboarding_extrato (or None if dashboard_only)",
+        "All existing activation logic (seller update, revenue_line, goals, release report config, backfill launch) remains unchanged in behavior",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Depends on US-002 and US-003. CRITICAL: extrato processing (step 3) must happen BEFORE backfill launch (step 7) so the backfill finds extrato lines as 'already done' in mp_expenses and does not duplicate them. The ca_start_date validation (must be 1st of month) stays as-is. When writing the Drive URL to sellers, use: db.table('sellers').update({'extrato_onboarding_drive_url': drive_result['web_view_link']}).eq('slug', slug).execute(). The column extrato_onboarding_drive_url may not exist yet in Supabase — the code should handle this gracefully (try/except on the update, log warning if fails)."
+    },
+    {
+      "id": "US-005",
+      "title": "Modify upgrade-to-ca endpoint to accept multipart with required extrato CSV",
+      "description": "As an admin, I want the POST /admin/sellers/{slug}/upgrade-to-ca endpoint to require an extrato CSV upload, matching the activate endpoint behavior.",
+      "acceptanceCriteria": [
+        "In app/routers/admin.py, change upgrade_seller_to_ca from Pydantic JSON body to multipart form data",
+        "Remove the UpgradeToCaRequest Pydantic model class",
+        "New signature: async def upgrade_seller_to_ca(slug: str, ca_conta_bancaria: str = Form(...), ca_centro_custo_variavel: str = Form(...), ca_start_date: str = Form(...), extrato_csv: UploadFile = File(...), _=Depends(require_admin))",
+        "extrato_csv is always required for upgrade (File(...) not File(None)) since upgrade-to-ca always targets dashboard_ca mode",
+        "Read csv_bytes = await extrato_csv.read(), call validate_extrato_period(csv_bytes, ca_start_date), return 400 if invalid",
+        "Processing order: (1) validate fields + CSV, (2) update seller, (3) process extrato via process_onboarding_extrato, (4) upload to Drive and update seller.extrato_onboarding_drive_url if successful, (5) launch backfill task",
+        "Response includes extrato_processed field with stats dict",
+        "All existing upgrade validation and logic remains unchanged (seller exists, is active, not already dashboard_ca, ca_start_date is 1st of month)",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Depends on US-002 and US-003. Very similar to US-004 but simpler since extrato is always required (no conditional on integration_mode). Same critical ordering: extrato processing before backfill launch."
+    },
+    {
+      "id": "US-006",
+      "title": "Verify backfill-retry idempotency with extrato source lines",
+      "description": "As an admin, I want backfill retries to work seamlessly without re-uploading the extrato, with no duplicate mp_expenses lines.",
+      "acceptanceCriteria": [
+        "The backfill-retry endpoint (POST /admin/sellers/{slug}/backfill-retry) does NOT require extrato_csv — confirm no changes needed to its signature",
+        "In app/services/onboarding_backfill.py, confirm that _load_already_done() queries mp_expenses.payment_id WITHOUT filtering by source column, so source='extrato' lines are naturally included in the already-done set",
+        "In app/services/extrato_ingester.py, confirm that process_extrato_csv_text handles duplicate composite keys gracefully via the existing check-before-insert pattern (existing_check query + upsert logic)",
+        "Add a clarifying comment in _load_already_done() in onboarding_backfill.py (around line 546, before the mp_expenses query block) that says: '# Includes both API-originated (source=payments_api) and extrato (source=extrato) lines from onboarding'",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Mostly a verification story with minimal code changes (just a comment). The key insight: _load_already_done reads mp_expenses.payment_id without source filter (lines 547-565 of onboarding_backfill.py), so extrato composite keys like '123456:df' ARE included in the done set. However, these composite keys won't collide with numeric payment IDs from the Payments API — they serve different idempotency purposes. The real protection is that process_extrato_csv_text does its own check-before-insert with composite keys."
+    }
+  ]
+}

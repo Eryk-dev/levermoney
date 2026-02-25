@@ -1,0 +1,19 @@
+# Ralph Progress Log
+Started: Wed Feb 25 11:31:26 -03 2026
+---
+
+## Codebase Patterns
+- extrato_ingester.py: parse_account_statement is already public (no underscore). The _parse_account_statement call site was a stale bug.
+- extrato_ingester.py: process_extrato_csv_text is now a sync (not async) function — the core logic is all sync DB calls. Only ingest_extrato_for_seller is async (needs await for _get_or_create_report).
+- No venv found at project root — use system python3 for syntax checks.
+
+## 2026-02-25 - US-001
+- Extracted core CSV-to-mp_expenses logic from ingest_extrato_for_seller into new public function process_extrato_csv_text(seller_slug, csv_text, begin_date, end_date) -> dict
+- ingest_extrato_for_seller is now a thin async wrapper: download → decode → delegate to process_extrato_csv_text
+- Fixed stale _parse_account_statement call (function was already renamed to parse_account_statement at line 188)
+- Files changed: app/services/extrato_ingester.py
+- **Learnings for future iterations:**
+  - parse_account_statement was already public before this PR — the _parse_account_statement reference on line 580 was a pre-existing bug in a modified (M) file
+  - process_extrato_csv_text does not need seller config dict — only seller_slug string. The thin wrapper keeps the seller existence check.
+  - expense_ids_in_db variable is computed but not used in the upsert loop (pre-existing unused var). Left as-is to preserve behavior.
+---
