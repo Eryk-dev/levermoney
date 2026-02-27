@@ -16,6 +16,11 @@ MP_API = "https://api.mercadopago.com"
 logger = logging.getLogger(__name__)
 
 
+class MLAuthError(Exception):
+    """Raised when ML tokens are invalid/revoked and seller needs to re-authenticate."""
+    pass
+
+
 def _get_seller_credentials(seller: dict) -> tuple[str, str]:
     """Get ML app_id and secret_key for a seller.
     Uses per-seller credentials if available, falls back to global settings."""
@@ -26,12 +31,21 @@ def _get_seller_credentials(seller: dict) -> tuple[str, str]:
 
 
 async def _get_token(seller_slug: str) -> str:
-    """Pega access_token do seller. Se expirado, faz refresh."""
+    """Pega access_token do seller. Se expirado, faz refresh.
+
+    Raises MLAuthError if tokens are missing or revoked (seller needs re-auth).
+    """
     db = get_db()
     seller = db.table("sellers").select(
         "ml_access_token, ml_refresh_token, ml_token_expires_at, ml_app_id, ml_secret_key"
     ).eq("slug", seller_slug).single().execute()
     s = seller.data
+
+    if not s.get("ml_refresh_token"):
+        raise MLAuthError(
+            f"Seller {seller_slug} has no ML refresh token — needs to re-authenticate "
+            f"via /auth/ml/connect?seller={seller_slug} or /auth/ml/install"
+        )
 
     expires_at = datetime.fromisoformat(s["ml_token_expires_at"]) if s.get("ml_token_expires_at") else None
     if expires_at and expires_at > datetime.now(timezone.utc):
@@ -46,6 +60,25 @@ async def _get_token(seller_slug: str) -> str:
             "client_secret": secret,
             "refresh_token": s["ml_refresh_token"],
         })
+
+        if resp.status_code in (400, 401):
+            error_body = resp.json() if resp.content else {}
+            error_msg = error_body.get("message", resp.text[:200])
+            logger.error(
+                "ML token refresh failed for %s (status=%s): %s — clearing tokens",
+                seller_slug, resp.status_code, error_msg,
+            )
+            # Clear invalid tokens so other processes don't keep retrying
+            db.table("sellers").update({
+                "ml_access_token": None,
+                "ml_refresh_token": None,
+                "ml_token_expires_at": None,
+            }).eq("slug", seller_slug).execute()
+            raise MLAuthError(
+                f"ML tokens revoked/invalid for seller {seller_slug}: {error_msg}. "
+                f"Seller needs to re-authenticate via /auth/ml/connect?seller={seller_slug}"
+            )
+
         resp.raise_for_status()
         data = resp.json()
 
