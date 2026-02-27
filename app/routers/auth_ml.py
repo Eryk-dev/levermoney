@@ -26,17 +26,13 @@ async def connect(seller: str):
     """
     Redireciona o seller para autorizar no ML.
     Uso: GET /auth/ml/connect?seller=141air
-    Accepts sellers with onboarding_status in ('approved', 'active', None).
+    Works for any existing seller — allows reconnection after token revocation,
+    disconnect, or suspension. Only truly rejected sellers are blocked.
     """
     db = get_db()
     existing = db.table("sellers").select("slug, onboarding_status").eq("slug", seller).execute()
     if not existing.data:
         raise HTTPException(status_code=404, detail=f"Seller '{seller}' not found in database")
-
-    status = existing.data[0].get("onboarding_status")
-    allowed = (None, "approved", "active")
-    if status not in allowed:
-        raise HTTPException(status_code=403, detail=f"Seller '{seller}' is not approved (status={status})")
 
     params = urlencode({
         "response_type": "code",
@@ -81,26 +77,48 @@ async def callback(code: str, state: str = ""):
     if state == _NEW_INSTALL_STATE:
         return await _handle_new_install(token_data, expires_at)
 
-    # --- Existing seller flow ---
+    # --- Existing seller flow (connect / reconnect) ---
     seller_slug = state
     db = get_db()
-    db.table("sellers").update({
+
+    # Check seller exists and get current state
+    existing = db.table("sellers").select("slug, onboarding_status, approved_at").eq("slug", seller_slug).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"Seller '{seller_slug}' not found")
+
+    seller = existing.data[0]
+    old_status = seller.get("onboarding_status")
+
+    # Update tokens and reactivate
+    update_data = {
         "ml_user_id": token_data.get("user_id"),
         "ml_access_token": token_data["access_token"],
         "ml_refresh_token": token_data["refresh_token"],
         "ml_token_expires_at": expires_at.isoformat(),
         "active": True,
-    }).eq("slug", seller_slug).execute()
+    }
+    # If seller was previously approved, auto-reactivate to 'active'
+    if seller.get("approved_at") and old_status != "active":
+        update_data["onboarding_status"] = "active"
 
-    from app.services.onboarding import activate_seller
-    await activate_seller(seller_slug)
+    db.table("sellers").update(update_data).eq("slug", seller_slug).execute()
 
-    logger.info(f"OAuth success for {seller_slug}, ml_user_id={token_data.get('user_id')}")
+    # Only call activate_seller if seller was already approved (has approved_at)
+    if seller.get("approved_at"):
+        from app.services.onboarding import activate_seller
+        await activate_seller(seller_slug)
+
+    reconnected = old_status not in (None, "approved", "active")
+    logger.info(
+        "OAuth success for %s (ml_user_id=%s, old_status=%s, reconnected=%s)",
+        seller_slug, token_data.get("user_id"), old_status, reconnected,
+    )
 
     return {
         "status": "success",
         "seller": seller_slug,
         "ml_user_id": token_data.get("user_id"),
+        "reconnected": reconnected,
         "message": f"Seller {seller_slug} connected! Token expires at {expires_at.isoformat()}",
     }
 
@@ -119,20 +137,30 @@ async def _handle_new_install(token_data: dict, expires_at: datetime) -> HTMLRes
 
     # Check if seller already exists (by ml_user_id or slug)
     db = get_db()
-    existing = db.table("sellers").select("slug, onboarding_status").or_(
+    existing = db.table("sellers").select("slug, onboarding_status, approved_at").or_(
         f"ml_user_id.eq.{ml_user_id},slug.eq.{slug}"
     ).execute()
 
     if existing.data:
         seller = existing.data[0]
-        # Update tokens on the existing seller
-        db.table("sellers").update({
+        old_status = seller.get("onboarding_status")
+
+        update_data = {
             "ml_user_id": ml_user_id,
             "ml_access_token": token_data["access_token"],
             "ml_refresh_token": token_data["refresh_token"],
             "ml_token_expires_at": expires_at.isoformat(),
-        }).eq("slug", seller["slug"]).execute()
-        logger.info(f"Install: existing seller {seller['slug']} updated tokens")
+            "active": True,
+        }
+        # If seller was previously approved, auto-reactivate
+        if seller.get("approved_at"):
+            update_data["onboarding_status"] = "active"
+
+        db.table("sellers").update(update_data).eq("slug", seller["slug"]).execute()
+        logger.info(
+            "Install: existing seller %s re-authenticated (old_status=%s → %s)",
+            seller["slug"], old_status, update_data.get("onboarding_status", old_status),
+        )
         return _success_page(seller["slug"], already_exists=True)
 
     # Create new seller

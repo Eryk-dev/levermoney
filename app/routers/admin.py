@@ -163,6 +163,85 @@ async def update_seller(seller_id: str, req: SellerUpdate):
     return result.data[0] if result.data else {}
 
 
+@router.delete("/sellers/{slug}", dependencies=[Depends(require_admin)])
+async def delete_seller(slug: str):
+    """Soft-delete a seller: deactivates, clears ML tokens, sets status to suspended.
+
+    Does NOT delete the database row (FK constraints on payments, mp_expenses, etc.).
+    The seller can re-authenticate later via the install link or reconnect link.
+    """
+    db = get_db()
+    result = db.table("sellers").select("slug, onboarding_status").eq("slug", slug).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"Seller '{slug}' not found")
+
+    db.table("sellers").update({
+        "active": False,
+        "onboarding_status": "suspended",
+        "ml_access_token": None,
+        "ml_refresh_token": None,
+        "ml_token_expires_at": None,
+    }).eq("slug", slug).execute()
+
+    logger.info("Seller soft-deleted: %s", slug)
+    return {
+        "status": "ok",
+        "message": f"Seller '{slug}' suspended and tokens cleared. "
+                   f"Can re-authenticate via /auth/ml/connect?seller={slug} or /auth/ml/install",
+    }
+
+
+@router.post("/sellers/{slug}/disconnect", dependencies=[Depends(require_admin)])
+async def disconnect_seller(slug: str):
+    """Disconnect a seller's ML integration: clears ML tokens but keeps seller config.
+
+    Use this when a seller revoked permissions in ML and needs to re-authenticate.
+    The seller stays active but ML API calls will fail until re-authenticated.
+    """
+    db = get_db()
+    result = db.table("sellers").select("slug").eq("slug", slug).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"Seller '{slug}' not found")
+
+    db.table("sellers").update({
+        "ml_access_token": None,
+        "ml_refresh_token": None,
+        "ml_token_expires_at": None,
+    }).eq("slug", slug).execute()
+
+    logger.info("Seller ML tokens cleared (disconnect): %s", slug)
+    return {
+        "status": "ok",
+        "reconnect_url": f"{settings.base_url}/auth/ml/connect?seller={slug}",
+        "message": f"ML tokens cleared for '{slug}'. Share the reconnect_url with the seller to re-authenticate.",
+    }
+
+
+@router.get("/sellers/{slug}/reconnect-link", dependencies=[Depends(require_admin)])
+async def get_reconnect_link(slug: str):
+    """Get a reconnect link for a seller to re-authenticate with ML.
+
+    Returns both the direct connect URL (for known sellers) and the install URL.
+    Share the connect URL with the seller — they'll be redirected to ML OAuth.
+    """
+    db = get_db()
+    result = db.table("sellers").select("slug, active, onboarding_status, ml_access_token").eq("slug", slug).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"Seller '{slug}' not found")
+
+    seller = result.data[0]
+    has_valid_tokens = bool(seller.get("ml_access_token"))
+
+    return {
+        "slug": slug,
+        "active": seller.get("active"),
+        "onboarding_status": seller.get("onboarding_status"),
+        "has_valid_tokens": has_valid_tokens,
+        "reconnect_url": f"{settings.base_url}/auth/ml/connect?seller={slug}",
+        "install_url": f"{settings.base_url}/auth/ml/install",
+    }
+
+
 # ── Revenue Lines ─────────────────────────────────────────────
 
 @router.get("/revenue-lines", dependencies=[Depends(require_admin)])

@@ -477,8 +477,12 @@ async def criar_baixa(parcela_id, data_pagamento, valor, conta_financeira) -> di
 ### app/services/ml_api.py — Cliente ML/MP
 
 ```python
+class MLAuthError(Exception):
+    """Raised when ML tokens are invalid/revoked. Caller should prompt re-authentication."""
+
 async def _get_token(seller_slug) -> str:
-    """Token ML do seller. Auto-refresh se expirado."""
+    """Token ML do seller. Auto-refresh se expirado.
+    Raises MLAuthError if tokens missing or revoked (auto-clears invalid tokens from DB)."""
 
 async def get_payment(seller_slug, payment_id) -> dict:
     """GET /v1/payments/{id}"""
@@ -822,6 +826,9 @@ def get_all_active_sellers(db) -> list[dict]
 | POST | `/admin/sellers/{id}/approve` | Aprova seller com config |
 | POST | `/admin/sellers/{id}/reject` | Rejeita seller |
 | PATCH | `/admin/sellers/{id}` | Atualiza seller |
+| DELETE | `/admin/sellers/{slug}` | Soft-delete: desativa, limpa tokens, status=suspended |
+| POST | `/admin/sellers/{slug}/disconnect` | Limpa ML tokens (seller precisa re-autenticar) |
+| GET | `/admin/sellers/{slug}/reconnect-link` | Link de reconexao OAuth ML para o seller |
 | GET/POST | `/admin/revenue-lines` | CRUD revenue lines |
 | PATCH | `/admin/revenue-lines/{empresa}` | Atualiza revenue line |
 | DELETE | `/admin/revenue-lines/{empresa}` | Desativa revenue line (soft delete) |
