@@ -11,6 +11,7 @@ Started: Mon Mar  2 19:59:56 -03 2026
 - PENDING_STATUS_FILTER = 'pending_review,auto_categorized' is the standard filter for pending expenses
 - Export buttons should disable ALL export buttons while any export is in progress (use a single exportingSlug state)
 - Confirmation modal pattern: store slug in state (null = closed), clear before triggering async action
+- Polling pattern: use useRef for intervals/counts to avoid stale closures; stop polling on collapse, max retries, or condition met; cleanup all intervals on unmount
 ---
 
 ## 2026-03-02 20:05 - US-003
@@ -59,4 +60,22 @@ Started: Mon Mar  2 19:59:56 -03 2026
   - During global export, exportingSlug is updated per seller in the loop, so individual card buttons show 'Exportando...' for the current seller
   - anySellerHasPending uses useMemo to avoid recomputing on every render
   - The global export handler uses try/finally to always clean up both exportingSlug and globalExportProgress even if an error occurs mid-sequence
+---
+
+## 2026-03-02 23:45 - US-006
+- Added collapsible batch history section per seller card
+- History toggle button (chevron ▸) closed by default, lazy loads batches on first expand
+- Batch table with columns: Data (DD/MM/YYYY HH:mm), Linhas, Valor (R$), Status (badge), Backup (badge), Batch ID (12 chars), Acoes (Baixar button)
+- Status badges: generated=yellow, exported=blue, imported=green
+- Backup badges: queued=yellow, uploaded=green (with link to gdrive_file_link), failed=red, skipped=gray
+- Baixar button calls redownloadBatchById to download the blob
+- Polling: if any batch has gdrive_status==='queued', setInterval 5s to reload batches (max 12 attempts)
+- Polling stops when collapsing the section or when no batch has queued status
+- Cleanup: all intervals cleared on unmount via useEffect return + useRef
+- Files changed: dashboard/src/components/ExpensesExportTab.tsx, dashboard/src/components/ExpensesExportTab.module.css
+- **Learnings for future iterations:**
+  - Use useRef for polling intervals/counts to avoid stale closures in setInterval callbacks
+  - toggleHistory uses functional setState (setExpandedSlugs) to avoid stale closure over expandedSlugs
+  - The IIFE pattern `(() => { ... })()` works well inside JSX for complex conditional rendering with local variables
+  - Batch history is fully lazy-loaded: no API calls until user clicks expand, reducing initial load
 ---

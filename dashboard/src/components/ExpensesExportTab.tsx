@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useExpenses } from '../hooks/useExpenses';
-import type { ExpenseStats, ExportResult } from '../hooks/useExpenses';
+import type { ExpenseStats, ExportResult, BatchRecord } from '../hooks/useExpenses';
 import styles from './ExpensesExportTab.module.css';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ function gdriveLabel(status: string | null): string {
 // ── Component ───────────────────────────────────────────────────
 
 export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps) {
-  const { loadStats, exportAndBackup } = useExpenses({ onUnauthorized: onLogout });
+  const { loadStats, exportAndBackup, loadBatches, redownloadBatchById } = useExpenses({ onUnauthorized: onLogout });
 
   // Per-seller stats
   const [sellerStats, setSellerStats] = useState<Map<string, ExpenseStats>>(new Map());
@@ -59,6 +59,13 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     total: number;
   } | null>(null);
   const [globalExportSummary, setGlobalExportSummary] = useState<string[] | null>(null);
+
+  // Batch history state (per seller)
+  const [expandedSlugs, setExpandedSlugs] = useState<Set<string>>(new Set());
+  const [sellerBatches, setSellerBatches] = useState<Map<string, BatchRecord[]>>(new Map());
+  const [loadingBatches, setLoadingBatches] = useState<Set<string>>(new Set());
+  const pollingIntervals = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const pollingCounts = useRef<Map<string, number>>(new Map());
 
   // Sorted active sellers (alphabetical by display name)
   const activeSellers = useMemo(
@@ -173,6 +180,108 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     // Reload stats for all sellers
     await Promise.all(activeSellers.map((s) => reloadSellerStats(s.slug)));
   }, [activeSellers, sellerStats, exportAndBackup, reloadSellerStats]);
+
+  // Stop polling for a seller
+  const stopPolling = useCallback((slug: string) => {
+    const interval = pollingIntervals.current.get(slug);
+    if (interval) {
+      clearInterval(interval);
+      pollingIntervals.current.delete(slug);
+    }
+    pollingCounts.current.delete(slug);
+  }, []);
+
+  // Fetch batches for a seller and optionally start polling
+  const fetchBatches = useCallback(
+    async (slug: string) => {
+      const batches = await loadBatches(slug);
+      if (!batches) return;
+      setSellerBatches((prev) => {
+        const next = new Map(prev);
+        next.set(slug, batches);
+        return next;
+      });
+
+      // Check if any batch has gdrive_status === 'queued'
+      const hasQueued = batches.some((b) => b.gdrive_status === 'queued');
+      if (hasQueued && !pollingIntervals.current.has(slug)) {
+        pollingCounts.current.set(slug, 0);
+        const interval = setInterval(async () => {
+          const count = (pollingCounts.current.get(slug) ?? 0) + 1;
+          pollingCounts.current.set(slug, count);
+
+          if (count >= 12) {
+            stopPolling(slug);
+            return;
+          }
+
+          const updated = await loadBatches(slug);
+          if (!updated) return;
+          setSellerBatches((prev) => {
+            const next = new Map(prev);
+            next.set(slug, updated);
+            return next;
+          });
+
+          const stillQueued = updated.some((b) => b.gdrive_status === 'queued');
+          if (!stillQueued) {
+            stopPolling(slug);
+          }
+        }, 5000);
+        pollingIntervals.current.set(slug, interval);
+      } else if (!hasQueued) {
+        stopPolling(slug);
+      }
+    },
+    [loadBatches, stopPolling],
+  );
+
+  // Toggle history section for a seller
+  const toggleHistory = useCallback(
+    (slug: string) => {
+      setExpandedSlugs((prev) => {
+        const next = new Set(prev);
+        if (next.has(slug)) {
+          next.delete(slug);
+          stopPolling(slug);
+        } else {
+          next.add(slug);
+          // Lazy load batches on first expand
+          setLoadingBatches((lb) => {
+            const n = new Set(lb);
+            n.add(slug);
+            return n;
+          });
+          void fetchBatches(slug).finally(() => {
+            setLoadingBatches((lb) => {
+              const n = new Set(lb);
+              n.delete(slug);
+              return n;
+            });
+          });
+        }
+        return next;
+      });
+    },
+    [stopPolling, fetchBatches],
+  );
+
+  // Handle batch download
+  const handleDownload = useCallback(
+    async (sellerSlug: string, batchId: string) => {
+      await redownloadBatchById(sellerSlug, batchId);
+    },
+    [redownloadBatchById],
+  );
+
+  // Cleanup all polling intervals on unmount
+  useEffect(() => {
+    const intervals = pollingIntervals.current;
+    return () => {
+      intervals.forEach((interval) => clearInterval(interval));
+      intervals.clear();
+    };
+  }, []);
 
   // Load stats for all active sellers on mount
   useEffect(() => {
@@ -365,6 +474,126 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
                     )}
                   </div>
                 )}
+
+                {/* Batch history (collapsible) */}
+                <div className={styles.historySection}>
+                  <button
+                    className={styles.historyToggle}
+                    onClick={() => toggleHistory(seller.slug)}
+                  >
+                    <span
+                      className={`${styles.chevron} ${expandedSlugs.has(seller.slug) ? styles.chevronOpen : ''}`}
+                    >
+                      ▸
+                    </span>
+                    Historico
+                  </button>
+
+                  {expandedSlugs.has(seller.slug) && (
+                    <div className={styles.historyContent}>
+                      {loadingBatches.has(seller.slug) ? (
+                        <div className={styles.loading}>Carregando batches...</div>
+                      ) : (
+                        (() => {
+                          const batches = sellerBatches.get(seller.slug);
+                          if (!batches || batches.length === 0) {
+                            return (
+                              <div className={styles.loading}>Nenhum batch encontrado.</div>
+                            );
+                          }
+                          return (
+                            <table className={styles.batchTable}>
+                              <thead>
+                                <tr>
+                                  <th>Data</th>
+                                  <th>Linhas</th>
+                                  <th>Valor (R$)</th>
+                                  <th>Status</th>
+                                  <th>Backup</th>
+                                  <th>Batch ID</th>
+                                  <th>Acoes</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {batches.map((batch) => (
+                                  <tr key={batch.batch_id}>
+                                    <td>
+                                      {new Date(batch.created_at).toLocaleString('pt-BR', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })}
+                                    </td>
+                                    <td>{batch.rows_count}</td>
+                                    <td>{formatBRL(batch.amount_total_signed)}</td>
+                                    <td>
+                                      <span
+                                        className={`${styles.badge} ${
+                                          batch.status === 'generated'
+                                            ? styles.badgeGenerated
+                                            : batch.status === 'exported'
+                                              ? styles.badgeExported
+                                              : batch.status === 'imported'
+                                                ? styles.badgeImported
+                                                : ''
+                                        }`}
+                                      >
+                                        {batch.status}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      {batch.gdrive_status && (
+                                        <span
+                                          className={`${styles.badge} ${
+                                            batch.gdrive_status === 'queued'
+                                              ? styles.badgeQueued
+                                              : batch.gdrive_status === 'uploaded'
+                                                ? styles.badgeUploaded
+                                                : batch.gdrive_status === 'failed'
+                                                  ? styles.badgeFailed
+                                                  : styles.badgeSkipped
+                                          }`}
+                                        >
+                                          {batch.gdrive_status === 'uploaded' && batch.gdrive_file_link ? (
+                                            <a
+                                              href={batch.gdrive_file_link}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className={styles.gdriveLink}
+                                            >
+                                              uploaded
+                                            </a>
+                                          ) : (
+                                            gdriveLabel(batch.gdrive_status)
+                                          )}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className={styles.batchIdCell}>
+                                      {batch.batch_id.slice(0, 12)}
+                                    </td>
+                                    <td>
+                                      <button
+                                        className={styles.downloadBtn}
+                                        onClick={() =>
+                                          void handleDownload(seller.slug, batch.batch_id)
+                                        }
+                                      >
+                                        Baixar
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          );
+                        })()
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
