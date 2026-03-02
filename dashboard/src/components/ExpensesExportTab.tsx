@@ -35,6 +35,8 @@ function formatDateTime(iso: string): string {
 
 const MAX_POLL_ATTEMPTS = 12;
 const POLL_INTERVAL_MS = 5000;
+const ALL_SELLERS_VALUE = '__all__';
+const PENDING_STATUS_FILTER = 'pending_review,auto_categorized';
 
 // ── Component ───────────────────────────────────────────────────
 
@@ -48,9 +50,13 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
   const [stats, setStats] = useState<ExpenseStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
+  // Per-seller stats (used when __all__ is selected, to know which sellers to export)
+  const perSellerStatsRef = useRef<Map<string, ExpenseStats>>(new Map());
+
   // Export
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [exportResults, setExportResults] = useState<ExportResult[]>([]);
 
   // Confirmation modal
   const [showConfirm, setShowConfirm] = useState(false);
@@ -67,20 +73,58 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     .filter((s) => s.active)
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const PENDING_STATUS_FILTER = 'pending_review,auto_categorized';
-
   // Load stats when seller changes
   const fetchStats = useCallback(async () => {
     if (!selectedSlug) {
       setStats(null);
+      perSellerStatsRef.current = new Map();
       return;
     }
     setLoadingStats(true);
     setExportResult(null);
-    const result = await loadStats(selectedSlug, undefined, undefined, PENDING_STATUS_FILTER);
-    setStats(result);
+    setExportResults([]);
+
+    if (selectedSlug === ALL_SELLERS_VALUE) {
+      const active = sellers.filter((s) => s.active);
+      const results = await Promise.all(
+        active.map(async (s) => {
+          const result = await loadStats(s.slug, undefined, undefined, PENDING_STATUS_FILTER);
+          return { slug: s.slug, stats: result };
+        })
+      );
+
+      const map = new Map<string, ExpenseStats>();
+      const aggregated: ExpenseStats = {
+        seller: ALL_SELLERS_VALUE,
+        total: 0,
+        total_amount: 0,
+        by_type: {},
+        by_direction: {},
+        by_status: {},
+        pending_review_count: 0,
+        auto_categorized_count: 0,
+      };
+
+      for (const { slug, stats: sellerStats } of results) {
+        if (sellerStats) {
+          map.set(slug, sellerStats);
+          aggregated.total += sellerStats.total;
+          aggregated.total_amount += sellerStats.total_amount;
+          aggregated.pending_review_count += sellerStats.pending_review_count;
+          aggregated.auto_categorized_count += sellerStats.auto_categorized_count;
+        }
+      }
+
+      perSellerStatsRef.current = map;
+      setStats(aggregated);
+    } else {
+      perSellerStatsRef.current = new Map();
+      const result = await loadStats(selectedSlug, undefined, undefined, PENDING_STATUS_FILTER);
+      setStats(result);
+    }
+
     setLoadingStats(false);
-  }, [selectedSlug, loadStats]);
+  }, [selectedSlug, loadStats, sellers]);
 
   useEffect(() => {
     void fetchStats();
@@ -92,10 +136,24 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
       setBatches([]);
       return null;
     }
+
+    if (selectedSlug === ALL_SELLERS_VALUE) {
+      const active = sellers.filter((s) => s.active);
+      const results = await Promise.all(
+        active.map((s) => loadBatches(s.slug))
+      );
+      const allBatches = results
+        .filter((r): r is BatchRecord[] => r !== null)
+        .flat()
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setBatches(allBatches);
+      return allBatches;
+    }
+
     const result = await loadBatches(selectedSlug);
     if (result) setBatches(result);
     return result;
-  }, [selectedSlug, loadBatches]);
+  }, [selectedSlug, loadBatches, sellers]);
 
   // Load batches when seller changes
   useEffect(() => {
@@ -107,8 +165,23 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     if (!selectedSlug) return;
     setExporting(true);
     setShowConfirm(false);
-    const result = await exportAndBackup(selectedSlug, undefined, undefined, PENDING_STATUS_FILTER);
-    setExportResult(result);
+
+    if (selectedSlug === ALL_SELLERS_VALUE) {
+      const results: ExportResult[] = [];
+      for (const [slug, sellerStats] of perSellerStatsRef.current) {
+        if (sellerStats.total > 0) {
+          const result = await exportAndBackup(slug, undefined, undefined, PENDING_STATUS_FILTER);
+          if (result) results.push(result);
+        }
+      }
+      setExportResults(results);
+      setExportResult(null);
+    } else {
+      const result = await exportAndBackup(selectedSlug, undefined, undefined, PENDING_STATUS_FILTER);
+      setExportResult(result);
+      setExportResults([]);
+    }
+
     setExporting(false);
     void fetchBatches();
   };
@@ -175,11 +248,13 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
   }, [stopPolling]);
 
   // ── Re-download handler ────────────────────────────────────
-  const handleRedownload = async (batchId: string) => {
-    setDownloadingBatch(batchId);
-    await redownloadBatchById(selectedSlug, batchId);
+  const handleRedownload = async (batch: BatchRecord) => {
+    setDownloadingBatch(batch.batch_id);
+    await redownloadBatchById(batch.seller_slug, batch.batch_id);
     setDownloadingBatch(null);
   };
+
+  const isAllSellers = selectedSlug === ALL_SELLERS_VALUE;
 
   return (
     <div className={styles.wrapper}>
@@ -192,6 +267,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
             onChange={(e) => setSelectedSlug(e.target.value)}
           >
             <option value="">Selecione...</option>
+            <option value={ALL_SELLERS_VALUE}>Todos</option>
             {activeSellers.map((s) => (
               <option key={s.slug} value={s.slug}>
                 {s.dashboard_empresa || s.name}
@@ -249,6 +325,22 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
             )}
           </div>
         )}
+
+        {exportResults.length > 0 && (
+          <div className={styles.resultInfo}>
+            {exportResults.map((r) => (
+              <div key={r.batchId}>
+                <span className={styles.batchIdLabel}>Batch: {r.batchId}</span>
+                {r.gdriveStatus === 'queued' && (
+                  <span className={styles.badgeQueued}> Backup: queued</span>
+                )}
+                {r.gdriveStatus === 'skipped_no_drive_root' && (
+                  <span className={styles.badgeSkipped}> Backup: skipped</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Batch history */}
@@ -260,6 +352,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
               <thead>
                 <tr>
                   <th>Data</th>
+                  {isAllSellers && <th>Seller</th>}
                   <th>Linhas</th>
                   <th>Valor</th>
                   <th>Status</th>
@@ -272,6 +365,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
                 {batches.map((b) => (
                   <tr key={b.batch_id}>
                     <td>{formatDateTime(b.created_at)}</td>
+                    {isAllSellers && <td>{b.company || b.seller_slug}</td>}
                     <td>{b.rows_count}</td>
                     <td>{formatBRL(b.amount_total_signed)}</td>
                     <td>
@@ -307,7 +401,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
                         type="button"
                         className={styles.downloadBtn}
                         disabled={downloadingBatch === b.batch_id}
-                        onClick={() => void handleRedownload(b.batch_id)}
+                        onClick={() => void handleRedownload(b)}
                       >
                         {downloadingBatch === b.batch_id ? '...' : 'Baixar'}
                       </button>
