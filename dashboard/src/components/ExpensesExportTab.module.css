@@ -136,6 +136,118 @@
   border: 1px solid var(--border, rgba(0,0,0,0.1));
 }
 
+/* ── Batch history table ────────────────────────────── */
+
+.historySection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.historyTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.batchTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.batchTable th {
+  text-align: left;
+  padding: var(--space-2);
+  font-weight: 500;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.12));
+  white-space: nowrap;
+}
+
+.batchTable td {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.06));
+  white-space: nowrap;
+}
+
+.batchIdCell {
+  font-family: monospace;
+  color: var(--ink-muted);
+}
+
+.downloadBtn {
+  padding: 2px var(--space-2);
+  background: none;
+  border: 1px solid var(--border, rgba(0,0,0,0.12));
+  border-radius: var(--space-1);
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.downloadBtn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+/* ── Status badges ──────────────────────────────────── */
+
+.badgeGenerated {
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badgeExported {
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badgeImported {
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badgeUploaded {
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  background: #d1fae5;
+  color: #065f46;
+  text-decoration: none;
+}
+
+.badgeUploaded:hover {
+  text-decoration: underline;
+}
+
+.badgeFailed {
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 /* ── Loading ─────────────────────────────────────────── */
 
 .loading {

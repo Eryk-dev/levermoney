@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useExpenses } from '../hooks/useExpenses';
-import type { ExpenseStats, ExportResult } from '../hooks/useExpenses';
+import type { ExpenseStats, ExportResult, BatchRecord } from '../hooks/useExpenses';
 import styles from './ExpensesExportTab.module.css';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -53,10 +53,23 @@ function generateYears(): number[] {
   return [current - 2, current - 1, current, current + 1];
 }
 
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+}
+
+const MAX_POLL_ATTEMPTS = 12;
+const POLL_INTERVAL_MS = 5000;
+
 // ── Component ───────────────────────────────────────────────────
 
 export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps) {
-  const { loadStats, exportAndBackup } = useExpenses({ onUnauthorized: onLogout });
+  const { loadStats, exportAndBackup, loadBatches, redownloadBatchById } = useExpenses({ onUnauthorized: onLogout });
 
   // Filters
   const [selectedSlug, setSelectedSlug] = useState('');
@@ -74,6 +87,12 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
 
   // Confirmation modal
   const [showConfirm, setShowConfirm] = useState(false);
+
+  // Batches
+  const [batches, setBatches] = useState<BatchRecord[]>([]);
+  const [downloadingBatch, setDownloadingBatch] = useState<string | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollCountRef = useRef(0);
 
   // Sorted active sellers
   const activeSellers = sellers
@@ -98,7 +117,23 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     void fetchStats();
   }, [fetchStats]);
 
-  // Export handler
+  // ── Fetch batches ────────────────────────────────────────────
+  const fetchBatches = useCallback(async () => {
+    if (!selectedSlug) {
+      setBatches([]);
+      return null;
+    }
+    const result = await loadBatches(selectedSlug);
+    if (result) setBatches(result);
+    return result;
+  }, [selectedSlug, loadBatches]);
+
+  // Load batches when seller changes
+  useEffect(() => {
+    void fetchBatches();
+  }, [fetchBatches]);
+
+  // Export handler (with batch refresh)
   const doExport = async () => {
     if (!selectedSlug) return;
     setExporting(true);
@@ -107,6 +142,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     const result = await exportAndBackup(selectedSlug, dateFrom, dateTo);
     setExportResult(result);
     setExporting(false);
+    void fetchBatches();
   };
 
   const handleExportClick = () => {
@@ -118,6 +154,41 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
   };
 
   const exportDisabled = !selectedSlug || loadingStats || !stats || stats.total === 0 || exporting;
+
+  // ── Polling for queued batches ──────────────────────────────
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    pollCountRef.current = 0;
+  }, []);
+
+  useEffect(() => {
+    const hasQueued = batches.some((b) => b.gdrive_status === 'queued');
+    if (hasQueued && !pollIntervalRef.current) {
+      pollCountRef.current = 0;
+      pollIntervalRef.current = setInterval(async () => {
+        pollCountRef.current += 1;
+        const result = await fetchBatches();
+        const stillQueued = result?.some((b) => b.gdrive_status === 'queued');
+        if (!stillQueued || pollCountRef.current >= MAX_POLL_ATTEMPTS) {
+          stopPolling();
+        }
+      }, POLL_INTERVAL_MS);
+    } else if (!hasQueued) {
+      stopPolling();
+    }
+
+    return () => stopPolling();
+  }, [batches, fetchBatches, stopPolling]);
+
+  // ── Re-download handler ────────────────────────────────────
+  const handleRedownload = async (batchId: string) => {
+    setDownloadingBatch(batchId);
+    await redownloadBatchById(selectedSlug, batchId);
+    setDownloadingBatch(null);
+  };
 
   return (
     <div className={styles.wrapper}>
@@ -210,6 +281,75 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
           </div>
         )}
       </div>
+
+      {/* Batch history */}
+      {selectedSlug && batches.length > 0 && (
+        <div className={styles.historySection}>
+          <h3 className={styles.historyTitle}>Historico de exports</h3>
+          <div className={styles.tableWrap}>
+            <table className={styles.batchTable}>
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Linhas</th>
+                  <th>Valor</th>
+                  <th>Status</th>
+                  <th>Backup</th>
+                  <th>Batch ID</th>
+                  <th>Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batches.map((b) => (
+                  <tr key={b.batch_id}>
+                    <td>{formatDateTime(b.created_at)}</td>
+                    <td>{b.rows_count}</td>
+                    <td>{formatBRL(b.amount_total_signed)}</td>
+                    <td>
+                      <span className={
+                        b.status === 'generated' ? styles.badgeGenerated :
+                        b.status === 'exported' ? styles.badgeExported :
+                        b.status === 'imported' ? styles.badgeImported :
+                        styles.badgeGenerated
+                      }>
+                        {b.status}
+                      </span>
+                    </td>
+                    <td>
+                      {b.gdrive_status === 'uploaded' && b.gdrive_folder_link ? (
+                        <a href={b.gdrive_folder_link} target="_blank" rel="noopener noreferrer" className={styles.badgeUploaded}>
+                          uploaded
+                        </a>
+                      ) : b.gdrive_status === 'queued' ? (
+                        <span className={styles.badgeQueued}>queued</span>
+                      ) : b.gdrive_status === 'failed' ? (
+                        <span className={styles.badgeFailed}>failed</span>
+                      ) : b.gdrive_status === 'skipped_no_drive_root' ? (
+                        <span className={styles.badgeSkipped}>skipped</span>
+                      ) : b.gdrive_status ? (
+                        <span className={styles.badgeSkipped}>{b.gdrive_status}</span>
+                      ) : (
+                        <span className={styles.badgeSkipped}>—</span>
+                      )}
+                    </td>
+                    <td className={styles.batchIdCell}>{b.batch_id.slice(0, 12)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className={styles.downloadBtn}
+                        disabled={downloadingBatch === b.batch_id}
+                        onClick={() => void handleRedownload(b.batch_id)}
+                      >
+                        {downloadingBatch === b.batch_id ? '...' : 'Baixar'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation modal */}
       {showConfirm && stats && (
