@@ -2,97 +2,106 @@
 
 ## 1. Introduction/Overview
 
-A tela atual de exportacao de despesas (non-sale) possui filtros de mes e ano que adicionam complexidade desnecessaria. O usuario precisa apenas ver um resumo dos itens pendentes e exporta-los com um clique. Esta PRD descreve a simplificacao dessa tela: remover filtros de periodo, mostrar apenas o resumo de pendentes, e oferecer um botao direto de exportacao.
+A tela atual de exportacao de despesas (non-sale) possui um dropdown de seller e filtros de mes/ano que adicionam complexidade desnecessaria. O usuario precisa ver de uma so vez o resumo de pendentes de TODOS os sellers e exporta-los rapidamente. Esta PRD descreve a substituicao da tela atual por uma visao de cards por seller, cada um com resumo de pendentes e botao de export individual, alem de um botao global para exportar todos.
 
 ## 2. Goals
 
-- Reduzir friccao na exportacao de despesas pendentes
-- Eliminar filtros de mes/ano que nao agregam valor ao fluxo
-- Manter o resumo estatistico ja implementado
-- Adicionar opcao "Todos" no filtro de seller
-- Preservar o historico de batches e fluxo de export+backup existente
+- Visao panoramica: ver pendentes de todos os sellers de uma vez
+- Eliminar dropdown de seller e filtros de mes/ano
+- Cards por seller em ordem alfabetica com resumo de stats
+- Botao de export individual por card + botao global "Exportar Todos os Pendentes"
+- Historico de batches colapsavel dentro de cada card
+- Preservar fluxo de export+backup existente (ZIP + GDrive)
 
 ## 3. User Stories
 
-### US-001: Ver resumo de despesas pendentes sem selecionar periodo
+### US-001: Cards de sellers com resumo de pendentes
 
-**Description:** As an admin, I want to see a summary of all pending expenses (pending_review + auto_categorized) without having to select a month/year, so that I can quickly understand what needs to be exported.
+**Description:** As an admin, I want to see all active sellers as cards sorted alphabetically, each showing a summary of pending expenses, so that I have a panoramic view without needing to select from a dropdown.
 
 **Acceptance Criteria:**
-- [ ] Os dropdowns de "Mes" e "Ano" sao removidos da UI
-- [ ] O stats card exibe dados de TODAS as despesas com status `pending_review` ou `auto_categorized` (sem filtro de data)
-- [ ] Os 4 campos do resumo permanecem: total de despesas, valor total, pendentes de revisao, auto-categorizadas
-- [ ] O resumo carrega automaticamente ao selecionar um seller
+- [ ] Dropdown de seller e removido
+- [ ] Dropdowns de "Mes" e "Ano" sao removidos
+- [ ] Cada seller ativo e exibido como um card individual
+- [ ] Cards ordenados em ordem alfabetica pelo nome do seller
+- [ ] Cada card mostra: nome do seller, total de despesas, valor total (R$), pendentes de revisao, auto-categorizadas
+- [ ] Cards de sellers sem pendentes aparecem com stats zerados e visual diferenciado (opaco/cinza)
+- [ ] Stats carregam automaticamente ao abrir a tela (chama loadStats com status_filter para cada seller)
 - [ ] Typecheck/lint passes
 
-### US-002: Filtrar por seller com opcao "Todos"
+### US-002: Botao de export individual por card
 
-**Description:** As an admin, I want to select a specific seller or "Todos" to see pending expenses across all sellers, so that I can export for one or all sellers at once.
+**Description:** As an admin, I want each seller card to have an "Exportar Pendentes" button so that I can export one seller at a time.
 
 **Acceptance Criteria:**
-- [ ] O dropdown de seller inclui opcao "Todos" como primeiro item
-- [ ] Ao selecionar "Todos", o resumo agrega pendentes de todos os sellers
-- [ ] Ao selecionar "Todos", a exportacao gera arquivo com despesas de todos os sellers
-- [ ] O comportamento atual de selecionar um seller especifico permanece inalterado
+- [ ] Cada card tem botao "Exportar Pendentes"
+- [ ] Ao clicar, executa fluxo completo: gera ZIP, backup GDrive, marca como `exported`
+- [ ] Exportacao usa status_filter=pending_review,auto_categorized (sem filtro de data)
+- [ ] Botao desabilitado quando seller nao tem pendentes (total = 0)
+- [ ] Botao mostra estado de loading ("Exportando...") durante a exportacao
+- [ ] Resultado exibe batch_id e status do backup no card
+- [ ] Modal de confirmacao quando pending_review_count > 0 permanece funcionando
 - [ ] Typecheck/lint passes
 
-### US-003: Exportar pendentes com um clique
+### US-003: Botao global "Exportar Todos os Pendentes"
 
-**Description:** As an admin, I want to click a single "Exportar Pendentes" button to export all pending expenses, so that the export flow is fast and simple.
+**Description:** As an admin, I want a global button above the cards to export pending expenses from all sellers at once, so that I can do a bulk export in one click.
 
 **Acceptance Criteria:**
-- [ ] O botao de exportacao tem label "Exportar Pendentes"
-- [ ] Ao clicar, executa o fluxo completo: gera ZIP, faz backup GDrive, marca como `exported`
-- [ ] O filtro de exportacao usa status IN (`pending_review`, `auto_categorized`) em vez de filtro por data
-- [ ] O botao fica desabilitado quando nao ha pendentes (total = 0)
-- [ ] O botao mostra estado de loading ("Exportando...") durante a exportacao
-- [ ] Resultado exibe batch ID e status do backup como ja implementado
+- [ ] Botao "Exportar Todos os Pendentes" posicionado acima dos cards
+- [ ] Ao clicar, executa exportAndBackup sequencialmente para cada seller que tenha pendentes (total > 0)
+- [ ] Exibe progresso durante a exportacao (ex: "Exportando 2/5...")
+- [ ] Ao terminar, exibe lista de batch_ids gerados (um por seller)
+- [ ] Botao desabilitado quando nenhum seller tem pendentes
+- [ ] Botao desabilitado durante exportacao
 - [ ] Typecheck/lint passes
 
-### US-004: Manter historico de batches
+### US-004: Historico de batches colapsavel por card
 
-**Description:** As an admin, I want to continue seeing the batch history table after the simplification, so that I can track past exports and re-download files.
+**Description:** As an admin, I want to see the batch history for each seller inside its card, collapsible to save space, so that I can track past exports and re-download files.
 
 **Acceptance Criteria:**
-- [ ] A tabela de historico de batches permanece visivel abaixo do resumo/botao
-- [ ] Todas as colunas atuais sao mantidas (Data, Linhas, Valor, Status, Backup, Batch ID, Acoes)
+- [ ] Cada card tem secao colapsavel "Historico" (fechada por padrao)
+- [ ] Ao expandir, mostra tabela de batches do seller (mesmas colunas atuais: Data, Linhas, Valor, Status, Backup, Batch ID, Acoes)
 - [ ] Funcionalidade de re-download continua funcionando
-- [ ] Polling de status GDrive continua funcionando
+- [ ] Polling de status GDrive continua funcionando por card
+- [ ] Cleanup do polling ao colapsar ou desmontar
 - [ ] Typecheck/lint passes
 
 ## 4. Functional Requirements
 
-- **FR-1:** O sistema deve remover os dropdowns de "Mes" e "Ano" do componente `ExpensesExportTab`
-- **FR-2:** O sistema deve buscar stats filtrando por status (`pending_review`, `auto_categorized`) sem filtro de data
-- **FR-3:** O endpoint `/expenses/{seller}/stats` deve aceitar um parametro opcional `status_filter` para filtrar por status especificos
-- **FR-4:** O endpoint `/expenses/{seller}/export` deve aceitar um parametro opcional `status_filter` para exportar apenas itens com status especificos, sem exigir `date_from`/`date_to`
-- **FR-5:** O dropdown de seller deve incluir opcao "Todos" que agrega dados de todos os sellers
-- **FR-6:** Quando "Todos" estiver selecionado, o sistema deve chamar stats/export para todos os sellers ativos
-- **FR-7:** O botao "Exportar Pendentes" deve executar o mesmo fluxo de export+backup ja existente
-- **FR-8:** A tabela de historico de batches deve continuar funcionando sem alteracoes
+- **FR-1:** O componente `ExpensesExportTab` deve ser reestruturado para exibir cards em vez de dropdown + stats unicos
+- **FR-2:** O sistema deve buscar stats de todos os sellers ativos em paralelo ao montar o componente
+- **FR-3:** Cada card deve usar `loadStats` com `status_filter=pending_review,auto_categorized` (sem datas)
+- **FR-4:** O endpoint `/expenses/{seller}/stats` deve aceitar `status_filter` e tornar datas opcionais (ja implementado no backend via US-001 anterior)
+- **FR-5:** O endpoint `/expenses/{seller}/export` deve aceitar `status_filter` e tornar datas opcionais (ja implementado)
+- **FR-6:** O botao global deve iterar sobre sellers com pendentes e chamar export sequencialmente
+- **FR-7:** O historico de batches deve ser carregado sob demanda ao expandir a secao no card
+- **FR-8:** Cards sem pendentes devem ter visual diferenciado (opacidade reduzida)
 
 ## 5. Non-Goals (Out of Scope)
 
+- Nao alterar endpoints backend (status_filter ja implementado)
 - Nao alterar a logica de classificacao non-sale no `processor.py`
 - Nao alterar o formato do ZIP exportado
 - Nao alterar a logica de backup GDrive
 - Nao adicionar filtros novos (ex: por tipo de despesa, por direcao)
-- Nao alterar a tela de review/categorizacao de despesas
+- Nao implementar paginacao de cards (assume numero pequeno de sellers)
 
 ## 6. Technical Considerations
 
-- **Backend (stats endpoint):** Adicionar parametro `status_filter` ao GET `/expenses/{seller}/stats` para filtrar por status sem exigir datas. Quando `status_filter` fornecido, `date_from`/`date_to` tornam-se opcionais.
-- **Backend (export endpoint):** Mesma alteracao: `status_filter` torna datas opcionais. Valor padrao atual (excluir exported/imported) pode ser mantido como fallback.
-- **Frontend:** Remover estado de `month`/`year`, `buildDateRange()`, e dropdowns de periodo. Substituir por chamada direta com `status_filter=pending_review,auto_categorized`.
-- **Seller "Todos":** Pode ser implementado como chamada agregada no frontend (loop por sellers) ou endpoint dedicado no backend. Avaliar qual abordagem e mais simples.
+- **Backend:** Nenhuma alteracao necessaria. Os endpoints de stats e export ja aceitam `status_filter` (implementado na iteracao anterior).
+- **Frontend:** Reestruturar `ExpensesExportTab` de layout single-seller (dropdown) para multi-seller (cards grid). Reutilizar `useExpenses` hook para cada seller individualmente.
+- **Performance:** Chamadas de stats em paralelo (`Promise.all`) para todos os sellers ativos. Batches carregados sob demanda (lazy load ao expandir historico).
+- **Layout:** CSS Grid ou flex-wrap para os cards. Responsivo para diferentes quantidades de sellers.
 
 ## 7. Success Metrics
 
-- Exportacao de pendentes requer apenas 2 interacoes: selecionar seller (ou "Todos") + clicar "Exportar Pendentes"
-- Zero regressao nas funcionalidades existentes (batch history, re-download, GDrive backup)
-- Tempo de carregamento do resumo <= 2 segundos
+- Ao abrir a tela, admin ve resumo de TODOS os sellers sem interacao
+- Exportacao individual requer 1 clique (botao no card)
+- Exportacao global requer 1 clique (botao acima dos cards)
+- Zero regressao nas funcionalidades existentes (export, batch history, re-download, GDrive backup)
 
 ## 8. Open Questions
 
-- Para seller "Todos": gerar um unico ZIP com subpastas por seller ou um ZIP por seller?
-- O endpoint de batches precisa suportar listagem cross-seller quando "Todos" esta selecionado?
+- Nenhuma (escopo definido com respostas do usuario)

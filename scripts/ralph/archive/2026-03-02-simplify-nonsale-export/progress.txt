@@ -1,0 +1,18 @@
+# Ralph Progress Log
+Started: Mon Mar  2 2026
+---
+
+## Codebase Patterns
+- Expenses router is a package at `app/routers/expenses/` with sub-modules: crud.py (list, review, stats), export.py (export ZIP, batches, re-download), closing.py, legacy.py
+- Shared helpers/constants/models live in `app/routers/expenses/_deps.py`
+- Supabase queries use chained builder: `db.table("mp_expenses").select("*").eq(col, val).in_(col, list).execute()`
+- Stats endpoint already returns `pending_review_count` and `auto_categorized_count` from `by_status` dict
+- Export endpoint default fallback excludes `exported` and `imported` statuses via `.not_.in_("status", [...])`
+- No venv or type-checker (mypy/pyright) installed; use `python3 -m py_compile` for syntax validation
+- Dashboard typecheck: `cd dashboard && npx tsc -b --noEmit`; lint: `npx eslint <file>`
+- `useExpenses` hook: `loadStats` and `exportAndBackup` accept optional `statusFilter` param (4th positional arg); when provided, dates are skipped
+- `BatchRecord.seller_slug` is always populated; use it for API calls instead of `selectedSlug` when __all__ mode is possible
+- `PENDING_STATUS_FILTER` constant defined at module level in ExpensesExportTab.tsx
+- Using a ref (`perSellerStatsRef`) instead of state for per-seller stats avoids unnecessary re-renders
+- `sellers` prop must be in `useCallback` deps for `fetchStats`/`fetchBatches` when used inside the callback
+---
