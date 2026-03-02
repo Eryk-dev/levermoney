@@ -1,0 +1,162 @@
+# Ralph Progress Log
+Started: Mon Mar  2 16:09:09 -03 2026
+---
+
+## Codebase Patterns
+- GDrive functions (_build_gdrive_client, _gdrive_ensure_folder, _gdrive_upload_bytes) live in app/services/legacy/daily_export.py and are importable from there
+- Settings for GDrive: legacy_daily_google_drive_root_folder_id (root folder), legacy_daily_google_drive_id (shared drive ID, optional)
+- Service account creds loaded via legacy_daily_google_service_account_json or legacy_daily_google_service_account_file
+- All GDrive operations pass supportsAllDrives=True for shared drive compatibility
+- Pre-existing mypy errors in legacy/engine.py, legacy/daily_export.py, and expenses/crud.py — ignore them, only check new files
+- Python 3.12 available at system level (no venv); use `python3` not `python`
+- Commit style: `feat: US-XXX - Title`
+- Migrations go in `migrations/` folder as numbered SQL files (e.g., 005_*.sql)
+- `_persist_batch_metadata` in `app/routers/expenses/_deps.py` is the central function for batch persistence
+- `update_batch_gdrive_status` in `_deps.py` updates only gdrive_* fields on a batch
+- GET /batches uses `select("*")` so new DB columns are auto-included in response
+- Use `--follow-imports=skip` with mypy to check only changed files (pre-existing errors elsewhere)
+- `snapshot_payload` in expense_batch_items is the single source of truth for re-download; fields map directly to `_build_xlsx` inputs
+- Dashboard: `API_BASE` from `lib/supabase.ts`, auth via `X-Admin-Token` header with `TOKEN_KEY = 'lever-admin-token'` in sessionStorage
+- Dashboard: `node_modules` may not be installed — run `npm install` before `tsc --noEmit`
+- Dashboard: typecheck via `node_modules/.bin/tsc --noEmit` (not npx)
+- Dashboard: useExpenses exports types `ExpenseStats`, `ExportResult`, `BatchRecord` for use in components
+
+---
+
+## 2026-03-02 - US-001
+- Implemented `app/services/gdrive_client.py` with `upload_expenses_zip()` function
+- Reuses `_build_gdrive_client`, `_gdrive_ensure_folder`, `_gdrive_upload_bytes` from legacy daily_export
+- Creates folder hierarchy: ROOT -> DESPESAS -> {EMPRESA} -> {YYYY-MM}
+- Returns `{status: 'skipped_no_drive_root'}` when root not configured
+- Returns `{status: 'uploaded', folder_link, file_id, file_link}` on success
+- Returns `{status: 'failed', error}` on exception
+- Files changed: `app/services/gdrive_client.py` (new)
+- **Learnings for future iterations:**
+  - GDrive helpers are private functions (prefixed with _) but importable for reuse
+  - `_gdrive_upload_bytes` returns dict with `id` and `webViewLink` keys
+  - `_gdrive_ensure_folder` creates folder if not exists, returns folder ID
+  - Settings pattern: always strip() optional string settings before checking emptiness
+  - `dashboard_empresa` field on seller dict is the human-readable company name
+---
+
+## 2026-03-02 - US-002
+- Created migration `migrations/005_expense_batches_gdrive_snapshot.sql`:
+  - Adds gdrive_status, gdrive_folder_link, gdrive_file_id, gdrive_file_link, gdrive_error, gdrive_updated_at to expense_batches
+  - Adds snapshot_payload JSONB to expense_batch_items
+- Updated `_persist_batch_metadata` in `app/routers/expenses/_deps.py`:
+  - New optional param `gdrive_status` (default None)
+  - Saves `snapshot_payload` per item via `_build_snapshot_payload()` helper
+- Created `update_batch_gdrive_status(db, batch_id, gdrive_result)` in `_deps.py`
+- GET /batches already returns new fields (uses `select("*")`)
+- Files changed: `app/routers/expenses/_deps.py`, `migrations/005_expense_batches_gdrive_snapshot.sql` (new)
+- **Learnings for future iterations:**
+  - Supabase `upsert` accepts any dict keys — new columns just need to exist in DB
+  - `_build_snapshot_payload` captures the 10 key fields needed for XLSX re-download
+  - `snapshot_payload` enables US-004 re-download without depending on current mp_expenses state
+  - Standardized gdrive statuses: queued, uploaded, failed, skipped_no_drive_root
+---
+
+## 2026-03-02 - US-003
+- Added `gdrive_backup: bool = Query(False)` param to GET /expenses/{seller_slug}/export
+- When gdrive_backup=true, determines drive status and sets X-GDrive-Status header
+- Background task via `asyncio.create_task` calls `upload_expenses_zip` (via `asyncio.to_thread`) then `update_batch_gdrive_status`
+- Failure in background task never blocks download response
+- Added `pending_review_count` and `auto_categorized_count` to GET /stats response
+- Added `expose_headers=['X-Export-Batch-Id', 'X-GDrive-Status']` to CORSMiddleware in main.py
+- Files changed: `app/routers/expenses/export.py`, `app/routers/expenses/crud.py`, `app/main.py`
+- **Learnings for future iterations:**
+  - `upload_expenses_zip` is a sync function — must use `asyncio.to_thread()` to call from async context
+  - Drive configuration check: `(settings.legacy_daily_google_drive_root_folder_id or "").strip()` for presence
+  - `zip_buf.getvalue()` to get bytes copy before the StreamingResponse consumes the buffer
+  - CORS `expose_headers` is required for frontend to read custom headers from fetch responses
+  - Pre-existing mypy errors in crud.py (untyped dicts on lines 159-161) — don't try to fix, just skip that file
+---
+
+## 2026-03-02 - US-004
+- Implemented GET /expenses/{seller_slug}/batches/{batch_id}/download endpoint in export.py
+- Uses snapshot_payload from expense_batch_items to reconstruct ZIP deterministically
+- Returns 404 if batch not found for seller or if batch has no items
+- Returns 409 if items lack snapshot_payload (old batches before US-002 migration)
+- Reconstructs ZIP with same _group_rows_by_day + _build_xlsx pipeline as original export
+- Content-Disposition filename includes batch_id for traceability
+- Does NOT alter mp_expenses status during re-download
+- Files changed: `app/routers/expenses/export.py`
+- **Learnings for future iterations:**
+  - snapshot_payload fields map exactly to what _build_xlsx expects — no transformation needed
+  - batch.company field stores the empresa_nome used at export time; use it for re-download folder naming
+  - Re-download endpoint pattern: query batch_items, extract snapshot_payload, rebuild ZIP — no mp_expenses dependency
+  - Route ordering matters in FastAPI: /{seller_slug}/batches/{batch_id}/download must be registered before /{seller_slug}/batches/{batch_id}/confirm-import (both work since they differ by method/path suffix)
+---
+
+## 2026-03-02 - US-005
+- Created `dashboard/src/hooks/useExpenses.ts` with 4 functions + 3 exported types
+- `loadStats(sellerSlug, dateFrom, dateTo)` → GET /expenses/{seller}/stats, returns `ExpenseStats` with total, total_amount, by_status, pending_review_count, auto_categorized_count
+- `exportAndBackup(sellerSlug, dateFrom, dateTo)` → GET /expenses/{seller}/export?mark_exported=true&gdrive_backup=true, auto-downloads blob, returns `ExportResult` with batchId + gdriveStatus from headers
+- `loadBatches(sellerSlug)` → GET /expenses/{seller}/batches?limit=20, returns `BatchRecord[]` including gdrive_* fields
+- `redownloadBatchById(sellerSlug, batchId)` → GET /expenses/{seller}/batches/{batch_id}/download, auto-downloads blob with Content-Disposition filename
+- All functions return null and call onUnauthorized on 401
+- Uses `TOKEN_KEY = 'lever-admin-token'` via sessionStorage (consistent with useAdmin.ts)
+- Exported types: `ExpenseStats`, `ExportResult`, `BatchRecord`
+- Files changed: `dashboard/src/hooks/useExpenses.ts` (new)
+- **Learnings for future iterations:**
+  - `API_BASE` is imported from `lib/supabase.ts` — same pattern for all backend API hooks
+  - Auth header pattern: `X-Admin-Token` (not Authorization/Bearer)
+  - Blob download pattern: create temp `<a>`, set href to `URL.createObjectURL(blob)`, click, revokeObjectURL
+  - Custom response headers (X-Export-Batch-Id, X-GDrive-Status) are readable because CORS expose_headers was set in US-003
+  - Content-Disposition filename extraction: regex `/filename="?([^";\n]+)"?/` handles both quoted and unquoted filenames
+  - Dashboard node_modules may not exist — `npm install` required before typecheck
+---
+
+## 2026-03-02 - US-006
+- Created `dashboard/src/components/ExpensesExportTab.tsx` with seller selector, period picker, stats card, export with confirmation modal
+- Created `dashboard/src/components/ExpensesExportTab.module.css` with styles using existing CSS variables
+- Props: sellers (array) and onLogout (function)
+- Dropdown lists active sellers sorted by name, showing dashboard_empresa or name
+- Two selects for month (Janeiro-Dezembro) and year, default = previous month
+- useEffect calls loadStats on seller/period change with loading state
+- Stats card shows: total, total_amount (R$ formatted), pending_review_count, auto_categorized_count
+- Export button disabled when no seller, stats.total === 0, or during loading
+- Confirmation modal shown when pending_review_count > 0, with 'Cancelar' and 'Exportar mesmo assim'
+- After export, shows batch_id and gdrive status badge (queued/skipped)
+- Files changed: `dashboard/src/components/ExpensesExportTab.tsx` (new), `dashboard/src/components/ExpensesExportTab.module.css` (new)
+- **Learnings for future iterations:**
+  - `getDefaultPeriod()` uses getMonth() (0-indexed) directly for previous month in 1-indexed, with year rollback for January
+  - `buildDateRange()` calculates last day of month via `new Date(year, month, 0).getDate()`
+  - AdminPanel already has MONTH_NAMES and `modeToggle`/`modeBtn`/`modeBtnActive` CSS classes that US-008 can reuse for tab bar
+  - Seller interface in ExpensesExportTab only needs slug, name, dashboard_empresa, active — subset of AdminPanel's full Seller interface
+  - `formatBRL` via `toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })` — AdminPanel imports from utils/dataParser but local version works fine for standalone component
+---
+
+## 2026-03-02 - US-007
+- Extended `ExpensesExportTab.tsx` with batch history section below export card
+- Table with columns: Data (DD/MM/YYYY HH:mm), Linhas, Valor (R$), Status (badge), Backup (badge), Batch ID (first 12 chars), Acoes (Baixar button)
+- Status badges: generated=yellow, exported=blue, imported=green
+- Backup badges: queued=yellow, uploaded=green with link to gdrive_folder_link (target=_blank), failed=red, skipped_no_drive_root=gray
+- Polling: setInterval(5s) when any batch has gdrive_status==='queued', stops when no queued or after 12 attempts (60s)
+- Cleanup of polling interval on useEffect cleanup and component unmount
+- Re-download button calls redownloadBatchById with loading state per batch
+- Batches refresh after each successful export
+- Added CSS for table, badges, download button, history section
+- Files changed: `dashboard/src/components/ExpensesExportTab.tsx`, `dashboard/src/components/ExpensesExportTab.module.css`
+- **Learnings for future iterations:**
+  - `formatDateTime` helper: `new Date(iso)` then manual DD/MM/YYYY HH:mm formatting — simpler than Intl for fixed format
+  - Polling pattern: useRef for interval ID + counter, useCallback for stopPolling, useEffect with cleanup return
+  - `fetchBatches` returns the result to allow polling useEffect to check if still queued without waiting for state update
+  - Badge CSS pattern: padding 2px var(--space-2), border-radius 999px, font-size 10px, font-weight 500 — consistent across all badge types
+  - `doExport` integrates batch refresh via `void fetchBatches()` after export completes — no need for separate wrapper
+---
+
+## 2026-03-02 - US-008
+- Integrated ExpensesExportTab into AdminPanel.tsx via tab bar (Sellers / Despesas)
+- Added `adminTab` state: `'sellers' | 'expenses'` with default `'sellers'`
+- Tab bar rendered inside div.container after div.header using existing `modeToggle`, `modeBtn`, `modeBtnActive` CSS classes
+- All existing sellers content (sections, modals, install link) wrapped in `{adminTab === 'sellers' && (<>...</>)}`
+- When `adminTab === 'expenses'`, renders `<ExpensesExportTab sellers={sellers.filter(s => s.active)} onLogout={onLogout} />`
+- Existing Sellers tab behavior fully preserved — no functional changes
+- Files changed: `dashboard/src/components/AdminPanel.tsx`
+- **Learnings for future iterations:**
+  - `modeToggle`, `modeBtn`, `modeBtnActive` CSS classes in AdminPanel.module.css are reusable for any toggle/tab bar pattern
+  - ExpensesExportTab expects `Seller` with `slug`, `name`, `dashboard_empresa?`, `active` — subset of AdminPanel's Seller interface, so direct pass works
+  - Filtering `sellers.filter(s => s.active)` ensures only active sellers appear in expenses dropdown
+  - Fragment syntax `<>...</>` works well for wrapping large conditional blocks without adding extra DOM nodes
+---

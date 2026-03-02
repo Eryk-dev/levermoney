@@ -26,6 +26,7 @@ Routers call services; services never import routers.
 | `onboarding.py` | Seller lifecycle: `create_signup` -> `approve_seller` -> `activate_seller`. Creates revenue_lines and goals. |
 | `onboarding_backfill.py` | Historical payment ingestion for new sellers (by `money_release_date`). Resumable with progress tracking. |
 | `legacy_daily_export.py` | Downloads ML account_statement, runs legacy reconciliation, produces ZIP, uploads to external endpoint. |
+| `gdrive_client.py` | Public helper for expenses backup ZIP upload to Google Drive (`ROOT/DESPESAS/{EMPRESA}/{YYYY-MM}`). Reuses internals from `legacy/daily_export.py`. |
 | `legacy_bridge.py` | Bridge to reuse legacy CSV reconciliation logic. Wraps `legacy_engine.py` and produces XLSX ZIP output. |
 | `legacy_engine.py` | ~1500-line legacy reconciliation engine ported from V1. Processes ML CSVs into XLSX for CA import. |
 | `ca_categories_sync.py` | Daily sync of CA income/expense categories to local `ca_categories.json` file for offline lookups. |
@@ -53,6 +54,7 @@ extrato_coverage_checker.py -> release_report_validator._get_or_create_report
 
 legacy_daily_export.py --> legacy_bridge.py --> legacy_engine.py
 legacy_daily_export.py --> ml_api.py (report download)
+gdrive_client.py ------> legacy/daily_export.py (_build_gdrive_client, _gdrive_ensure_folder, _gdrive_upload_bytes)
 
 faturamento_sync.py --> ml_api.py (fetch_paid_orders)
 release_checker.py ---> ml_api.py (re-check release status)
@@ -84,6 +86,7 @@ ca_categories_sync.py -> ca_api.py (listar_categorias)
 - `extrato_ingester.py` -- called by admin router, nightly pipeline
 - `extrato_coverage_checker.py` -- called by admin router, nightly pipeline
 - `legacy_bridge.py` -- called by expenses router (legacy-export endpoint)
+- `gdrive_client.py` -- called by expenses export router (`gdrive_backup=true`) via background task
 
 ---
 
@@ -112,3 +115,6 @@ ca_categories_sync.py -> ca_api.py (listar_categorias)
 - **ML dates are UTC-4, reports use BRT (UTC-3).** Always use `_to_brt_date(date_approved)` for competencia.
 - **`legacy_engine.py` is a ported monolith (~1500 lines).** Avoid modifying it directly; use `legacy_bridge.py` as the interface.
 - **Nightly pipeline replaces individual schedulers.** When `nightly_pipeline_enabled=true`, daily_sync/baixas/closing schedulers are NOT started.
+- **`upload_expenses_zip()` is sync.** Routers async devem chamar via `asyncio.to_thread(...)` para nao bloquear event loop.
+- **Contrato de status GDrive para despesas:** `queued`, `uploaded`, `failed`, `skipped_no_drive_root`.
+- **Sem `LEGACY_DAILY_GOOGLE_DRIVE_ROOT_FOLDER_ID`,** `gdrive_client` deve retornar skip sem excecao.

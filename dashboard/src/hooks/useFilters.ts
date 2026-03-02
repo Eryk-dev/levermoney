@@ -59,10 +59,12 @@ interface GoalHelpers {
   yearlyGoals: CompanyYearlyGoal[];
   setSelectedMonth: (month: number) => void;
   lines: RevenueLine[];
+  metasMonth?: number;
+  metasYear?: number;
 }
 
 export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) {
-  const { yearlyGoals, setSelectedMonth, lines } = goalHelpers;
+  const { yearlyGoals, setSelectedMonth, lines, metasMonth, metasYear } = goalHelpers;
   const [filters, setFilters] = useState<Filters>(() => {
     try {
       const raw = localStorage.getItem(FILTERS_KEY);
@@ -140,6 +142,20 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     }));
   }, [lineSets]);
 
+  // Month override for metas tab: when viewing a non-current month
+  const monthOverride = useMemo(() => {
+    if (metasMonth == null || metasYear == null) return null;
+    const now = new Date();
+    if (metasMonth === now.getMonth() + 1 && metasYear === now.getFullYear()) return null;
+    const lastDay = new Date(metasYear, metasMonth, 0);
+    lastDay.setHours(12, 0, 0, 0);
+    const mStart = new Date(metasYear, metasMonth - 1, 1);
+    mStart.setHours(0, 0, 0, 0);
+    const mEnd = new Date(metasYear, metasMonth, 0);
+    mEnd.setHours(23, 59, 59, 999);
+    return { referenceDate: lastDay, start: mStart, end: mEnd, month: metasMonth, year: metasYear };
+  }, [metasMonth, metasYear]);
+
   const companyMetaInfo = useMemo(
     () => buildCompanyMetaInfo(yearlyGoals, lines),
     [yearlyGoals, lines]
@@ -192,6 +208,10 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
 
   // Calculate effective date range based on preset or custom dates
   const effectiveDateRange = useMemo(() => {
+    if (monthOverride) {
+      return { start: monthOverride.start, end: monthOverride.end };
+    }
+
     const today = new Date();
     today.setHours(23, 59, 59, 999);
 
@@ -229,7 +249,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
           end: filters.dataFim,
         };
     }
-  }, [datePreset, filters.dataInicio, filters.dataFim]);
+  }, [monthOverride, datePreset, filters.dataInicio, filters.dataFim]);
 
   // Apply filters to data
   const filteredData = useMemo(() => {
@@ -254,14 +274,14 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
   }, [data, filters.empresas, filters.grupos, filters.segmentos]);
 
   const adaptiveGoalPlanner = useMemo(() => {
-    const referenceDate = getReferenceDateForPreset(datePreset);
+    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
     return buildAdaptiveDailyGoalPlanner(
       selectedCompaniesForGoals,
       entityFilteredData,
       referenceDate,
       { catchUpEnabled: gapCatchUpEnabled }
     );
-  }, [selectedCompaniesForGoals, entityFilteredData, datePreset, gapCatchUpEnabled]);
+  }, [selectedCompaniesForGoals, entityFilteredData, datePreset, gapCatchUpEnabled, monthOverride]);
 
   // Data filtered only by date (for total calculations)
   const dateFilteredData = useMemo(() => {
@@ -289,13 +309,17 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
 
   // Use o mês da referência ativa (Hoje/Ontem) para metas
   useEffect(() => {
-    const referenceDate = getReferenceDateForPreset(datePreset);
-    setSelectedMonth(referenceDate.getMonth() + 1);
-  }, [setSelectedMonth, datePreset]);
+    if (monthOverride) {
+      setSelectedMonth(monthOverride.month);
+    } else {
+      const referenceDate = getReferenceDateForPreset(datePreset);
+      setSelectedMonth(referenceDate.getMonth() + 1);
+    }
+  }, [setSelectedMonth, datePreset, monthOverride]);
 
   // Calculate goal metrics (metas)
   const goalMetrics = useMemo((): GoalMetrics => {
-    const referenceDate = getReferenceDateForPreset(datePreset);
+    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
     const dayStart = new Date(referenceDate);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(referenceDate);
@@ -467,11 +491,12 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     selectedCompaniesForGoals,
     entityFilteredData,
     adaptiveGoalPlanner,
+    monthOverride,
   ]);
 
-  // Company goal breakdown for table - uses current reference month (Hoje/Ontem)
+  // Company goal breakdown for table
   const companyGoalData = useMemo(() => {
-    const referenceDate = getReferenceDateForPreset(datePreset);
+    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
     const refMonth = referenceDate.getMonth() + 1;
     const refYear = referenceDate.getFullYear();
     const monthStart = startOfMonth(referenceDate);
@@ -523,12 +548,12 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
         gap,
       };
     }).filter((item) => item.metaMensal > 0 || item.realizado > 0);
-  }, [data, companyMetaInfo, datePreset, gapCatchUpEnabled]);
+  }, [data, companyMetaInfo, datePreset, gapCatchUpEnabled, monthOverride]);
 
   // Daily totals for chart - with breakdown by company and group
   const dailyData = useMemo(() => {
     const grouped = new Map<string, { total: number; byCompany: Map<string, number>; byGroup: Map<string, number> }>();
-    const referenceDate = getReferenceDateForPreset(datePreset);
+    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
 
     const ensureDateBucket = (date: Date) => {
       const key = date.toISOString().split('T')[0];
@@ -538,7 +563,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       return key;
     };
 
-    if ((datePreset === 'mtd' || datePreset === 'wtd') && effectiveDateRange.start && effectiveDateRange.end) {
+    if ((monthOverride || datePreset === 'mtd' || datePreset === 'wtd') && effectiveDateRange.start && effectiveDateRange.end) {
       const rangeStart = new Date(effectiveDateRange.start);
       const rangeEnd = new Date(effectiveDateRange.end);
       let cursor = new Date(rangeStart);
@@ -601,7 +626,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
         return point;
       })
       .sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [filteredData, adaptiveGoalPlanner, datePreset, effectiveDateRange]);
+  }, [filteredData, adaptiveGoalPlanner, datePreset, effectiveDateRange, monthOverride]);
 
   // Comparison state
   const [comparisonEnabled, setComparisonEnabled] = useState<boolean>(() => {
@@ -770,7 +795,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
 
   // Get list of companies in the chart data (for line chart)
   const companiesWithDailyResult = useMemo(() => {
-    const referenceDate = getReferenceDateForPreset(datePreset);
+    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
     const dayStart = new Date(referenceDate);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(referenceDate);
@@ -787,7 +812,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       .filter(([, total]) => total > 0)
       .sort((a, b) => b[1] - a[1])
       .map(([empresa]) => empresa);
-  }, [entityFilteredData, datePreset]);
+  }, [entityFilteredData, datePreset, monthOverride]);
 
   const chartCompanies = useMemo(() => {
     if (filters.empresas.length > 1) return filters.empresas;
@@ -798,7 +823,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
   }, [filters.empresas, datePreset, companiesWithDailyResult]);
 
   const companyDailyPerformance = useMemo((): CompanyDailyPerformanceItem[] => {
-    const referenceDate = getReferenceDateForPreset(datePreset);
+    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
     const dayStart = new Date(referenceDate);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(referenceDate);
@@ -849,7 +874,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       })
       .filter((item) => item.realizado > 0)
       .sort((a, b) => b.realizado - a.realizado);
-  }, [selectedCompaniesForGoals, entityFilteredData, datePreset, gapCatchUpEnabled]);
+  }, [selectedCompaniesForGoals, entityFilteredData, datePreset, gapCatchUpEnabled, monthOverride]);
 
   // Get all unique companies from filtered data (for stacked bar chart)
   const allCompaniesInData = useMemo(() => {

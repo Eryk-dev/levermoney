@@ -1,0 +1,55 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.label {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.selector {
+  display: flex;
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-muted);
+  transition: background 0.15s ease, color 0.15s ease;
+  min-height: 36px;
+}
+
+.arrow:hover:not(.disabled) {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.arrow.disabled {
+  color: var(--ink-faint);
+  cursor: default;
+  opacity: 0.4;
+}
+
+.monthLabel {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+  padding: 0 var(--space-2);
+  min-width: 120px;
+  text-align: center;
+  white-space: nowrap;
+}

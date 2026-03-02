@@ -49,7 +49,7 @@ dash/
 │   └── favicon.svg
 ├── src/
 │   ├── main.tsx                      # Entry point (React root + SW register)
-│   ├── App.tsx                       # Componente principal (4 views)
+│   ├── App.tsx                       # Componente principal (5 views: Geral, Metas, Entrada, Linhas, Admin)
 │   ├── App.module.css                # Estilos do App
 │   ├── App.css                       # Estilos globais
 │   ├── index.css                     # CSS variables + reset
@@ -61,7 +61,9 @@ dash/
 │   │   ├── useFilters.ts            # Motor central de calculos
 │   │   ├── useGoals.ts              # Gestao de metas (localStorage)
 │   │   ├── useRevenueLines.ts       # Gestao de linhas de receita
-│   │   └── useIsMobile.ts           # Deteccao mobile (768px)
+│   │   ├── useIsMobile.ts           # Deteccao mobile (768px)
+│   │   ├── useAdmin.ts              # Auth/admin API para painel administrativo
+│   │   └── useExpenses.ts           # API de despesas (stats/export/batches/redownload)
 │   ├── data/
 │   │   ├── fallbackData.ts          # 24 empresas (COMPANIES)
 │   │   └── goals.ts                 # Metas anuais 2026 por empresa/mes
@@ -69,7 +71,7 @@ dash/
 │   │   ├── goalCalculator.ts        # FONTE UNICA de calculos de metas
 │   │   ├── projectionEngine.ts      # Sazonalidade + forecast
 │   │   └── dataParser.ts            # Formatacao (BRL, %, datas)
-│   ├── components/                   # 21 componentes React
+│   ├── components/                   # Componentes React (views principais + admin)
 │   │   ├── ViewToggle.tsx            # Seletor de view (Geral/Metas/Entrada/Linhas)
 │   │   ├── MultiSelect.tsx           # Dropdown multi-select filtros
 │   │   ├── DatePicker.tsx            # Seletor de data
@@ -90,7 +92,10 @@ dash/
 │   │   ├── BreakdownBars.tsx         # Barras horizontais rankeadas
 │   │   ├── DataEntry.tsx             # Grid de entrada de dados
 │   │   ├── RevenueLinesManager.tsx   # Gestao de linhas de receita
-│   │   └── Select.tsx                # Dropdown simples
+│   │   ├── Select.tsx                # Dropdown simples
+│   │   ├── AdminLogin.tsx            # Login admin
+│   │   ├── AdminPanel.tsx            # Painel admin (tabs Sellers/Despesas)
+│   │   └── ExpensesExportTab.tsx     # Export de despesas + backup GDrive + historico
 │   └── assets/
 │       └── logo.svg
 ├── index.html                        # HTML entry (SPA)
@@ -99,7 +104,7 @@ dash/
 ├── package.json                      # Dependencias e scripts
 ├── Dockerfile                        # Build multi-stage
 ├── nginx.conf                        # Config Nginx (SPA + gzip + cache)
-├── CLAUDE.md                         # ESTE DOCUMENTO
+├── claude.md                         # ESTE DOCUMENTO
 └── REFATORACAO_METAS_E_PWA.md       # Doc da refatoracao de metas
 ```
 
@@ -357,9 +362,37 @@ Persistencia de escrita via admin API chamada pelo App.tsx.
 
 Retorna `boolean` para breakpoint de 768px.
 
+### 7.6 `useAdmin` (`src/hooks/useAdmin.ts`)
+
+Hook de autenticacao/admin para endpoints `X-Admin-Token`.
+
+**Responsabilidades principais:**
+- Login/logout admin (`/admin/login`)
+- CRUD de sellers/linhas/metas via admin API
+- Carga de recursos de onboarding/CA
+- Polling de sellers/sync status quando autenticado
+
+### 7.7 `useExpenses` (`src/hooks/useExpenses.ts`)
+
+Hook dedicado para o fluxo de despesas no Admin.
+
+```typescript
+{
+  loadStats(sellerSlug, dateFrom, dateTo) => ExpenseStats | null
+  exportAndBackup(sellerSlug, dateFrom, dateTo) => { batchId, gdriveStatus } | null
+  loadBatches(sellerSlug) => BatchRecord[] | null
+  redownloadBatchById(sellerSlug, batchId) => boolean
+}
+```
+
+**Contratos importantes:**
+- `loadBatches` consome envelope `{ seller, count, data }` e retorna `data`.
+- `exportAndBackup` le headers `X-Export-Batch-Id` e `X-GDrive-Status`.
+- Em `401`, chama `onUnauthorized`.
+
 ---
 
-## 8. Views (4 telas)
+## 8. Views (5 telas)
 
 ### 8.1 View "Geral" (default)
 
@@ -418,6 +451,18 @@ Gerenciamento de linhas de receita.
 - Editar grupo/segmento de uma linha
 - Remover linha (cascata para filtros e metas)
 - Validacao de formulario
+
+### 8.5 View "Admin"
+
+Tela protegida por login admin, com duas tabs internas:
+
+- **Sellers** (fluxo existente):
+  - onboarding/configuracao/sync/reprocessamentos
+- **Despesas** (novo):
+  - componente `ExpensesExportTab`
+  - export ZIP por seller/periodo
+  - backup GDrive assincrono
+  - historico de batches com status e re-download por `batch_id`
 
 ---
 
@@ -783,3 +828,33 @@ Se alguma resposta for **NAO**, pare e revise.
 - Normalizar datas para noon (12:00)
 - Consultar este documento antes de alterar KPIs ou graficos
 - Manter CSS Modules para novos componentes
+
+---
+
+## 21. Modulo Despesas (Admin) - Contratos e Gotchas
+
+### Arquivos novos/relevantes
+- `src/hooks/useExpenses.ts`
+- `src/components/ExpensesExportTab.tsx`
+- `src/components/ExpensesExportTab.module.css`
+- `src/components/AdminPanel.tsx` (tab `sellers`/`expenses`)
+
+### Contratos de API usados no frontend
+- `GET /expenses/{seller}/stats`:
+  - usa `pending_review_count` e `auto_categorized_count`
+- `GET /expenses/{seller}/export?...&gdrive_backup=true`:
+  - headers lidos: `X-Export-Batch-Id`, `X-GDrive-Status`
+- `GET /expenses/{seller}/batches`:
+  - resposta em envelope `{ seller, count, data }`
+- `GET /expenses/{seller}/batches/{batch_id}/download`:
+  - re-download por lote (nao por periodo)
+
+### Regras de UX implementadas
+- Export exige confirmacao quando `pending_review_count > 0`.
+- Polling de historico ocorre somente enquanto houver `gdrive_status === "queued"`.
+- Polling e limitado (12 tentativas / ~60s) e nao deve reiniciar em loop automaticamente.
+
+### Cuidados de implementacao
+- Sempre tratar `401` com `onUnauthorized` para voltar ao fluxo de login.
+- `loadBatches` deve extrair `payload.data`; usar o objeto inteiro quebra rendering.
+- `Content-Disposition` pode vir com ou sem aspas; manter fallback de filename no download.

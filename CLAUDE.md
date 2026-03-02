@@ -14,7 +14,8 @@ Sistema de conciliacao automatica entre **Mercado Livre / Mercado Pago** e **Con
 - **Despesa frete** (contas-a-pagar) com custo MercadoEnvios
 - **Baixas** automaticas quando dinheiro e liberado pelo ML
 
-**V3:** Pagamentos sem order (boletos, SaaS, cashback, transferencias) sao classificados automaticamente na tabela `mp_expenses` e exportados como XLSX para o financeiro importar no CA.
+**V3:** Pagamentos sem order (boletos, SaaS, cashback, transferencias) sao classificados automaticamente na tabela `mp_expenses` e exportados em lote.
+O fluxo atual de despesas no Admin inclui export ZIP + backup Google Drive assincrono + historico de batches com re-download deterministico por `batch_id`.
 
 **Fonte de caixa/extrato:** usar **account_statement** (endpoints `release_report` / `bank_report`).
 `settlement_report` nao e a fonte oficial para fechamento diario de caixa.
@@ -138,7 +139,7 @@ lever money/
 │   │   ├── auth_ca.py           # OAuth CA (connect/callback/status)
 │   │   ├── admin.py             # Admin CRUD (sellers, goals, sync, closing)
 │   │   ├── dashboard_api.py     # Dashboard read API (publico)
-│   │   ├── expenses.py          # MP expenses: list, export XLSX, stats, batches
+│   │   ├── expenses/            # MP expenses package: list, stats, export ZIP, batches, closing, legacy bridge
 │   │   ├── queue.py             # Queue monitoring + reconciliation
 │   │   └── health.py            # Health check + debug endpoints
 │   ├── services/
@@ -155,6 +156,7 @@ lever money/
 │   │   ├── onboarding.py        # Seller signup → approve → activate
 │   │   ├── onboarding_backfill.py # Backfill de ativacao (dashboard_ca)
 │   │   ├── legacy_daily_export.py # Export legado diario (release_report → ZIP → upload)
+│   │   ├── gdrive_client.py    # Upload de ZIP de despesas no Google Drive (ROOT/DESPESAS/EMPRESA/YYYY-MM)
 │   │   ├── legacy_bridge.py     # Bridge para formato legado (CSV → XLSX)
 │   │   ├── legacy_engine.py     # Motor de reconciliacao legado (processar_conciliacao)
 │   │   ├── release_report_sync.py # Sync release report → mp_expenses
@@ -164,6 +166,8 @@ lever money/
 │   └── static/
 │       └── install.html         # Landing page self-service install
 ├── dashboard/                   # React SPA (tem seu proprio CLAUDE.md)
+├── migrations/
+│   └── 005_expense_batches_gdrive_snapshot.sql # gdrive_* em expense_batches + snapshot_payload em expense_batch_items
 ├── API_DOCUMENTATION.md         # Documentacao completa da API (endpoints detalhados)
 ├── PLANO.md                     # Plano do projeto v1.8
 ├── FLUXO-DETALHADO.md           # Fluxo detalhado v3.3
@@ -173,6 +177,50 @@ lever money/
 ├── requirements.txt             # Deps Python
 └── .env                         # Segredos (NAO commitar)
 ```
+
+---
+
+## 6. Expenses Export + GDrive (Admin)
+
+### Backend
+- `GET /expenses/{seller_slug}/stats` agora retorna contadores explicitos:
+  - `pending_review_count`
+  - `auto_categorized_count`
+- `GET /expenses/{seller_slug}/export` aceita `gdrive_backup`:
+  - Header sempre presente: `X-Export-Batch-Id`
+  - Header condicional: `X-GDrive-Status` (`queued` ou `skipped_no_drive_root`)
+  - Upload para Drive roda em background (`asyncio.to_thread` + `asyncio.create_task`), sem bloquear o download.
+- `GET /expenses/{seller_slug}/batches` retorna envelope:
+  - `{ seller, count, data }`
+- `GET /expenses/{seller_slug}/batches/{batch_id}/download`:
+  - Reconstroi ZIP via `snapshot_payload` de `expense_batch_items`
+  - Preserva `manifest.csv` e `manifest_pagamentos.csv`
+  - Suporta batch vazio (ZIP com `README.txt`), sem 404 indevido
+  - Ordenacao deterministica por `expense_date` + `expense_id`
+
+### Persistencia
+- Migration `005_expense_batches_gdrive_snapshot.sql` adiciona:
+  - `expense_batches`: `gdrive_status`, `gdrive_folder_link`, `gdrive_file_id`, `gdrive_file_link`, `gdrive_error`, `gdrive_updated_at`
+  - `expense_batch_items`: `snapshot_payload jsonb`
+- `_persist_batch_metadata()` persiste snapshot por item.
+- `update_batch_gdrive_status()` atualiza apenas campos `gdrive_*`.
+
+### Frontend
+- Nova aba **Despesas** no `AdminPanel` com:
+  - seletor seller + mes/ano
+  - card de stats
+  - export com confirmacao quando houver `pending_review`
+  - historico de batches com status de backup e botao de re-download
+- Novo hook `useExpenses`:
+  - `loadStats`
+  - `exportAndBackup`
+  - `loadBatches` (consome `payload.data`)
+  - `redownloadBatchById`
+
+### CORS
+- `app/main.py` expoe headers para o frontend:
+  - `X-Export-Batch-Id`
+  - `X-GDrive-Status`
 
 ---
 

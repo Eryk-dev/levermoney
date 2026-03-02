@@ -11,6 +11,8 @@ Started: Mon Mar  2 19:13:58 -03 2026
 - No venv or type-checker (mypy/pyright) installed; use `python3 -m py_compile` for syntax validation
 - Dashboard typecheck: `cd dashboard && npx tsc -b --noEmit`; lint: `npx eslint <file>`
 - `useExpenses` hook: `loadStats` and `exportAndBackup` accept optional `statusFilter` param (4th positional arg); when provided, dates are skipped
+- `BatchRecord.seller_slug` is always populated; use it for API calls instead of `selectedSlug` when __all__ mode is possible
+- `ALL_SELLERS_VALUE = '__all__'` and `PENDING_STATUS_FILTER` are module-level constants in ExpensesExportTab.tsx
 ---
 
 ## 2026-03-02 - US-001
@@ -47,4 +49,22 @@ Started: Mon Mar  2 19:13:58 -03 2026
   - The `PENDING_STATUS_FILTER` constant is defined inside the component since it's only used there; for US-004 (Todos option) it can be reused
   - `useCallback` dependency array for `fetchStats` only needs `[selectedSlug, loadStats]` now (no month/year)
   - Stats card, batch history table, and polling logic were completely untouched — they work independently of the filter changes
+---
+
+## 2026-03-02 - US-004
+- Added 'Todos' (`__all__`) as first option in seller dropdown
+- When 'Todos' selected, `fetchStats` calls `loadStats` for each active seller in parallel via `Promise.all`, then aggregates totals
+- Per-seller stats stored in `perSellerStatsRef` (ref, not state) to avoid re-render cascades
+- `doExport` iterates `perSellerStatsRef` sequentially, exporting only sellers with `total > 0`
+- Multi-seller export results displayed as a list of batch IDs
+- `fetchBatches` aggregates batches from all sellers, sorted by `created_at` desc
+- Batch history table shows extra "Seller" column when 'Todos' is selected (uses `b.company || b.seller_slug`)
+- `handleRedownload` changed to accept `BatchRecord` and use `batch.seller_slug` (required for __all__ mode)
+- Moved `PENDING_STATUS_FILTER` to module-level constant
+- Files changed: `dashboard/src/components/ExpensesExportTab.tsx`
+- **Learnings for future iterations:**
+  - `BatchRecord.seller_slug` is always populated by the API, safe to use for re-download even in __all__ mode
+  - Using a ref (`perSellerStatsRef`) instead of state for per-seller stats avoids unnecessary re-renders; it's only read during export
+  - The `sellers` prop must be in `useCallback` deps for `fetchStats`/`fetchBatches` when used inside the callback
+  - Pre-existing eslint `react-hooks/set-state-in-effect` warnings in the useEffect patterns are not introduced by these changes
 ---

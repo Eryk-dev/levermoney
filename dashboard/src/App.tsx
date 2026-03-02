@@ -8,6 +8,7 @@ import { ViewToggle, type ViewType } from './components/ViewToggle';
 import { MultiSelect } from './components/MultiSelect';
 import { DatePicker } from './components/DatePicker';
 import { DatePresets } from './components/DatePresets';
+import { MonthSelector } from './components/MonthSelector';
 import { KPICard } from './components/KPICard';
 import { GoalsDashboard } from './components/GoalsDashboard';
 import { GoalSummary } from './components/GoalSummary';
@@ -54,6 +55,9 @@ function App() {
 
   const admin = useAdmin();
 
+  const [metasMonth, setMetasMonth] = useState(() => new Date().getMonth() + 1);
+  const [metasYear, setMetasYear] = useState(() => new Date().getFullYear());
+
   const { yearlyGoals, updateYearlyGoals, setSelectedMonth } = useGoals();
   const { lines, addLine, updateLine, removeLine } = useRevenueLines(yearlyGoals);
 
@@ -90,10 +94,24 @@ function App() {
     setCustomComparisonRange,
     clearCustomComparison,
     toggleGapCatchUp,
-  } = useFilters(data, { yearlyGoals, setSelectedMonth, lines });
+  } = useFilters(data, {
+    yearlyGoals,
+    setSelectedMonth,
+    lines,
+    metasMonth: currentView === 'metas' ? metasMonth : undefined,
+    metasYear: currentView === 'metas' ? metasYear : undefined,
+  });
 
   useEffect(() => {
     try { localStorage.setItem('dashboard-current-view', currentView); } catch { /* ignore */ }
+  }, [currentView]);
+
+  // Reset month override when leaving metas tab
+  useEffect(() => {
+    if (currentView !== 'metas') {
+      setMetasMonth(new Date().getMonth() + 1);
+      setMetasYear(new Date().getFullYear());
+    }
   }, [currentView]);
 
   useEffect(() => {
@@ -618,7 +636,11 @@ function App() {
               nativeMode="sheet"
             />
             <div className={styles.filtersDivider} />
-            <DatePresets value={datePreset} onChange={setDatePreset} />
+            <MonthSelector
+              month={metasMonth}
+              year={metasYear}
+              onChange={(m, y) => { setMetasMonth(m); setMetasYear(y); }}
+            />
             <button
               type="button"
               className={`${styles.catchUpToggle} ${gapCatchUpEnabled ? styles.catchUpOn : styles.catchUpOff}`}
@@ -630,9 +652,13 @@ function App() {
             <button
               type="button"
               className={styles.clearButton}
-              onClick={clearFilters}
+              onClick={() => {
+                clearFilters();
+                setMetasMonth(new Date().getMonth() + 1);
+                setMetasYear(new Date().getFullYear());
+              }}
               title="Limpar filtros"
-              disabled={!hasActiveFilters}
+              disabled={!hasActiveFilters && metasMonth === new Date().getMonth() + 1 && metasYear === new Date().getFullYear()}
             >
               <RotateCcw size={14} />
             </button>
