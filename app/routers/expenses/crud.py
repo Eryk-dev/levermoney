@@ -142,12 +142,16 @@ async def expense_stats(
     seller_slug: str,
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
+    status_filter: str | None = Query(None, description="Comma-separated statuses, e.g. 'pending_review,auto_categorized'"),
 ):
     """Counters by expense_type, expense_direction, and status."""
     db = get_db()
     q = db.table("mp_expenses").select("expense_type, expense_direction, status, amount").eq(
         "seller_slug", seller_slug
     )
+    if status_filter:
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        q = q.in_("status", statuses)
     if date_from:
         q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
     if date_to:

@@ -108,7 +108,7 @@ async def export_expenses(
     seller_slug: str,
     date_from: str | None = Query(None, description="YYYY-MM-DD"),
     date_to: str | None = Query(None, description="YYYY-MM-DD"),
-    status_filter: str | None = Query(None, description="Filter by status (default: all non-exported/non-imported)"),
+    status_filter: str | None = Query(None, description="Comma-separated statuses, e.g. 'pending_review,auto_categorized' (default: all non-exported/non-imported)"),
     mark_exported: bool = Query(False, description="Mark exported rows as 'exported'"),
     gdrive_backup: bool = Query(False, description="Upload ZIP to Google Drive in background"),
 ):
@@ -128,7 +128,8 @@ async def export_expenses(
     q = db.table("mp_expenses").select("*").eq("seller_slug", seller_slug)
 
     if status_filter:
-        q = q.eq("status", status_filter)
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        q = q.in_("status", statuses)
     else:
         q = q.not_.in_("status", ["exported", "imported"])
 
