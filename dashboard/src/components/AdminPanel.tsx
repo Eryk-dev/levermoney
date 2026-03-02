@@ -3,6 +3,7 @@ import { formatBRL } from '../utils/dataParser';
 import { LogOut, RefreshCw, Check, X, Zap, Settings, Copy, ArrowUpCircle, RotateCcw } from 'lucide-react';
 import type { CaAccount, CaCostCenter, ActivateSellerConfig, UpgradeToCAConfig, BackfillStatus } from '../hooks/useAdmin';
 import type { RevenueLine } from '../types';
+import { ExpensesExportTab } from './ExpensesExportTab';
 import styles from './AdminPanel.module.css';
 
 interface Seller {
@@ -219,6 +220,7 @@ export function AdminPanel({
   retryBackfill,
   loadSellers,
 }: AdminPanelProps) {
+  const [adminTab, setAdminTab] = useState<'sellers' | 'expenses'>('sellers');
   const [syncing, setSyncing] = useState(false);
   const [configForm, setConfigForm] = useState<ConfigForm | null>(null);
 
@@ -528,6 +530,31 @@ export function AdminPanel({
         </button>
       </div>
 
+      <div className={styles.modeToggle}>
+        <button
+          type="button"
+          className={`${styles.modeBtn} ${adminTab === 'sellers' ? styles.modeBtnActive : ''}`}
+          onClick={() => setAdminTab('sellers')}
+        >
+          Sellers
+        </button>
+        <button
+          type="button"
+          className={`${styles.modeBtn} ${adminTab === 'expenses' ? styles.modeBtnActive : ''}`}
+          onClick={() => setAdminTab('expenses')}
+        >
+          Despesas
+        </button>
+      </div>
+
+      {adminTab === 'expenses' && (
+        <ExpensesExportTab
+          sellers={sellers.filter(s => s.active)}
+          onLogout={onLogout}
+        />
+      )}
+
+      {adminTab === 'sellers' && (<>
       {/* Install Link Section */}
       <section className={styles.section}>
         <h3>Link de Conexao ML</h3>
@@ -1144,6 +1171,7 @@ export function AdminPanel({
           ))}
         </div>
       </section>
+      </>)}
     </div>
   );
 }
