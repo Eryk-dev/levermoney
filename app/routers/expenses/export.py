@@ -328,6 +328,92 @@ async def list_batches(
     return {"seller": seller_slug, "count": len(result.data or []), "data": result.data or []}
 
 
+# ── Re-download by batch_id ───────────────────────────────────
+
+@router.get("/{seller_slug}/batches/{batch_id}/download", dependencies=[Depends(require_admin)])
+async def redownload_batch(seller_slug: str, batch_id: str):
+    """Re-download a deterministic ZIP for a previously exported batch.
+
+    Uses snapshot_payload from expense_batch_items to reconstruct the XLSX
+    files exactly as they were at export time, regardless of any later edits
+    to mp_expenses.
+    """
+    db = get_db()
+
+    # Verify batch exists for this seller
+    batch = (
+        db.table("expense_batches")
+        .select("batch_id, company")
+        .eq("seller_slug", seller_slug)
+        .eq("batch_id", batch_id)
+        .limit(1)
+        .execute()
+    )
+    if not batch.data:
+        raise HTTPException(status_code=404, detail="Batch not found for this seller")
+
+    # Fetch batch items
+    items_result = (
+        db.table("expense_batch_items")
+        .select("snapshot_payload, expense_direction")
+        .eq("seller_slug", seller_slug)
+        .eq("batch_id", batch_id)
+        .execute()
+    )
+    items = items_result.data or []
+    if not items:
+        raise HTTPException(status_code=404, detail="Batch has no items")
+
+    # Check all items have snapshot_payload for faithful reconstruction
+    missing_snapshot = [it for it in items if not it.get("snapshot_payload")]
+    if missing_snapshot:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Batch has {len(missing_snapshot)} item(s) without snapshot_payload. "
+                "Re-download requires snapshot data captured at export time."
+            ),
+        )
+
+    # Reconstruct rows from snapshot_payload
+    rows = [item["snapshot_payload"] for item in items]
+
+    seller = get_seller_config(db, seller_slug)
+    if not seller:
+        raise HTTPException(status_code=404, detail=f"Seller {seller_slug} not found")
+
+    empresa_nome = batch.data[0].get("company") or seller.get("dashboard_empresa") or seller_slug
+    empresa_dir = _sanitize_path_component(empresa_nome.upper())
+
+    rows_by_day = _group_rows_by_day(rows)
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for day, day_rows in rows_by_day.items():
+            payment_rows = [r for r in day_rows if r.get("expense_direction") in ("expense", "income")]
+            transfer_rows = [r for r in day_rows if r.get("expense_direction") == "transfer"]
+
+            if payment_rows:
+                file_path = f"{empresa_dir}/{day}/PAGAMENTO_CONTAS.xlsx"
+                zf.writestr(file_path, _build_xlsx(payment_rows, seller, "PAGAMENTO_CONTAS").getvalue())
+
+            if transfer_rows:
+                file_path = f"{empresa_dir}/{day}/TRANSFERENCIAS.xlsx"
+                zf.writestr(file_path, _build_xlsx(transfer_rows, seller, "TRANSFERENCIAS").getvalue())
+
+    zip_buf.seek(0)
+    filename = f"despesas_{empresa_dir}_{batch_id}.zip"
+
+    return StreamingResponse(
+        zip_buf,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "X-Export-Batch-Id": batch_id,
+        },
+    )
+
+
 # ── Confirm import ─────────────────────────────────────────────
 
 @router.post("/{seller_slug}/batches/{batch_id}/confirm-import", dependencies=[Depends(require_admin)])
