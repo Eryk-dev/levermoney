@@ -105,6 +105,22 @@ def _batch_tables_available(db) -> bool:
         return False
 
 
+def _build_snapshot_payload(row: dict) -> dict:
+    """Build a snapshot of expense fields needed for deterministic re-download."""
+    return {
+        "date_approved": row.get("date_approved"),
+        "date_created": row.get("date_created"),
+        "expense_direction": row.get("expense_direction"),
+        "amount": row.get("amount"),
+        "ca_category": row.get("ca_category"),
+        "description": row.get("description"),
+        "payment_id": row.get("payment_id"),
+        "external_reference": row.get("external_reference"),
+        "notes": row.get("notes"),
+        "auto_categorized": row.get("auto_categorized"),
+    }
+
+
 def _persist_batch_metadata(
     db,
     batch_id: str,
@@ -114,10 +130,11 @@ def _persist_batch_metadata(
     rows: list[dict],
     date_from: str | None,
     date_to: str | None,
+    gdrive_status: str | None = None,
 ):
     """Persist export batch metadata and item mapping."""
     now = datetime.now().isoformat()
-    db.table("expense_batches").upsert({
+    batch_record: dict = {
         "batch_id": batch_id,
         "seller_slug": seller_slug,
         "company": company,
@@ -128,7 +145,13 @@ def _persist_batch_metadata(
         "date_to": date_to,
         "exported_at": now if status == "exported" else None,
         "updated_at": now,
-    }, on_conflict="batch_id").execute()
+    }
+    if gdrive_status is not None:
+        batch_record["gdrive_status"] = gdrive_status
+        batch_record["gdrive_updated_at"] = now
+    db.table("expense_batches").upsert(
+        batch_record, on_conflict="batch_id"
+    ).execute()
 
     items = []
     for row in rows:
@@ -141,6 +164,7 @@ def _persist_batch_metadata(
             "expense_direction": row.get("expense_direction"),
             "amount_signed": _signed_amount(row),
             "status_snapshot": row.get("status"),
+            "snapshot_payload": _build_snapshot_payload(row),
             "created_at": now,
         })
 
@@ -150,6 +174,24 @@ def _persist_batch_metadata(
             db.table("expense_batch_items").upsert(
                 chunk, on_conflict="batch_id,expense_id"
             ).execute()
+
+
+def update_batch_gdrive_status(db, batch_id: str, gdrive_result: dict) -> None:
+    """Update only the gdrive_* fields of an existing batch."""
+    now = datetime.now().isoformat()
+    status = gdrive_result.get("status", "failed")
+    update: dict = {
+        "gdrive_status": status,
+        "gdrive_updated_at": now,
+        "updated_at": now,
+    }
+    if status == "uploaded":
+        update["gdrive_folder_link"] = gdrive_result.get("folder_link")
+        update["gdrive_file_id"] = gdrive_result.get("file_id")
+        update["gdrive_file_link"] = gdrive_result.get("file_link")
+    elif status == "failed":
+        update["gdrive_error"] = gdrive_result.get("error")
+    db.table("expense_batches").update(update).eq("batch_id", batch_id).execute()
 
 
 # ── Pydantic models ──────────────────────────────────────────
