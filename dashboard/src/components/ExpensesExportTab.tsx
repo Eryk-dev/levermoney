@@ -53,6 +53,13 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
   // Confirmation modal
   const [confirmSlug, setConfirmSlug] = useState<string | null>(null);
 
+  // Global export state
+  const [globalExportProgress, setGlobalExportProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
+  const [globalExportSummary, setGlobalExportSummary] = useState<string[] | null>(null);
+
   // Sorted active sellers (alphabetical by display name)
   const activeSellers = useMemo(
     () =>
@@ -115,6 +122,57 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     },
     [sellerStats, handleExport],
   );
+
+  // Derived: whether any seller has pending expenses
+  const anySellerHasPending = useMemo(
+    () => activeSellers.some((s) => (sellerStats.get(s.slug)?.total ?? 0) > 0),
+    [activeSellers, sellerStats],
+  );
+
+  // Global export: export all sellers with pending expenses sequentially
+  const handleGlobalExport = useCallback(async () => {
+    const sellersWithPending = activeSellers.filter(
+      (s) => (sellerStats.get(s.slug)?.total ?? 0) > 0,
+    );
+    if (sellersWithPending.length === 0) return;
+
+    setGlobalExportSummary(null);
+    const batchIds: string[] = [];
+
+    try {
+      for (let i = 0; i < sellersWithPending.length; i++) {
+        const seller = sellersWithPending[i];
+        setGlobalExportProgress({ current: i + 1, total: sellersWithPending.length });
+        setExportingSlug(seller.slug);
+
+        const result = await exportAndBackup(
+          seller.slug,
+          undefined,
+          undefined,
+          PENDING_STATUS_FILTER,
+        );
+
+        if (result) {
+          batchIds.push(result.batchId);
+          setExportResults((prev) => {
+            const next = new Map(prev);
+            next.set(seller.slug, result);
+            return next;
+          });
+        }
+      }
+    } finally {
+      setExportingSlug(null);
+      setGlobalExportProgress(null);
+    }
+
+    if (batchIds.length > 0) {
+      setGlobalExportSummary(batchIds);
+    }
+
+    // Reload stats for all sellers
+    await Promise.all(activeSellers.map((s) => reloadSellerStats(s.slug)));
+  }, [activeSellers, sellerStats, exportAndBackup, reloadSellerStats]);
 
   // Load stats for all active sellers on mount
   useEffect(() => {
@@ -192,6 +250,39 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
         <div className={styles.loading}>Carregando stats de todos os sellers...</div>
       )}
 
+      {/* Global export button + summary */}
+      {!loadingStats && (
+        <div className={styles.globalExportRow}>
+          <button
+            className={styles.globalExportBtn}
+            disabled={
+              !anySellerHasPending ||
+              exportingSlug !== null ||
+              globalExportProgress !== null
+            }
+            style={globalExportProgress ? { cursor: 'wait' } : undefined}
+            onClick={() => void handleGlobalExport()}
+          >
+            {globalExportProgress
+              ? `Exportando ${globalExportProgress.current}/${globalExportProgress.total}...`
+              : 'Exportar Todos os Pendentes'}
+          </button>
+
+          {globalExportSummary && (
+            <div className={styles.globalSummary}>
+              <span className={styles.statLabel}>
+                {globalExportSummary.length} batch(es) gerados:
+              </span>
+              {globalExportSummary.map((id) => (
+                <span key={id} className={styles.batchIdChip}>
+                  {id.slice(0, 12)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Seller cards grid */}
       {!loadingStats && (
         <div className={styles.sellerGrid}>
@@ -246,7 +337,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
                 {/* Export button */}
                 <button
                   className={styles.exportBtn}
-                  disabled={isEmpty || isExporting || exportingSlug !== null}
+                  disabled={isEmpty || isExporting || exportingSlug !== null || globalExportProgress !== null}
                   style={isExporting ? { cursor: 'wait' } : undefined}
                   onClick={() => onExportClick(seller.slug)}
                 >

@@ -43,3 +43,20 @@ Started: Mon Mar  2 19:59:56 -03 2026
   - Confirmation modal pattern: store slug in confirmSlug state, null to close; on confirm, clear state then trigger async export
   - gdriveLabel helper maps backend statuses to display labels (e.g., 'skipped_no_drive_root' → 'skipped')
 ---
+
+## 2026-03-02 22:30 - US-005
+- Added global 'Exportar Todos os Pendentes' button above the seller cards grid
+- Button executes exportAndBackup sequentially for each seller with total > 0
+- Shows live progress 'Exportando N/M...' during global export
+- Disabled when: no sellers have pending, or any individual/global export in progress
+- After completion, shows summary with batch_id chips (blue pills, monospace, 12 chars)
+- Stats auto-reload for all sellers after global export completes via Promise.all
+- Individual export buttons also disabled during global export (globalExportProgress !== null check)
+- Added CSS: .globalExportRow, .globalExportBtn, .globalSummary, .batchIdChip
+- Files changed: dashboard/src/components/ExpensesExportTab.tsx, dashboard/src/components/ExpensesExportTab.module.css
+- **Learnings for future iterations:**
+  - globalExportProgress state (current/total) is separate from exportingSlug to allow both tracking which seller is exporting AND global progress display
+  - During global export, exportingSlug is updated per seller in the loop, so individual card buttons show 'Exportando...' for the current seller
+  - anySellerHasPending uses useMemo to avoid recomputing on every render
+  - The global export handler uses try/finally to always clean up both exportingSlug and globalExportProgress even if an error occurs mid-sequence
+---
