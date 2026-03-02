@@ -6,7 +6,12 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from app.db.supabase import get_db
-from app.models.sellers import CA_CATEGORIES, CA_CONTATO_ML, get_seller_config
+from app.models.sellers import (
+    CA_CATEGORIES,
+    CA_CONTATO_ML,
+    get_missing_ca_launch_fields,
+    get_seller_config,
+)
 from app.services import ml_api, ca_queue
 
 logger = logging.getLogger(__name__)
@@ -215,6 +220,20 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
         logger.info(f"Payment {payment_id} has collector_id={collector_id}, skipping (purchase, not sale)")
         _upsert_payment(db, seller_slug, payment, "skipped_non_sale")
         return
+
+    # Only sellers with full CA launch config can create CA entries/jobs.
+    if status in ("approved", "in_mediation", "refunded", "charged_back"):
+        missing_ca_fields = get_missing_ca_launch_fields(seller)
+        if missing_ca_fields:
+            reason = f"missing_ca_config:{','.join(missing_ca_fields)}"
+            logger.warning(
+                "Payment %s seller %s skipped: %s",
+                payment_id,
+                seller_slug,
+                reason,
+            )
+            _upsert_payment(db, seller_slug, payment, "skipped", error=reason)
+            return
 
     if status in ("approved", "in_mediation"):
         await _process_approved(db, seller, payment, existing.data)

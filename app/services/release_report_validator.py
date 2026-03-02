@@ -12,7 +12,12 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from app.db.supabase import get_db
-from app.models.sellers import CA_CATEGORIES, get_all_active_sellers, get_seller_config
+from app.models.sellers import (
+    CA_CATEGORIES,
+    get_all_active_sellers,
+    get_missing_ca_launch_fields,
+    get_seller_config,
+)
 from app.services import ca_queue, ml_api
 from app.services.ca_api import CA_API
 from app.services.processor import _build_despesa_payload
@@ -154,6 +159,28 @@ async def validate_release_fees_for_seller(
     seller = get_seller_config(db, seller_slug)
     if not seller:
         return {"seller": seller_slug, "error": "seller_not_found"}
+
+    missing_ca_fields = get_missing_ca_launch_fields(seller)
+    if missing_ca_fields:
+        logger.info(
+            "release_report_validator %s: skipping adjustments, missing CA fields: %s",
+            seller_slug,
+            ",".join(missing_ca_fields),
+        )
+        return {
+            "seller": seller_slug,
+            "total_rows": 0,
+            "payment_rows": 0,
+            "adjustments_created": 0,
+            "payments_adjusted": 0,
+            "already_adjusted": 0,
+            "not_in_payments": 0,
+            "no_diff": 0,
+            "fee_overcharged": 0,
+            "breakdown": {},
+            "skipped_missing_ca_config": True,
+            "missing_fields": missing_ca_fields,
+        }
 
     csv_bytes = await _get_or_create_report(seller_slug, begin_date, end_date)
     if not csv_bytes:

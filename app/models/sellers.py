@@ -50,3 +50,21 @@ def get_all_active_sellers(db) -> list[dict]:
     if not allowlist:
         return sellers
     return [s for s in sellers if (s.get("slug") or "").lower() in allowlist]
+
+
+def get_missing_ca_launch_fields(seller: dict | None) -> list[str]:
+    """Return required CA launch fields that are missing for a seller."""
+    if not seller:
+        return ["ca_conta_bancaria", "ca_centro_custo_variavel"]
+
+    missing: list[str] = []
+    if not str(seller.get("ca_conta_bancaria") or "").strip():
+        missing.append("ca_conta_bancaria")
+    if not str(seller.get("ca_centro_custo_variavel") or "").strip():
+        missing.append("ca_centro_custo_variavel")
+    return missing
+
+
+def has_ca_launch_config(seller: dict | None) -> bool:
+    """Whether seller has the minimum CA configuration required to launch entries."""
+    return len(get_missing_ca_launch_fields(seller)) == 0

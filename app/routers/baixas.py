@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Query
 
 from app.db.supabase import get_db
-from app.models.sellers import get_seller_config
+from app.models.sellers import get_missing_ca_launch_fields, get_seller_config
 from app.services import ca_api, ca_queue
 from app.services.release_checker import ReleaseChecker, _is_refund_or_estorno
 
@@ -48,6 +48,22 @@ async def processar_baixas(
     seller = get_seller_config(db, seller_slug)
     if not seller:
         return {"error": f"Seller {seller_slug} not found"}
+
+    missing_ca_fields = get_missing_ca_launch_fields(seller)
+    if missing_ca_fields:
+        reason = "missing_ca_launch_config"
+        logger.warning(
+            "processar_baixas(%s): skipped, missing CA fields: %s",
+            seller_slug,
+            ",".join(missing_ca_fields),
+        )
+        return {
+            "mode": "dry_run" if dry_run else "process",
+            "seller": seller_slug,
+            "status": "skipped",
+            "reason": reason,
+            "missing_fields": missing_ca_fields,
+        }
 
     today = datetime.now().strftime("%Y-%m-%d")
     data_ate = data_ate or today
@@ -228,6 +244,22 @@ async def processar_baixas_auto(seller_slug: str) -> dict:
     if not seller:
         logger.error(f"processar_baixas_auto: seller {seller_slug} not found")
         return {"error": f"Seller {seller_slug} not found"}
+
+    missing_ca_fields = get_missing_ca_launch_fields(seller)
+    if missing_ca_fields:
+        logger.warning(
+            "processar_baixas_auto(%s): skipped, missing CA fields: %s",
+            seller_slug,
+            ",".join(missing_ca_fields),
+        )
+        return {
+            "seller": seller_slug,
+            "queued": 0,
+            "skipped": 0,
+            "status": "skipped",
+            "reason": "missing_ca_launch_config",
+            "missing_fields": missing_ca_fields,
+        }
 
     today = datetime.now().strftime("%Y-%m-%d")
     data_de = (datetime.now() - timedelta(days=DEFAULT_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
