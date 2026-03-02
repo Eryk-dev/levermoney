@@ -19,38 +19,8 @@ interface ExpensesExportTabProps {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-const MONTH_NAMES = [
-  'Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
-];
-
-function getDefaultPeriod(): { month: number; year: number } {
-  const now = new Date();
-  // Default = previous month
-  let month = now.getMonth(); // 0-indexed, so getMonth() for current gives prev-month in 1-indexed
-  let year = now.getFullYear();
-  if (month === 0) {
-    month = 12;
-    year -= 1;
-  }
-  return { month, year };
-}
-
-function buildDateRange(month: number, year: number): { dateFrom: string; dateTo: string } {
-  const dateFrom = `${year}-${String(month).padStart(2, '0')}-01`;
-  // Last day of the month
-  const lastDay = new Date(year, month, 0).getDate();
-  const dateTo = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-  return { dateFrom, dateTo };
-}
-
 function formatBRL(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function generateYears(): number[] {
-  const current = new Date().getFullYear();
-  return [current - 2, current - 1, current, current + 1];
 }
 
 function formatDateTime(iso: string): string {
@@ -73,9 +43,6 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
 
   // Filters
   const [selectedSlug, setSelectedSlug] = useState('');
-  const defaultPeriod = getDefaultPeriod();
-  const [month, setMonth] = useState(defaultPeriod.month);
-  const [year, setYear] = useState(defaultPeriod.year);
 
   // Stats
   const [stats, setStats] = useState<ExpenseStats | null>(null);
@@ -100,7 +67,9 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     .filter((s) => s.active)
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Load stats when seller or period changes
+  const PENDING_STATUS_FILTER = 'pending_review,auto_categorized';
+
+  // Load stats when seller changes
   const fetchStats = useCallback(async () => {
     if (!selectedSlug) {
       setStats(null);
@@ -108,11 +77,10 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     }
     setLoadingStats(true);
     setExportResult(null);
-    const { dateFrom, dateTo } = buildDateRange(month, year);
-    const result = await loadStats(selectedSlug, dateFrom, dateTo);
+    const result = await loadStats(selectedSlug, undefined, undefined, PENDING_STATUS_FILTER);
     setStats(result);
     setLoadingStats(false);
-  }, [selectedSlug, month, year, loadStats]);
+  }, [selectedSlug, loadStats]);
 
   useEffect(() => {
     void fetchStats();
@@ -139,8 +107,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     if (!selectedSlug) return;
     setExporting(true);
     setShowConfirm(false);
-    const { dateFrom, dateTo } = buildDateRange(month, year);
-    const result = await exportAndBackup(selectedSlug, dateFrom, dateTo);
+    const result = await exportAndBackup(selectedSlug, undefined, undefined, PENDING_STATUS_FILTER);
     setExportResult(result);
     setExporting(false);
     void fetchBatches();
@@ -232,28 +199,6 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
             ))}
           </select>
         </div>
-        <div className={styles.filterGroup}>
-          <label>Mes</label>
-          <select
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
-          >
-            {MONTH_NAMES.map((name, i) => (
-              <option key={i + 1} value={i + 1}>{name}</option>
-            ))}
-          </select>
-        </div>
-        <div className={styles.filterGroup}>
-          <label>Ano</label>
-          <select
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-          >
-            {generateYears().map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-        </div>
       </div>
 
       {/* Stats */}
@@ -290,7 +235,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
           disabled={exportDisabled}
           onClick={handleExportClick}
         >
-          {exporting ? 'Exportando...' : 'Exportar e baixar'}
+          {exporting ? 'Exportando...' : 'Exportar Pendentes'}
         </button>
 
         {exportResult && (
