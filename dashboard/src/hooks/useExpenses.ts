@@ -71,11 +71,18 @@ export function useExpenses({ onUnauthorized }: UseExpensesOptions = {}) {
   const loadStats = useCallback(
     async (
       sellerSlug: string,
-      dateFrom: string,
-      dateTo: string,
+      dateFrom?: string,
+      dateTo?: string,
+      statusFilter?: string,
     ): Promise<ExpenseStats | null> => {
       try {
-        const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+        const params = new URLSearchParams();
+        if (statusFilter) {
+          params.set('status_filter', statusFilter);
+        } else {
+          if (dateFrom) params.set('date_from', dateFrom);
+          if (dateTo) params.set('date_to', dateTo);
+        }
         const res = await fetch(
           `${API_BASE}/expenses/${sellerSlug}/stats?${params}`,
           { headers: authHeaders(), cache: 'no-store' },
@@ -96,16 +103,21 @@ export function useExpenses({ onUnauthorized }: UseExpensesOptions = {}) {
   const exportAndBackup = useCallback(
     async (
       sellerSlug: string,
-      dateFrom: string,
-      dateTo: string,
+      dateFrom?: string,
+      dateTo?: string,
+      statusFilter?: string,
     ): Promise<ExportResult | null> => {
       try {
         const params = new URLSearchParams({
           mark_exported: 'true',
           gdrive_backup: 'true',
-          date_from: dateFrom,
-          date_to: dateTo,
         });
+        if (statusFilter) {
+          params.set('status_filter', statusFilter);
+        } else {
+          if (dateFrom) params.set('date_from', dateFrom);
+          if (dateTo) params.set('date_to', dateTo);
+        }
         const res = await fetch(
           `${API_BASE}/expenses/${sellerSlug}/export?${params}`,
           { headers: authHeaders(), cache: 'no-store' },
@@ -122,7 +134,10 @@ export function useExpenses({ onUnauthorized }: UseExpensesOptions = {}) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `expenses-${sellerSlug}-${dateFrom}-${dateTo}.zip`;
+        const filename = dateFrom && dateTo
+          ? `expenses-${sellerSlug}-${dateFrom}-${dateTo}.zip`
+          : `expenses-${sellerSlug}-pending.zip`;
+        a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
