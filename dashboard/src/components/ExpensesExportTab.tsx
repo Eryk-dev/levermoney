@@ -93,6 +93,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
   const [downloadingBatch, setDownloadingBatch] = useState<string | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
+  const pollLimitReachedRef = useRef(false);
 
   // Sorted active sellers
   const activeSellers = sellers
@@ -156,32 +157,55 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
   const exportDisabled = !selectedSlug || loadingStats || !stats || stats.total === 0 || exporting;
 
   // ── Polling for queued batches ──────────────────────────────
-  const stopPolling = useCallback(() => {
+  const clearPollingInterval = useCallback(() => {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
-    pollCountRef.current = 0;
   }, []);
+
+  const stopPolling = useCallback((resetAttempts = true) => {
+    clearPollingInterval();
+    if (resetAttempts) {
+      pollCountRef.current = 0;
+      pollLimitReachedRef.current = false;
+    }
+  }, [clearPollingInterval]);
+
+  const startPolling = useCallback(() => {
+    if (pollIntervalRef.current) return;
+    pollIntervalRef.current = setInterval(async () => {
+      pollCountRef.current += 1;
+      const result = await fetchBatches();
+      const stillQueued = result?.some((b) => b.gdrive_status === 'queued');
+      if (!stillQueued) {
+        stopPolling(true);
+        return;
+      }
+      if (pollCountRef.current >= MAX_POLL_ATTEMPTS) {
+        pollLimitReachedRef.current = true;
+        clearPollingInterval();
+      }
+    }, POLL_INTERVAL_MS);
+  }, [clearPollingInterval, fetchBatches, stopPolling]);
 
   useEffect(() => {
     const hasQueued = batches.some((b) => b.gdrive_status === 'queued');
-    if (hasQueued && !pollIntervalRef.current) {
-      pollCountRef.current = 0;
-      pollIntervalRef.current = setInterval(async () => {
-        pollCountRef.current += 1;
-        const result = await fetchBatches();
-        const stillQueued = result?.some((b) => b.gdrive_status === 'queued');
-        if (!stillQueued || pollCountRef.current >= MAX_POLL_ATTEMPTS) {
-          stopPolling();
-        }
-      }, POLL_INTERVAL_MS);
-    } else if (!hasQueued) {
-      stopPolling();
+    if (hasQueued) {
+      // Respect max attempts even across state refreshes.
+      if (!pollLimitReachedRef.current && pollCountRef.current < MAX_POLL_ATTEMPTS) {
+        startPolling();
+      }
+    } else {
+      stopPolling(true);
     }
+  }, [batches, startPolling, stopPolling]);
 
-    return () => stopPolling();
-  }, [batches, fetchBatches, stopPolling]);
+  useEffect(() => {
+    return () => {
+      stopPolling(true);
+    };
+  }, [stopPolling]);
 
   // ── Re-download handler ────────────────────────────────────
   const handleRedownload = async (batchId: string) => {

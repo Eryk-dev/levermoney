@@ -20,7 +20,6 @@ export interface ExportResult {
 }
 
 export interface BatchRecord {
-  id: string;
   batch_id: string;
   seller_slug: string;
   company: string;
@@ -33,6 +32,12 @@ export interface BatchRecord {
   gdrive_status: string | null;
   gdrive_folder_link: string | null;
   gdrive_file_link: string | null;
+}
+
+interface BatchesResponse {
+  seller: string;
+  count: number;
+  data: BatchRecord[];
 }
 
 // ── Constants ────────────────────────────────────────────────────
@@ -144,7 +149,8 @@ export function useExpenses({ onUnauthorized }: UseExpensesOptions = {}) {
         );
         if (res.status === 401) { handleUnauthorized(); return null; }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return (await res.json()) as BatchRecord[];
+        const payload = (await res.json()) as BatchesResponse;
+        return payload.data ?? [];
       } catch (e) {
         console.error('useExpenses.loadBatches failed:', e);
         return null;

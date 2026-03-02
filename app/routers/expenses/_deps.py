@@ -111,6 +111,8 @@ def _build_snapshot_payload(row: dict) -> dict:
         "date_approved": row.get("date_approved"),
         "date_created": row.get("date_created"),
         "expense_direction": row.get("expense_direction"),
+        "expense_type": row.get("expense_type"),
+        "status": row.get("status"),
         "amount": row.get("amount"),
         "ca_category": row.get("ca_category"),
         "description": row.get("description"),

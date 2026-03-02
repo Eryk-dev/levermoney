@@ -341,28 +341,65 @@ async def redownload_batch(seller_slug: str, batch_id: str):
     db = get_db()
 
     # Verify batch exists for this seller
-    batch = (
+    batch_result = (
         db.table("expense_batches")
-        .select("batch_id, company")
+        .select("batch_id, company, rows_count, date_from, date_to")
         .eq("seller_slug", seller_slug)
         .eq("batch_id", batch_id)
         .limit(1)
         .execute()
     )
-    if not batch.data:
+    if not batch_result.data:
         raise HTTPException(status_code=404, detail="Batch not found for this seller")
+    batch = batch_result.data[0]
 
-    # Fetch batch items
+    # Fetch batch items in deterministic order
     items_result = (
         db.table("expense_batch_items")
-        .select("snapshot_payload, expense_direction")
+        .select("snapshot_payload, expense_id, expense_date")
         .eq("seller_slug", seller_slug)
         .eq("batch_id", batch_id)
+        .order("expense_date", desc=False)
+        .order("expense_id", desc=False)
         .execute()
     )
     items = items_result.data or []
+
+    seller = get_seller_config(db, seller_slug)
+    if not seller:
+        raise HTTPException(status_code=404, detail=f"Seller {seller_slug} not found")
+
+    empresa_nome = batch.get("company") or seller.get("dashboard_empresa") or seller_slug
+    empresa_dir = _sanitize_path_component(empresa_nome.upper())
+    filename = f"despesas_{empresa_dir}_{batch_id}.zip"
+
+    # Batches with zero rows are valid and should still be re-downloadable.
     if not items:
-        raise HTTPException(status_code=404, detail="Batch has no items")
+        if int(batch.get("rows_count") or 0) != 0:
+            raise HTTPException(status_code=404, detail="Batch has no items")
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            manifest_content = "arquivo,linhas,valor_total\n"
+            manifest_content += f"batch_id,{batch_id},,\n"
+            zf.writestr(f"{empresa_dir}/manifest.csv", manifest_content)
+            zf.writestr(
+                f"{empresa_dir}/manifest_pagamentos.csv",
+                "empresa,data,arquivo,payment_id,valor,direcao,tipo,categoria,status\n",
+            )
+            zf.writestr(
+                f"{empresa_dir}/README.txt",
+                "Nenhuma linha encontrada para os filtros informados.\n",
+            )
+        zip_buf.seek(0)
+        return StreamingResponse(
+            zip_buf,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "X-Export-Batch-Id": batch_id,
+            },
+        )
 
     # Check all items have snapshot_payload for faithful reconstruction
     missing_snapshot = [it for it in items if not it.get("snapshot_payload")]
@@ -377,15 +414,11 @@ async def redownload_batch(seller_slug: str, batch_id: str):
 
     # Reconstruct rows from snapshot_payload
     rows = [item["snapshot_payload"] for item in items]
-
-    seller = get_seller_config(db, seller_slug)
-    if not seller:
-        raise HTTPException(status_code=404, detail=f"Seller {seller_slug} not found")
-
-    empresa_nome = batch.data[0].get("company") or seller.get("dashboard_empresa") or seller_slug
-    empresa_dir = _sanitize_path_component(empresa_nome.upper())
-
     rows_by_day = _group_rows_by_day(rows)
+
+    manifest_rows: list[tuple[str, int, float]] = []
+    payment_manifest_rows: list[tuple[str, str, int | None, float, str, str, str, str]] = []
+    written_files = 0
 
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -396,13 +429,56 @@ async def redownload_batch(seller_slug: str, batch_id: str):
             if payment_rows:
                 file_path = f"{empresa_dir}/{day}/PAGAMENTO_CONTAS.xlsx"
                 zf.writestr(file_path, _build_xlsx(payment_rows, seller, "PAGAMENTO_CONTAS").getvalue())
+                written_files += 1
+                manifest_rows.append((file_path, len(payment_rows), round(sum(_signed_amount(r) for r in payment_rows), 2)))
+                for row in payment_rows:
+                    payment_manifest_rows.append((
+                        day,
+                        "PAGAMENTO_CONTAS.xlsx",
+                        row.get("payment_id"),
+                        _signed_amount(row),
+                        row.get("expense_direction") or "",
+                        row.get("expense_type") or "",
+                        row.get("ca_category") or "",
+                        row.get("status") or "",
+                    ))
 
             if transfer_rows:
                 file_path = f"{empresa_dir}/{day}/TRANSFERENCIAS.xlsx"
                 zf.writestr(file_path, _build_xlsx(transfer_rows, seller, "TRANSFERENCIAS").getvalue())
+                written_files += 1
+                manifest_rows.append((file_path, len(transfer_rows), round(sum(_signed_amount(r) for r in transfer_rows), 2)))
+                for row in transfer_rows:
+                    payment_manifest_rows.append((
+                        day,
+                        "TRANSFERENCIAS.xlsx",
+                        row.get("payment_id"),
+                        _signed_amount(row),
+                        row.get("expense_direction") or "",
+                        row.get("expense_type") or "",
+                        row.get("ca_category") or "",
+                        row.get("status") or "",
+                    ))
+
+        manifest_content = "arquivo,linhas,valor_total\n"
+        manifest_content += f"batch_id,{batch_id},,\n"
+        for path, row_count, total in manifest_rows:
+            manifest_content += f"{path},{row_count},{total:.2f}\n"
+        zf.writestr(f"{empresa_dir}/manifest.csv", manifest_content)
+
+        payments_manifest = "empresa,data,arquivo,payment_id,valor,direcao,tipo,categoria,status\n"
+        for day, arquivo, payment_id, valor, direcao, tipo, categoria, status in payment_manifest_rows:
+            payments_manifest += (
+                f"{_safe_csv(empresa_nome)},{_safe_csv(day)},{_safe_csv(arquivo)},"
+                f"{_safe_csv(payment_id)},{valor:.2f},{_safe_csv(direcao)},"
+                f"{_safe_csv(tipo)},{_safe_csv(categoria)},{_safe_csv(status)}\n"
+            )
+        zf.writestr(f"{empresa_dir}/manifest_pagamentos.csv", payments_manifest)
+
+        if written_files == 0:
+            zf.writestr(f"{empresa_dir}/README.txt", "Nenhuma linha encontrada para os filtros informados.\n")
 
     zip_buf.seek(0)
-    filename = f"despesas_{empresa_dir}_{batch_id}.zip"
 
     return StreamingResponse(
         zip_buf,
