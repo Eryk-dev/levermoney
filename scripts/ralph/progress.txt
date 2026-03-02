@@ -1,70 +1,26 @@
 # Ralph Progress Log
-Started: Mon Mar  2 19:13:58 -03 2026
----
+Started: Mon Mar  2 19:59:56 -03 2026
 
 ## Codebase Patterns
-- Expenses router is a package at `app/routers/expenses/` with sub-modules: crud.py (list, review, stats), export.py (export ZIP, batches, re-download), closing.py, legacy.py
-- Shared helpers/constants/models live in `app/routers/expenses/_deps.py`
-- Supabase queries use chained builder: `db.table("mp_expenses").select("*").eq(col, val).in_(col, list).execute()`
-- Stats endpoint already returns `pending_review_count` and `auto_categorized_count` from `by_status` dict
-- Export endpoint default fallback excludes `exported` and `imported` statuses via `.not_.in_("status", [...])`
-- No venv or type-checker (mypy/pyright) installed; use `python3 -m py_compile` for syntax validation
-- Dashboard typecheck: `cd dashboard && npx tsc -b --noEmit`; lint: `npx eslint <file>`
-- `useExpenses` hook: `loadStats` and `exportAndBackup` accept optional `statusFilter` param (4th positional arg); when provided, dates are skipped
-- `BatchRecord.seller_slug` is always populated; use it for API calls instead of `selectedSlug` when __all__ mode is possible
-- `ALL_SELLERS_VALUE = '__all__'` and `PENDING_STATUS_FILTER` are module-level constants in ExpensesExportTab.tsx
+- ExpensesExportTab receives `sellers: Seller[]` and `onLogout` from AdminPanel; filter active sellers inside the component
+- useExpenses hook provides loadStats, exportAndBackup, loadBatches, redownloadBatchById - all accept sellerSlug as first param
+- loadStats supports optional `statusFilter` param (4th arg) - when provided, dates are not sent
+- CSS uses CSS custom properties (--space-N, --text-xs, --ink, --ink-muted, --surface, --paper, --border) from global styles
+- Dashboard uses CSS Modules (*.module.css), no Tailwind
+- `dashboard_empresa` is the display name for sellers; fallback to `name` if not set
+- PENDING_STATUS_FILTER = 'pending_review,auto_categorized' is the standard filter for pending expenses
 ---
 
-## 2026-03-02 - US-001
-- Added `status_filter` query param to `GET /expenses/{seller_slug}/stats` (crud.py)
-- Changed `status_filter` handling in `GET /expenses/{seller_slug}/export` (export.py) from `.eq()` to `.in_()` for comma-separated support
-- Files changed: `app/routers/expenses/crud.py`, `app/routers/expenses/export.py`
+## 2026-03-02 20:05 - US-003
+- Restructured ExpensesExportTab from dropdown-based to seller cards grid
+- Removed: seller dropdown, selectedSlug state, ALL_SELLERS_VALUE constant, batch history table, export button, polling logic, confirmation modal
+- Added: CSS Grid layout (auto-fill, minmax 280px), per-seller stats Map, parallel Promise.all stats loading on mount
+- Each card shows: seller name (dashboard_empresa || name), total expenses, total amount (R$ formatted), pending_review_count, auto_categorized_count
+- Cards with total === 0 have opacity: 0.5
+- Files changed: dashboard/src/components/ExpensesExportTab.tsx, dashboard/src/components/ExpensesExportTab.module.css
 - **Learnings for future iterations:**
-  - The export endpoint already had a `status_filter` param but only supported a single value via `.eq()` — changed to `.in_()` with comma-split
-  - `date_from`/`date_to` were already optional (default None) in both endpoints, so no changes needed for that
-  - Both status_filter and date filters can be combined (they're not mutually exclusive at the backend level)
----
-
-## 2026-03-02 - US-002
-- Updated `loadStats` signature: `dateFrom` and `dateTo` now optional, added optional `statusFilter` param
-- When `statusFilter` provided, sends `status_filter` query param and skips `date_from/date_to`
-- Updated `exportAndBackup` with same pattern; download filename falls back to `expenses-{seller}-pending.zip` when no dates
-- Files changed: `dashboard/src/hooks/useExpenses.ts`
-- **Learnings for future iterations:**
-  - `ExpenseStats` type already has `pending_review_count` and `auto_categorized_count` — no type changes needed
-  - Making positional params optional (string → string | undefined) preserves backward compatibility with existing callers
-  - `tsc -b --noEmit` is the typecheck command for the dashboard (Vite + TS)
-  - US-003 will need to update `ExpensesExportTab.tsx` to use `statusFilter` instead of `dateFrom/dateTo` in `fetchStats` and `doExport`
----
-
-## 2026-03-02 - US-003
-- Removed month/year filter dropdowns from ExpensesExportTab
-- Removed state: `month`, `year`, `defaultPeriod`; removed helpers: `MONTH_NAMES`, `getDefaultPeriod`, `buildDateRange`, `generateYears`
-- `fetchStats` now calls `loadStats(slug, undefined, undefined, 'pending_review,auto_categorized')`
-- `doExport` now calls `exportAndBackup(slug, undefined, undefined, 'pending_review,auto_categorized')`
-- Export button renamed from "Exportar e baixar" to "Exportar Pendentes"
-- Button disabled logic (`stats.total === 0`) and confirmation modal unchanged
-- Files changed: `dashboard/src/components/ExpensesExportTab.tsx`
-- **Learnings for future iterations:**
-  - The `PENDING_STATUS_FILTER` constant is defined inside the component since it's only used there; for US-004 (Todos option) it can be reused
-  - `useCallback` dependency array for `fetchStats` only needs `[selectedSlug, loadStats]` now (no month/year)
-  - Stats card, batch history table, and polling logic were completely untouched — they work independently of the filter changes
----
-
-## 2026-03-02 - US-004
-- Added 'Todos' (`__all__`) as first option in seller dropdown
-- When 'Todos' selected, `fetchStats` calls `loadStats` for each active seller in parallel via `Promise.all`, then aggregates totals
-- Per-seller stats stored in `perSellerStatsRef` (ref, not state) to avoid re-render cascades
-- `doExport` iterates `perSellerStatsRef` sequentially, exporting only sellers with `total > 0`
-- Multi-seller export results displayed as a list of batch IDs
-- `fetchBatches` aggregates batches from all sellers, sorted by `created_at` desc
-- Batch history table shows extra "Seller" column when 'Todos' is selected (uses `b.company || b.seller_slug`)
-- `handleRedownload` changed to accept `BatchRecord` and use `batch.seller_slug` (required for __all__ mode)
-- Moved `PENDING_STATUS_FILTER` to module-level constant
-- Files changed: `dashboard/src/components/ExpensesExportTab.tsx`
-- **Learnings for future iterations:**
-  - `BatchRecord.seller_slug` is always populated by the API, safe to use for re-download even in __all__ mode
-  - Using a ref (`perSellerStatsRef`) instead of state for per-seller stats avoids unnecessary re-renders; it's only read during export
-  - The `sellers` prop must be in `useCallback` deps for `fetchStats`/`fetchBatches` when used inside the callback
-  - Pre-existing eslint `react-hooks/set-state-in-effect` warnings in the useEffect patterns are not introduced by these changes
+  - activeSellers must be memoized with useMemo to avoid infinite re-renders in the useEffect dependency array
+  - The useExpenses hook functions (loadStats etc) are stable via useCallback, safe to use in deps
+  - Removed batch/export/modal code for clean US-003; US-004/005/006 will add export buttons and batch history per-card
+  - Keep CSS module classes minimal - future stories will add .exportBtn, .historySection etc. back into the card structure
 ---
