@@ -1,6 +1,7 @@
 """
 Expenses export endpoints: XLSX/ZIP export, batches list, and confirm-import.
 """
+import asyncio
 import io
 import logging
 import zipfile
@@ -12,15 +13,17 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 
 from app.db.supabase import get_db
+from app.config import settings
 from app.models.sellers import get_seller_config
 from app.routers.admin import require_admin
+from app.services.gdrive_client import upload_expenses_zip
 from ._deps import (
     MP_CONTATO, MP_CNPJ, ML_CONTATO, ML_CNPJ,
     ConfirmImportRequest,
     _to_brt_date_str, _to_brt_iso_date,
     _get_centro_custo_name, _sanitize_path_component,
     _signed_amount, _group_rows_by_day, _safe_csv,
-    _batch_tables_available, _persist_batch_metadata,
+    _batch_tables_available, _persist_batch_metadata, update_batch_gdrive_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,6 +110,7 @@ async def export_expenses(
     date_to: str | None = Query(None, description="YYYY-MM-DD"),
     status_filter: str | None = Query(None, description="Filter by status (default: all non-exported/non-imported)"),
     mark_exported: bool = Query(False, description="Mark exported rows as 'exported'"),
+    gdrive_backup: bool = Query(False, description="Upload ZIP to Google Drive in background"),
 ):
     """Generate ZIP with folder structure: EMPRESA/YYYY-MM-DD/*.xlsx.
 
@@ -220,6 +224,12 @@ async def export_expenses(
             }).in_("id", chunk).execute()
         logger.info(f"Marked {len(ids)} expenses as exported for {seller_slug}")
 
+    # Determine gdrive_status for batch persistence
+    gdrive_initial_status: str | None = None
+    drive_configured = bool((settings.legacy_daily_google_drive_root_folder_id or "").strip())
+    if gdrive_backup:
+        gdrive_initial_status = "queued" if drive_configured else "skipped_no_drive_root"
+
     if _batch_tables_available(db):
         try:
             _persist_batch_metadata(
@@ -231,6 +241,7 @@ async def export_expenses(
                 rows=rows,
                 date_from=date_from,
                 date_to=date_to,
+                gdrive_status=gdrive_initial_status,
             )
         except Exception as e:
             logger.warning(f"Failed to persist batch metadata {batch_id}: {e}")
@@ -242,13 +253,53 @@ async def export_expenses(
     date_suffix = f"{date_from or 'all'}_{date_to or 'now'}"
     filename = f"despesas_{empresa_dir}_{date_suffix}.zip"
 
+    # Schedule background GDrive upload if requested and Drive is configured
+    if gdrive_backup and drive_configured:
+        zip_bytes_copy = zip_buf.getvalue()
+
+        async def _background_gdrive_upload() -> None:
+            try:
+                result = await asyncio.to_thread(
+                    upload_expenses_zip,
+                    seller_slug=seller_slug,
+                    seller=seller,
+                    zip_bytes=zip_bytes_copy,
+                    date_from=date_from,
+                    date_to=date_to,
+                    filename=filename,
+                )
+                bg_db = get_db()
+                update_batch_gdrive_status(bg_db, batch_id, result)
+                logger.info(
+                    "GDrive background upload for batch %s: %s",
+                    batch_id, result.get("status"),
+                )
+            except Exception as exc:
+                logger.error(
+                    "GDrive background upload failed for batch %s: %s",
+                    batch_id, exc, exc_info=True,
+                )
+                try:
+                    bg_db = get_db()
+                    update_batch_gdrive_status(
+                        bg_db, batch_id, {"status": "failed", "error": str(exc)},
+                    )
+                except Exception:
+                    pass
+
+        asyncio.create_task(_background_gdrive_upload())
+
+    response_headers: dict[str, str] = {
+        "Content-Disposition": f"attachment; filename={filename}",
+        "X-Export-Batch-Id": batch_id,
+    }
+    if gdrive_backup:
+        response_headers["X-GDrive-Status"] = gdrive_initial_status or ""
+
     return StreamingResponse(
         zip_buf,
         media_type="application/zip",
-        headers={
-            "Content-Disposition": f"attachment; filename={filename}",
-            "X-Export-Batch-Id": batch_id,
-        },
+        headers=response_headers,
     )
 
 

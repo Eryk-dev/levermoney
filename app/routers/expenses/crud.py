@@ -179,4 +179,6 @@ async def expense_stats(
         "by_type": by_type,
         "by_direction": by_direction,
         "by_status": by_status,
+        "pending_review_count": by_status.get("pending_review", 0),
+        "auto_categorized_count": by_status.get("auto_categorized", 0),
     }
