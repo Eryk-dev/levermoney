@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useExpenses } from '../hooks/useExpenses';
-import type { ExpenseStats } from '../hooks/useExpenses';
+import type { ExpenseStats, ExportResult } from '../hooks/useExpenses';
 import styles from './ExpensesExportTab.module.css';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -25,14 +25,33 @@ function formatBRL(value: number): string {
 
 const PENDING_STATUS_FILTER = 'pending_review,auto_categorized';
 
+function gdriveLabel(status: string | null): string {
+  if (!status) return '';
+  switch (status) {
+    case 'queued': return 'queued';
+    case 'uploaded': return 'uploaded';
+    case 'skipped_no_drive_root': return 'skipped';
+    default: return status;
+  }
+}
+
 // ── Component ───────────────────────────────────────────────────
 
 export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps) {
-  const { loadStats } = useExpenses({ onUnauthorized: onLogout });
+  const { loadStats, exportAndBackup } = useExpenses({ onUnauthorized: onLogout });
 
   // Per-seller stats
   const [sellerStats, setSellerStats] = useState<Map<string, ExpenseStats>>(new Map());
   const [loadingStats, setLoadingStats] = useState(true);
+
+  // Per-seller exporting state
+  const [exportingSlug, setExportingSlug] = useState<string | null>(null);
+
+  // Per-seller export results
+  const [exportResults, setExportResults] = useState<Map<string, ExportResult>>(new Map());
+
+  // Confirmation modal
+  const [confirmSlug, setConfirmSlug] = useState<string | null>(null);
 
   // Sorted active sellers (alphabetical by display name)
   const activeSellers = useMemo(
@@ -45,6 +64,56 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
           ),
         ),
     [sellers],
+  );
+
+  // Reload stats for a single seller
+  const reloadSellerStats = useCallback(
+    async (slug: string) => {
+      const stats = await loadStats(slug, undefined, undefined, PENDING_STATUS_FILTER);
+      if (stats) {
+        setSellerStats((prev) => {
+          const next = new Map(prev);
+          next.set(slug, stats);
+          return next;
+        });
+      }
+    },
+    [loadStats],
+  );
+
+  // Export handler for a single seller
+  const handleExport = useCallback(
+    async (slug: string) => {
+      setExportingSlug(slug);
+      try {
+        const result = await exportAndBackup(slug, undefined, undefined, PENDING_STATUS_FILTER);
+        if (result) {
+          setExportResults((prev) => {
+            const next = new Map(prev);
+            next.set(slug, result);
+            return next;
+          });
+          // Reload stats for this seller after successful export
+          await reloadSellerStats(slug);
+        }
+      } finally {
+        setExportingSlug(null);
+      }
+    },
+    [exportAndBackup, reloadSellerStats],
+  );
+
+  // Handle export button click (with confirmation if pending_review > 0)
+  const onExportClick = useCallback(
+    (slug: string) => {
+      const stats = sellerStats.get(slug);
+      if (stats && stats.pending_review_count > 0) {
+        setConfirmSlug(slug);
+      } else {
+        void handleExport(slug);
+      }
+    },
+    [sellerStats, handleExport],
   );
 
   // Load stats for all active sellers on mount
@@ -88,6 +157,36 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
 
   return (
     <div className={styles.wrapper}>
+      {/* Confirmation modal */}
+      {confirmSlug && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modal}>
+            <p className={styles.modalText}>
+              Este seller possui despesas com status <strong>pending_review</strong>.
+              Deseja exportar mesmo assim?
+            </p>
+            <div className={styles.modalActions}>
+              <button
+                className={styles.modalBtnCancel}
+                onClick={() => setConfirmSlug(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className={styles.modalBtnConfirm}
+                onClick={() => {
+                  const slug = confirmSlug;
+                  setConfirmSlug(null);
+                  void handleExport(slug);
+                }}
+              >
+                Exportar mesmo assim
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Loading state */}
       {loadingStats && (
         <div className={styles.loading}>Carregando stats de todos os sellers...</div>
@@ -99,6 +198,8 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
           {activeSellers.map((seller) => {
             const stats = sellerStats.get(seller.slug);
             const isEmpty = !stats || stats.total === 0;
+            const isExporting = exportingSlug === seller.slug;
+            const exportResult = exportResults.get(seller.slug);
 
             return (
               <div
@@ -139,6 +240,38 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
                 ) : (
                   <div className={styles.sellerStats}>
                     <span className={styles.statLabel}>Sem dados</span>
+                  </div>
+                )}
+
+                {/* Export button */}
+                <button
+                  className={styles.exportBtn}
+                  disabled={isEmpty || isExporting || exportingSlug !== null}
+                  style={isExporting ? { cursor: 'wait' } : undefined}
+                  onClick={() => onExportClick(seller.slug)}
+                >
+                  {isExporting ? 'Exportando...' : 'Exportar Pendentes'}
+                </button>
+
+                {/* Export result */}
+                {exportResult && (
+                  <div className={styles.exportResult}>
+                    <span className={styles.statLabel}>
+                      Batch: {exportResult.batchId.slice(0, 12)}
+                    </span>
+                    {exportResult.gdriveStatus && (
+                      <span
+                        className={`${styles.badge} ${
+                          exportResult.gdriveStatus === 'queued'
+                            ? styles.badgeQueued
+                            : exportResult.gdriveStatus === 'uploaded'
+                              ? styles.badgeUploaded
+                              : styles.badgeSkipped
+                        }`}
+                      >
+                        {gdriveLabel(exportResult.gdriveStatus)}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
