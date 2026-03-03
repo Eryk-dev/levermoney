@@ -259,6 +259,13 @@ def gerar_xlsx_resumo(rows, output_path) -> bool:
 async def sync_release_report(seller_slug, begin_date, end_date) -> dict:
     """Baixa release_report do ML e synca linhas para mp_expenses."""
 
+async def sync_release_report_all_sellers(lookback_days=3) -> list[dict]:
+    """Sync release report para todos sellers ativos (nightly pipeline)."""
+
+async def backfill_release_report(seller_slug, begin_date, end_date) -> dict:
+    """Backfill release report: baixa TODOS os reports que cobrem o periodo,
+    seleciona cobertura minima e processa (usado pelo onboarding_backfill)."""
+
 def _classify_payout(row, same_day_payouts) -> tuple[str, str, str]:
     """Classifica linha de payout do release report."""
 
@@ -315,7 +322,8 @@ def get_last_coverage_result() -> dict:
 
 ```python
 async def run_onboarding_backfill(seller_slug: str) -> None:
-    """Backfill historico por money_release_date (ca_start_date -> ontem)."""
+    """Backfill historico por money_release_date (ca_start_date -> ontem).
+    Inclui: payments API + release report (payouts, cashback, shipping) + baixas."""
 
 async def retry_backfill(seller_slug: str) -> None:
     """Re-dispara backfill com retomada idempotente."""

@@ -13,4 +13,4 @@ Iniciados no startup do FastAPI:
 | **Daily Baixa Scheduler** | 1x/dia 10h BRT | Processa baixas de todos os sellers | Quando `nightly_pipeline_enabled=false` |
 | **Financial Closing Scheduler** | 1x/dia 11:30 BRT | Fechamento financeiro | Quando `nightly_pipeline_enabled=false` |
 | **Legacy Daily Export** | 1x/dia (config BRT) | Baixa account_statement, monta ZIP, upload | Quando `legacy_daily_enabled=true` e `nightly_pipeline_enabled=false` |
-| **Nightly Pipeline** | 1x/dia (config BRT) | Orquestracao sequencial: sync → fee validation → extrato ingestion → baixas → legacy → coverage check → closing | Quando `nightly_pipeline_enabled=true` |
+| **Nightly Pipeline** | 1x/dia (config BRT) | Orquestracao sequencial: sync → release report → fee validation → extrato ingestion → baixas → legacy → coverage check → CA categories → closing | Quando `nightly_pipeline_enabled=true` |

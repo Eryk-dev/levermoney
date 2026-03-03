@@ -76,6 +76,9 @@ def _build_xlsx(rows: list[dict], seller: dict, sheet_name: str) -> io.BytesIO:
             obs_parts.append(f"Payment {r['payment_id']}")
         if r.get("external_reference"):
             obs_parts.append(f"Ref: {r['external_reference'][:40]}")
+        rp = r.get("raw_payment") or {}
+        if rp.get("payout_bank_account"):
+            obs_parts.append(f"Conta: {rp['payout_bank_account']}")
         if r.get("notes"):
             obs_parts.append(r["notes"])
         if r.get("auto_categorized"):

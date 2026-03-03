@@ -9,9 +9,10 @@ import csv
 import io
 import logging
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from app.db.supabase import get_db
+from app.models.sellers import get_all_active_sellers
 from app.services.ml_api import (
     create_release_report,
     download_release_report,
@@ -104,7 +105,9 @@ def _classify_payout(row: dict, same_day_payouts: list[dict]) -> tuple[str, str,
 
     # PIX transfer: no external reference, typically round or large amount
     if not ext_ref:
-        return "transfer_pix", "transfer", f"Saque PIX (release) - R$ {amount}"
+        bank_acc = row.get("payout_bank_account", "")
+        suffix = f" p/ conta {bank_acc}" if bank_acc else ""
+        return "transfer_pix", "transfer", f"Saque PIX{suffix} - R$ {amount}"
 
     # Default: bill payment pending review
     return "bill_payment", "expense", f"Pagamento (release) - {ext_ref or f'R$ {amount}'}"
@@ -124,28 +127,28 @@ def _classify_credit(row: dict) -> tuple[str, str, str, str | None]:
         return (
             "cashback", "income",
             f"Cashback ML (release) - {ext_ref or source_id} R$ {amount}",
-            "1.3.4",
+            "1.3.4 Descontos e Estornos de Taxas e Tarifas",
         )
 
     if desc_type == "shipping":
         return (
             "cashback", "income",
             f"Bonus envio ML (release) - {ext_ref or source_id} R$ {amount}",
-            "1.3.4",
+            "1.3.4 Descontos e Estornos de Taxas e Tarifas",
         )
 
     if desc_type == "mediation_cancel":
         return (
             "cashback", "income",
             f"Estorno disputa ML (release) - {ext_ref or source_id} R$ {amount}",
-            "1.3.4",
+            "1.3.4 Descontos e Estornos de Taxas e Tarifas",
         )
 
     if desc_type in ("reserve_for_bpp_shipping_return", "reserve_for_bpp_shipping_retur"):
         return (
             "cashback", "income",
             f"Estorno frete BPP (release) - {ext_ref or source_id} R$ {amount}",
-            "1.3.7",
+            "1.3.7 Estorno de Frete sobre Vendas",
         )
 
     return "other", "income", f"Credito ML (release) - {desc_type} R$ {amount}", None
@@ -321,7 +324,7 @@ async def sync_release_report(
                 continue
             expense_type, direction, description = _classify_payout(row, payout_rows)
             amount = row["net_debit"]
-            ca_category = "2.2.7" if expense_type == "darf" else None
+            ca_category = "2.2.7 Simples Nacional" if expense_type == "darf" else None
             auto_cat = expense_type == "darf"
         else:
             if not is_credit:
@@ -401,6 +404,281 @@ async def sync_release_report(
     }
     logger.info("Release report sync for %s: %s", seller_slug, result)
     return result
+
+
+BRT = timezone(timedelta(hours=-3))
+
+
+async def sync_release_report_all_sellers(lookback_days: int = 3) -> list[dict]:
+    """Run release report sync for all active sellers (D-1 to D-{lookback_days}).
+
+    Entry point for the nightly pipeline. Captures payouts, cashback, shipping
+    credits, and other transactions invisible to the Payments API.
+    """
+    db = get_db()
+    sellers = get_all_active_sellers(db)
+
+    now_brt = datetime.now(BRT)
+    end_date = (now_brt - timedelta(days=1)).strftime("%Y-%m-%d")
+    begin_date = (now_brt - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+
+    logger.info(
+        "release_report_sync: starting for %d sellers, window %s → %s",
+        len(sellers), begin_date, end_date,
+    )
+
+    results: list[dict] = []
+    for seller in sellers:
+        slug = seller["slug"]
+        try:
+            result = await sync_release_report(slug, begin_date, end_date)
+            result["seller"] = slug
+            results.append(result)
+        except Exception as exc:
+            logger.error(
+                "release_report_sync: error for %s — %s", slug, exc, exc_info=True,
+            )
+            results.append({"seller": slug, "error": str(exc)})
+
+    total_new = sum(r.get("new_expenses", 0) for r in results)
+    logger.info("release_report_sync: completed. total_new=%d", total_new)
+    return results
+
+
+async def backfill_release_report(
+    seller_slug: str,
+    begin_date: str,
+    end_date: str,
+) -> dict:
+    """Backfill release report sync for a large date range.
+
+    Unlike sync_release_report (which uses a single report), this function
+    downloads ALL available reports overlapping the date range and processes
+    each one. This handles historical backfills where no single report covers
+    the entire period.
+
+    Idempotent: duplicate SOURCE_IDs are safely skipped.
+
+    Args:
+        seller_slug: seller identifier
+        begin_date: YYYY-MM-DD start date
+        end_date: YYYY-MM-DD end date
+
+    Returns dict with aggregate sync stats.
+    """
+    import asyncio as _asyncio
+
+    db = get_db()
+    begin_dt = datetime.strptime(begin_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+
+    # 1. List all available reports
+    try:
+        reports = await list_release_reports(seller_slug, limit=100)
+    except Exception as e:
+        logger.error("backfill_release_report %s: failed to list reports: %s", seller_slug, e)
+        return {"seller": seller_slug, "error": f"list_reports_failed: {e}"}
+
+    # 2. Filter reports that overlap with our date range and are CSVs
+    matching: list[dict] = []
+    for r in reports:
+        if not isinstance(r, dict):
+            continue
+        fname = r.get("file_name", "")
+        if not fname or not fname.endswith(".csv"):
+            continue
+        try:
+            rb = datetime.fromisoformat(
+                (r.get("begin_date") or "").replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+            re = datetime.fromisoformat(
+                (r.get("end_date") or "").replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            continue
+        if rb <= end_dt and re >= begin_dt:
+            matching.append({"file_name": fname, "begin": rb, "end": re, "days": (re - rb).days})
+
+    # Sort widest first, then most recent
+    matching.sort(key=lambda x: (-x["days"], -x["end"].timestamp()))
+
+    # 3. Greedy selection: pick fewest reports to cover the range
+    covered: list[tuple[datetime, datetime]] = []
+    selected: list[dict] = []
+    for r in matching:
+        already = any(cb <= r["begin"] and ce >= r["end"] for cb, ce in covered)
+        if already:
+            continue
+        selected.append(r)
+        covered.append((r["begin"], r["end"]))
+        merged = _merge_ranges(covered)
+        if any(cb <= begin_dt and ce >= end_dt for cb, ce in merged):
+            break
+
+    if not selected:
+        logger.warning("backfill_release_report %s: no reports found for %s to %s", seller_slug, begin_date, end_date)
+        return {"seller": seller_slug, "error": "no_reports_found", "new_expenses": 0}
+
+    logger.info(
+        "backfill_release_report %s: processing %d report(s) for %s to %s",
+        seller_slug, len(selected), begin_date, end_date,
+    )
+
+    # 4. Download and process each report
+    total_stats = Counter()
+    for r in selected:
+        try:
+            content = await download_release_report(seller_slug, r["file_name"])
+        except Exception as e:
+            logger.error("backfill_release_report %s: download failed %s: %s", seller_slug, r["file_name"], e)
+            total_stats["download_errors"] += 1
+            continue
+
+        if not content:
+            total_stats["download_errors"] += 1
+            continue
+
+        rows = _parse_csv(content)
+        if not rows:
+            continue
+
+        source_ids = [row["source_id"] for row in rows if row["source_id"]]
+        payment_ids, expense_ids = _lookup_existing_ids(db, seller_slug, source_ids)
+
+        payout_rows = [row for row in rows if row["description"] == "payout"]
+
+        for row in rows:
+            source_id = row["source_id"]
+            if not source_id:
+                total_stats["skipped_no_id"] += 1
+                continue
+
+            desc_type = row["description"]
+            is_credit = row["net_credit"] > 0
+            is_debit = row["net_debit"] > 0
+
+            if desc_type == "payment":
+                total_stats["skipped_payment"] += 1
+                continue
+
+            if desc_type in ("reserve_for_bpp_shipping_return", "reserve_for_bpp_shipping_retur"):
+                if not is_credit:
+                    total_stats["skipped_bpp_reserve"] += 1
+                    continue
+
+            if source_id in payment_ids:
+                total_stats["already_in_payments"] += 1
+                continue
+
+            if source_id in expense_ids:
+                if desc_type == "payout" and is_debit:
+                    _update_existing_expense_amount(db, seller_slug, source_id, row["net_debit"])
+                    total_stats["updated_amounts"] += 1
+                else:
+                    total_stats["already_in_expenses"] += 1
+                continue
+
+            if desc_type == "payout":
+                if not is_debit:
+                    total_stats["skipped_payout_no_debit"] += 1
+                    continue
+                expense_type, direction, description = _classify_payout(row, payout_rows)
+                amount = row["net_debit"]
+                ca_category = "2.2.7 Simples Nacional" if expense_type == "darf" else None
+                auto_cat = expense_type == "darf"
+            else:
+                if not is_credit:
+                    total_stats["skipped_credit_zero"] += 1
+                    continue
+                expense_type, direction, description, ca_category = _classify_credit(row)
+                amount = row["net_credit"]
+                auto_cat = ca_category is not None
+
+            status = "auto_categorized" if auto_cat else "pending_review"
+
+            data = {
+                "seller_slug": seller_slug,
+                "payment_id": int(source_id),
+                "expense_type": expense_type,
+                "expense_direction": direction,
+                "ca_category": ca_category,
+                "auto_categorized": auto_cat,
+                "amount": amount,
+                "description": description[:200],
+                "business_branch": None,
+                "operation_type": f"release_{desc_type}",
+                "payment_method": row.get("payment_method") or None,
+                "external_reference": row.get("external_reference") or None,
+                "febraban_code": None,
+                "date_created": row["date"],
+                "date_approved": row["date"],
+                "status": status,
+                "raw_payment": {
+                    "source": "release_report",
+                    "source_id": source_id,
+                    "description": desc_type,
+                    "net_credit": row["net_credit"],
+                    "net_debit": row["net_debit"],
+                    "gross_amount": row["gross_amount"],
+                    "order_id": row.get("order_id"),
+                    "payout_bank_account": row.get("payout_bank_account"),
+                },
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }
+
+            try:
+                db.table("mp_expenses").insert(data).execute()
+                total_stats["new_expenses"] += 1
+                logger.info(
+                    "backfill_release_report %s: new %s type=%s dir=%s amount=%.2f",
+                    seller_slug, source_id, expense_type, direction, amount,
+                )
+            except Exception as e:
+                error_str = str(e)
+                if "duplicate" in error_str.lower() or "unique" in error_str.lower():
+                    total_stats["duplicate_skipped"] += 1
+                else:
+                    total_stats["errors"] += 1
+                    logger.error(
+                        "backfill_release_report %s: insert failed %s: %s",
+                        seller_slug, source_id, e,
+                    )
+
+        # Small delay between reports
+        await _asyncio.sleep(1)
+
+    result = {
+        "seller": seller_slug,
+        "period": f"{begin_date} to {end_date}",
+        "reports_processed": len(selected),
+        "new_expenses": total_stats.get("new_expenses", 0),
+        "already_tracked": (
+            total_stats.get("already_in_payments", 0)
+            + total_stats.get("already_in_expenses", 0)
+        ),
+        "updated_amounts": total_stats.get("updated_amounts", 0),
+        "errors": total_stats.get("errors", 0),
+        "breakdown": dict(total_stats),
+    }
+    logger.info("backfill_release_report %s: %s", seller_slug, result)
+    return result
+
+
+def _merge_ranges(
+    ranges: list[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    """Merge overlapping datetime ranges."""
+    if not ranges:
+        return []
+    sorted_ranges = sorted(ranges, key=lambda x: x[0])
+    merged = [sorted_ranges[0]]
+    for start, end in sorted_ranges[1:]:
+        if start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
 
 
 async def _get_or_create_report(
