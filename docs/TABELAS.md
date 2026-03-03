@@ -24,7 +24,7 @@ Registro de cada payment processado (idempotencia + audit trail).
 ```
 id (PK), seller_slug, ml_payment_id (unique per seller), ml_status,
 amount, net_amount, money_release_date, ml_order_id,
-status (pending|queued|synced|refunded|skipped|skipped_non_sale),
+status (pending|queued|synced|refunded|skipped|skipped_non_sale|pending_ca),
 raw_payment (jsonb), error, ca_evento_id,
 processor_fee (numeric), processor_shipping (numeric), fee_adjusted (bool),
 created_at, updated_at
