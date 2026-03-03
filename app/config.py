@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Empty means all active sellers.
     seller_allowlist: str = ""
 
+    # Admin
+    admin_password: str = ""
+
     # Feature flags
     expenses_api_enabled: bool = True
     nightly_pipeline_enabled: bool = False

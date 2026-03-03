@@ -3,31 +3,15 @@ Shared dependencies for admin sub-modules.
 Authentication, session management, and syncer reference.
 """
 import logging
-import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-import bcrypt
 from fastapi import Header, HTTPException
-
-from app.db.supabase import get_db
 
 logger = logging.getLogger(__name__)
 
 # In-memory session tokens (simple approach, survives within process lifetime)
 _sessions: dict[str, datetime] = {}
-
-
-def _get_password_hash() -> str | None:
-    db = get_db()
-    result = db.table("admin_config").select("password_hash").eq("id", 1).execute()
-    if result.data:
-        return result.data[0]["password_hash"]
-    return None
-
-
-def _verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
 
 async def require_admin(x_admin_token: str = Header(...)):

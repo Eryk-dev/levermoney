@@ -1,6 +1,6 @@
 """
 Admin API - password-protected endpoints for seller management, goals, sync.
-Authentication via X-Admin-Token header verified against bcrypt hash in admin_config table.
+Authentication via X-Admin-Token header verified against ADMIN_PASSWORD env var.
 
 This package splits the admin router into sub-modules for maintainability.
 The main `router` object is assembled here and re-exported so that existing
