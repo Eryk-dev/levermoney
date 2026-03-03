@@ -10,7 +10,6 @@ import {
 import { formatBRL } from '../utils/dataParser';
 import type { DatePreset } from '../hooks/useFilters';
 import { buildForecastModel, type SeasonalityFactors } from '../utils/projectionEngine';
-import { useIsMobile } from '../hooks/useIsMobile';
 import styles from './PaceChart.module.css';
 
 interface DailyDataPoint {
@@ -103,7 +102,6 @@ export function PaceChart({
   getGoalForDate,
   monthlyGoals,
 }: PaceChartProps) {
-  const isMobile = useIsMobile();
   const realizedDailyData = useMemo(
     () => dailyData.filter((d): d is { date: Date; total: number } => typeof d.total === 'number'),
     [dailyData]
@@ -513,7 +511,7 @@ export function PaceChart({
                 tickMargin={8}
                 width={48}
               />
-              {!isMobile && <Tooltip content={<PaceChartTooltip />} />}
+              <Tooltip content={<PaceChartTooltip />} />
               <Line
                 type="monotone"
                 dataKey="meta"
@@ -610,7 +608,7 @@ export function PaceChart({
                 tickMargin={8}
                 width={48}
               />
-              {!isMobile && <Tooltip content={<PaceChartTooltip />} />}
+              <Tooltip content={<PaceChartTooltip />} />
               <Line
                 type="monotone"
                 dataKey="meta"

@@ -43,7 +43,7 @@ export function ComparisonToggle({
         title={enabled ? 'Desativar comparação' : 'Ativar comparação'}
       >
         <GitCompareArrows size={14} />
-        <span className={styles.label}>Comparar</span>
+        <span className={styles.label}>Comparar período</span>
       </button>
 
       {enabled && (

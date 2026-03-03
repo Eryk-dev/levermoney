@@ -110,7 +110,7 @@ export function RevenueChart({ data, companies = [], title = 'Faturamento Diári
   const yAxisMax = maxWithGoal > 0 ? maxWithGoal * 1.1 : undefined;
 
   const hasGoalLine = data.some((d) => (d.goal || 0) > 0);
-  const showTooltip = !isMobile;
+  const showTooltip = true;
 
   const chartHeight = isMobile ? 220 : 280;
   const maxIndex = Math.max(chartData.length - 1, 0);

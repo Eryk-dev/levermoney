@@ -11,7 +11,6 @@ import {
 } from 'recharts';
 import { formatDate, formatBRL } from '../utils/dataParser';
 import type { DailyDataPoint } from '../hooks/useFilters';
-import { useIsMobile } from '../hooks/useIsMobile';
 import styles from './GroupStackedBars.module.css';
 
 interface GroupStackedBarsProps {
@@ -48,7 +47,6 @@ export function GroupStackedBars({
   groups,
   title = 'Contribuição por Grupo',
 }: GroupStackedBarsProps) {
-  const isMobile = useIsMobile();
   const formatAxisDate = (value: number | string | Date) => {
     if (value instanceof Date) return formatDate(value);
     const asNumber = typeof value === 'string' ? Number(value) : value;
@@ -130,69 +128,67 @@ export function GroupStackedBars({
               width={48}
               domain={[0, yAxisMax || 'auto']}
             />
-            {!isMobile && (
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (active && payload && payload.length) {
-                    const total = payload
-                      .filter((p) => p.dataKey !== 'goal')
-                      .reduce((sum, p) => sum + (Number(p.value) || 0), 0);
-                    const goalEntry = payload.find((p) => p.dataKey === 'goal');
-                    const goalValue = goalEntry ? Number(goalEntry.value) : null;
-                    const gap = goalValue !== null ? total - goalValue : null;
+            <Tooltip
+              content={({ active, payload, label }) => {
+                if (active && payload && payload.length) {
+                  const total = payload
+                    .filter((p) => p.dataKey !== 'goal')
+                    .reduce((sum, p) => sum + (Number(p.value) || 0), 0);
+                  const goalEntry = payload.find((p) => p.dataKey === 'goal');
+                  const goalValue = goalEntry ? Number(goalEntry.value) : null;
+                  const gap = goalValue !== null ? total - goalValue : null;
 
-                    return (
-                      <div className={styles.tooltip}>
-                        <span className={styles.tooltipDate}>
-                          {typeof label === 'string' ? label : formatAxisDate(label as number)}
-                        </span>
-                        <div className={styles.tooltipItems}>
-                          {payload
-                            .filter((entry) => entry.dataKey !== 'goal' && Number(entry.value) > 0)
-                            .map((entry, index) => {
-                              const percent = total > 0
-                                ? ((Number(entry.value) / total) * 100).toFixed(0)
-                                : 0;
-                              return (
-                                <div key={index} className={styles.tooltipItem}>
-                                  <span
-                                    className={styles.tooltipDot}
-                                    style={{ background: entry.color }}
-                                  />
-                                  <span className={styles.tooltipLabel}>{entry.name}</span>
-                                  <span className={styles.tooltipPercent}>{percent}%</span>
-                                  <span className={styles.tooltipValue}>
-                                    {formatBRL(Number(entry.value))}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                        </div>
-                        <div className={styles.tooltipTotal}>
-                          <span>Total</span>
-                          <span>{formatBRL(total)}</span>
-                        </div>
-                        {goalValue !== null && (
-                          <>
-                            <div className={styles.tooltipTotal} style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
-                              <span style={{ color: '#23D8D3' }}>Meta</span>
-                              <span style={{ color: '#23D8D3' }}>{formatBRL(goalValue)}</span>
-                            </div>
-                            <div className={styles.tooltipTotal} style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
-                              <span>Gap</span>
-                              <span style={{ color: gap && gap >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                                {gap && gap >= 0 ? '+' : ''}{formatBRL(gap || 0)}
-                              </span>
-                            </div>
-                          </>
-                        )}
+                  return (
+                    <div className={styles.tooltip}>
+                      <span className={styles.tooltipDate}>
+                        {typeof label === 'string' ? label : formatAxisDate(label as number)}
+                      </span>
+                      <div className={styles.tooltipItems}>
+                        {payload
+                          .filter((entry) => entry.dataKey !== 'goal' && Number(entry.value) > 0)
+                          .map((entry, index) => {
+                            const percent = total > 0
+                              ? ((Number(entry.value) / total) * 100).toFixed(0)
+                              : 0;
+                            return (
+                              <div key={index} className={styles.tooltipItem}>
+                                <span
+                                  className={styles.tooltipDot}
+                                  style={{ background: entry.color }}
+                                />
+                                <span className={styles.tooltipLabel}>{entry.name}</span>
+                                <span className={styles.tooltipPercent}>{percent}%</span>
+                                <span className={styles.tooltipValue}>
+                                  {formatBRL(Number(entry.value))}
+                                </span>
+                              </div>
+                            );
+                          })}
                       </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-            )}
+                      <div className={styles.tooltipTotal}>
+                        <span>Total</span>
+                        <span>{formatBRL(total)}</span>
+                      </div>
+                      {goalValue !== null && (
+                        <>
+                          <div className={styles.tooltipTotal} style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
+                            <span style={{ color: '#23D8D3' }}>Meta</span>
+                            <span style={{ color: '#23D8D3' }}>{formatBRL(goalValue)}</span>
+                          </div>
+                          <div className={styles.tooltipTotal} style={{ borderTop: 'none', paddingTop: 0, marginTop: 0 }}>
+                            <span>Gap</span>
+                            <span style={{ color: gap && gap >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                              {gap && gap >= 0 ? '+' : ''}{formatBRL(gap || 0)}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                }
+                return null;
+              }}
+            />
             <Legend
               verticalAlign="top"
               align="right"

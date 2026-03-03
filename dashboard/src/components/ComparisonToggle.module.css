@@ -3,6 +3,7 @@
   align-items: center;
   gap: var(--space-2);
   position: relative;
+  flex-wrap: wrap;
 }
 
 .toggle {
@@ -119,13 +120,11 @@
 }
 
 @media (max-width: 768px) {
-  .label {
-    display: none;
-  }
-
   .customPanel {
-    right: 0;
-    left: auto;
+    position: static;
+    width: 100%;
+    margin-top: 0;
+    box-shadow: none;
   }
 
   .customDates {

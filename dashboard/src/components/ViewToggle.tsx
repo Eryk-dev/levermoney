@@ -25,13 +25,13 @@ export function ViewToggle({ value, onChange, showAdmin }: ViewToggleProps) {
         Metas
       </button>
       <button
-        className={`${styles.button} ${value === 'entrada' ? styles.active : ''}`}
+        className={`${styles.button} ${styles.secondary} ${value === 'entrada' ? styles.active : ''}`}
         onClick={() => onChange('entrada')}
       >
         Entrada
       </button>
       <button
-        className={`${styles.button} ${value === 'linhas' ? styles.active : ''}`}
+        className={`${styles.button} ${styles.secondary} ${value === 'linhas' ? styles.active : ''}`}
         onClick={() => onChange('linhas')}
       >
         Linhas
