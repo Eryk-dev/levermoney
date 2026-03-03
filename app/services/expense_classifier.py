@@ -184,6 +184,8 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
 
     # 3. money_transfer + Cashback → INCOME
     if op_type == "money_transfer" and branch == "Cashback":
+        if "flex" in description.lower():
+            return "cashback", "income", "1.3.1", True, f"Bonificacao Flex ML - {description}"[:200]
         return "cashback", "income", "1.3.4", True, f"Ressarcimento ML - {description}"[:200]
 
     # 4. money_transfer + Intra MP → TRANSFER
