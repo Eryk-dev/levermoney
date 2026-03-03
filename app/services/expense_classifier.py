@@ -19,7 +19,7 @@ AUTO_RULES = [
         "match_field": "description",
         "match_contains": ["DARF"],
         "case_insensitive": True,
-        "category": "2.2.7",
+        "category": "2.2.7 Simples Nacional",
         "type": "expense",
         "expense_type": "darf",
         "desc_template": "DARF - {description}",
@@ -31,7 +31,7 @@ AUTO_RULES = [
         "match_field": "description",
         "match_contains": ["claude", "anthropic"],
         "case_insensitive": True,
-        "category": "2.6.5",
+        "category": "2.6.5 APIs e Integrações",
         "type": "expense",
         "expense_type": "subscription",
         "desc_template": "Assinatura - {description}",
@@ -43,7 +43,7 @@ AUTO_RULES = [
         "match_field": "description",
         "match_contains": ["supabase"],
         "case_insensitive": True,
-        "category": "2.6.4",
+        "category": "2.6.4 Banco de Dados (Supabase)",
         "type": "expense",
         "expense_type": "subscription",
         "desc_template": "Assinatura - {description}",
@@ -55,7 +55,7 @@ AUTO_RULES = [
         "match_field": "description",
         "match_contains": ["notion"],
         "case_insensitive": True,
-        "category": "2.6.1",
+        "category": "2.6.1 Software e Licenças",
         "type": "expense",
         "expense_type": "subscription",
         "desc_template": "Assinatura - {description}",
@@ -185,8 +185,8 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
     # 3. money_transfer + Cashback → INCOME
     if op_type == "money_transfer" and branch == "Cashback":
         if "flex" in description.lower():
-            return "cashback", "income", "1.3.1", True, f"Bonificacao Flex ML - {description}"[:200]
-        return "cashback", "income", "1.3.4", True, f"Ressarcimento ML - {description}"[:200]
+            return "cashback", "income", "1.3.1 Receita de Frete Cobrado", True, f"Bonificacao Flex ML - {description}"[:200]
+        return "cashback", "income", "1.3.4 Descontos e Estornos de Taxas e Tarifas", True, f"Ressarcimento ML - {description}"[:200]
 
     # 4. money_transfer + Intra MP → TRANSFER
     if op_type == "money_transfer" and branch == "Intra MP":
@@ -217,11 +217,11 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
                 desc = _format_description(rule["desc_template"], payment)
                 return rule["expense_type"], rule["type"], rule["category"], True, desc
         # Default for Virtual: Software e Licencas
-        return "subscription", "expense", "2.6.1", True, f"Assinatura - {description}"[:200]
+        return "subscription", "expense", "2.6.1 Software e Licenças", True, f"Assinatura - {description}"[:200]
 
     # 8. branch contains "Collections" → EXPENSE (ML charge)
     if "collections" in branch.lower():
-        return "collection", "expense", "2.8.2", True, f"Cobranca ML - {description or payment.get('external_reference', '')}"[:200]
+        return "collection", "expense", "2.8.2 Comissões de Marketplace", True, f"Cobranca ML - {description or payment.get('external_reference', '')}"[:200]
 
     # 9. PIX without branch → TRANSFER (deposit/aporte)
     if payment_method == "pix" and not branch:
