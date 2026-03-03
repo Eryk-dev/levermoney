@@ -70,6 +70,7 @@ dash/
 │   ├── utils/
 │   │   ├── goalCalculator.ts        # FONTE UNICA de calculos de metas
 │   │   ├── projectionEngine.ts      # Sazonalidade + forecast
+│   │   ├── businessCalendar.ts      # Feriados nacionais BR + buckets (holiday/payday)
 │   │   └── dataParser.ts            # Formatacao (BRL, %, datas)
 │   ├── components/                   # Componentes React (views principais + admin)
 │   │   ├── ViewToggle.tsx            # Seletor de view (Geral/Metas/Entrada/Linhas)
@@ -378,14 +379,15 @@ Hook dedicado para o fluxo de despesas no Admin.
 
 ```typescript
 {
-  loadStats(sellerSlug, dateFrom, dateTo) => ExpenseStats | null
-  exportAndBackup(sellerSlug, dateFrom, dateTo) => { batchId, gdriveStatus } | null
+  loadStats(sellerSlug, dateFrom?, dateTo?, statusFilter?) => ExpenseStats | null
+  exportAndBackup(sellerSlug, dateFrom?, dateTo?, statusFilter?) => { batchId, gdriveStatus } | null
   loadBatches(sellerSlug) => BatchRecord[] | null
   redownloadBatchById(sellerSlug, batchId) => boolean
 }
 ```
 
 **Contratos importantes:**
+- `statusFilter` (ex: `"pending_review,auto_categorized"`) substitui `dateFrom/dateTo` quando presente.
 - `loadBatches` consome envelope `{ seller, count, data }` e retorna `data`.
 - `exportAndBackup` le headers `X-Export-Batch-Id` e `X-GDrive-Status`.
 - Em `401`, chama `onUnauthorized`.
@@ -458,11 +460,17 @@ Tela protegida por login admin, com duas tabs internas:
 
 - **Sellers** (fluxo existente):
   - onboarding/configuracao/sync/reprocessamentos
-- **Despesas** (novo):
-  - componente `ExpensesExportTab`
-  - export ZIP por seller/periodo
-  - backup GDrive assincrono
-  - historico de batches com status e re-download por `batch_id`
+- **Despesas** (componente `ExpensesExportTab`):
+  - Grid de **cards por seller** (sellers ativos, ordenados alfabeticamente)
+  - Cada card mostra: total despesas, valor total, `pending_review_count`, `auto_categorized_count`
+  - Botao de export individual por card (com modal de confirmacao se `pending_review > 0`)
+  - Botao global **"Exportar Todos os Pendentes"** (exporta sequencialmente todos sellers com pendencias)
+  - Historico de batches **colapsavel** por seller card (toggle expand/collapse)
+  - Status badges GDrive: `queued`, `uploaded`, `skipped`, `failed`
+  - Links diretos para pasta/arquivo no GDrive
+  - Polling de status GDrive (12 tentativas, 5s intervalo)
+  - Re-download por `batch_id`
+  - Usa `status_filter=pending_review,auto_categorized` (sem filtros de mes/ano)
 
 ---
 
@@ -511,6 +519,44 @@ buildDailyGoalMap(companies, dates) → Map<string, number>
 // Meta ajustada de uma empresa especifica para uma data
 getCompanyAdjustedDailyGoalForDate(companies, empresa, date) → number
 ```
+
+---
+
+## 9b. Calendario de Negocios: `businessCalendar.ts`
+
+Feriados nacionais brasileiros e classificacao de datas por contexto comercial.
+
+### Tipos
+
+```typescript
+type HolidayBucket = 'normal' | 'holiday' | 'pre_holiday' | 'post_holiday';
+type PaydayBucket = 'regular' | 'salary_window' | 'advance_window' | 'month_end';
+```
+
+### Funcoes
+
+```typescript
+// Verifica se data e feriado nacional BR
+isNationalHoliday(date) → boolean
+
+// Classifica data em relacao a feriados
+getHolidayBucket(date) → HolidayBucket
+// holiday: feriado nacional
+// pre_holiday: dia anterior a feriado
+// post_holiday: dia posterior a feriado
+// normal: sem relacao com feriado
+
+// Classifica data em relacao a folha de pagamento
+getPaydayBucket(date) → PaydayBucket
+// salary_window: dias 4-7 (salario)
+// advance_window: dias 18-22 (vale/adiantamento)
+// month_end: ultimos 3 dias do mes
+// regular: sem evento de folha
+```
+
+**Feriados cobertos:** Confraternizacao Universal, Tiradentes, Dia do Trabalho, Independencia, N.S. Aparecida, Finados, Proclamacao da Republica, Consciencia Negra, Natal + moveis (Carnaval, Sexta-feira Santa, Corpus Christi via algoritmo de Pascoa).
+
+**Cache:** Feriados sao calculados por ano e cacheados em `Map<number, Set<string>>`.
 
 ---
 
@@ -833,28 +879,38 @@ Se alguma resposta for **NAO**, pare e revise.
 
 ## 21. Modulo Despesas (Admin) - Contratos e Gotchas
 
-### Arquivos novos/relevantes
-- `src/hooks/useExpenses.ts`
-- `src/components/ExpensesExportTab.tsx`
-- `src/components/ExpensesExportTab.module.css`
-- `src/components/AdminPanel.tsx` (tab `sellers`/`expenses`)
+### Arquivos relevantes
+- `src/hooks/useExpenses.ts` — hook de API (stats/export/batches/redownload)
+- `src/components/ExpensesExportTab.tsx` — componente principal (seller cards grid)
+- `src/components/ExpensesExportTab.module.css` — estilos
+- `src/components/AdminPanel.tsx` — tab `sellers`/`expenses`
 
 ### Contratos de API usados no frontend
-- `GET /expenses/{seller}/stats`:
+- `GET /expenses/{seller}/stats?status_filter=...`:
   - usa `pending_review_count` e `auto_categorized_count`
-- `GET /expenses/{seller}/export?...&gdrive_backup=true`:
+  - `status_filter` (ex: `pending_review,auto_categorized`) substitui `date_from/date_to`
+- `GET /expenses/{seller}/export?status_filter=...&gdrive_backup=true`:
   - headers lidos: `X-Export-Batch-Id`, `X-GDrive-Status`
 - `GET /expenses/{seller}/batches`:
   - resposta em envelope `{ seller, count, data }`
 - `GET /expenses/{seller}/batches/{batch_id}/download`:
   - re-download por lote (nao por periodo)
 
+### Arquitetura do ExpensesExportTab (Seller Cards)
+- Recebe `sellers[]` e `onLogout()` como props
+- State management usa `Map<string, ExpenseStats>` para stats per-seller
+- Global export sequencial: itera sellers com pendencias e exporta um a um
+- Batch history usa `expandedSlugs: Set<string>` para controlar collapse
+- Polling usa `useRef` para intervalos e contadores (nao re-render)
+
 ### Regras de UX implementadas
-- Export exige confirmacao quando `pending_review_count > 0`.
+- Export exige confirmacao (modal) quando `pending_review_count > 0`.
 - Polling de historico ocorre somente enquanto houver `gdrive_status === "queued"`.
 - Polling e limitado (12 tentativas / ~60s) e nao deve reiniciar em loop automaticamente.
+- Global export mostra progress indicator (`current/total sellers`).
 
 ### Cuidados de implementacao
 - Sempre tratar `401` com `onUnauthorized` para voltar ao fluxo de login.
 - `loadBatches` deve extrair `payload.data`; usar o objeto inteiro quebra rendering.
 - `Content-Disposition` pode vir com ou sem aspas; manter fallback de filename no download.
+- `statusFilter` e `dateFrom/dateTo` sao mutuamente exclusivos no hook; quando `statusFilter` esta presente, datas sao ignoradas.

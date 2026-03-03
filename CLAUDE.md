@@ -85,7 +85,8 @@ ML_REDIRECT_URI=       # https://dominio/auth/ml/callback
 CA_CLIENT_ID=          # Cognito Client ID
 CA_CLIENT_SECRET=      # Cognito Client Secret
 SUPABASE_URL=          # https://xxx.supabase.co
-SUPABASE_KEY=          # Service role key
+SUPABASE_SERVICE_ROLE_KEY= # Service role key (backend writes)
+SUPABASE_KEY=          # Fallback (legacy deployments, may be read-only under RLS)
 ```
 
 ### Opcionais
@@ -96,7 +97,7 @@ SUPABASE_KEY=          # Service role key
 | `CA_REFRESH_TOKEN` | `""` | Refresh token CA bootstrap |
 | `BASE_URL` | `http://localhost:8000` | URL base para OAuth callbacks |
 | `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Origens CORS (comma-separated) |
-| `SYNC_INTERVAL_MINUTES` | `5` | Intervalo sync faturamento |
+| `SYNC_INTERVAL_MINUTES` | `1` | Intervalo sync faturamento |
 | `DAILY_SYNC_NON_ORDER_MODE` | `classifier` | `classifier` ou `legacy` |
 | `SELLER_ALLOWLIST` | `""` | Slugs permitidos (comma-separated, vazio = todos) |
 | `EXPENSES_API_ENABLED` | `true` | Habilita router /expenses |
@@ -137,9 +138,23 @@ lever money/
 │   │   ├── baixas.py            # GET /baixas/processar/{seller}
 │   │   ├── auth_ml.py           # OAuth ML (connect/callback/install)
 │   │   ├── auth_ca.py           # OAuth CA (connect/callback/status)
-│   │   ├── admin.py             # Admin CRUD (sellers, goals, sync, closing)
+│   │   ├── admin/               # Admin CRUD package (8 submodulos)
+│   │   │   ├── _deps.py         # Auth dependency (require_admin, set_syncer)
+│   │   │   ├── auth.py          # Login/logout
+│   │   │   ├── sellers.py       # CRUD sellers + onboarding
+│   │   │   ├── revenue.py       # Revenue lines + goals bulk
+│   │   │   ├── closing.py       # Financial closing triggers
+│   │   │   ├── extrato.py       # Account statement ops
+│   │   │   ├── legacy.py        # Legacy export triggers
+│   │   │   ├── release_report.py # Release report ops
+│   │   │   └── ca_debug.py      # CA API debug endpoints
 │   │   ├── dashboard_api.py     # Dashboard read API (publico)
-│   │   ├── expenses/            # MP expenses package: list, stats, export ZIP, batches, closing, legacy bridge
+│   │   ├── expenses/            # MP expenses package
+│   │   │   ├── _deps.py         # Auth dependency compartilhada
+│   │   │   ├── crud.py          # List/review expenses
+│   │   │   ├── export.py        # Export ZIP + GDrive backup + batches + re-download
+│   │   │   ├── closing.py       # Closing status por seller
+│   │   │   └── legacy.py        # Legacy bridge endpoint
 │   │   ├── queue.py             # Queue monitoring + reconciliation
 │   │   └── health.py            # Health check + debug endpoints
 │   ├── services/
@@ -155,19 +170,23 @@ lever money/
 │   │   ├── rate_limiter.py      # Token bucket (9 req/s, 540 req/min)
 │   │   ├── onboarding.py        # Seller signup → approve → activate
 │   │   ├── onboarding_backfill.py # Backfill de ativacao (dashboard_ca)
-│   │   ├── legacy_daily_export.py # Export legado diario (release_report → ZIP → upload)
-│   │   ├── gdrive_client.py    # Upload de ZIP de despesas no Google Drive (ROOT/DESPESAS/EMPRESA/YYYY-MM)
-│   │   ├── legacy_bridge.py     # Bridge para formato legado (CSV → XLSX)
-│   │   ├── legacy_engine.py     # Motor de reconciliacao legado (processar_conciliacao)
+│   │   ├── gdrive_client.py     # Upload ZIP despesas no Google Drive (ROOT/DESPESAS/EMPRESA/YYYY-MM)
 │   │   ├── release_report_sync.py # Sync release report → mp_expenses
 │   │   ├── release_report_validator.py # Valida fees do processor vs release report
 │   │   ├── extrato_ingester.py  # Ingesta lacunas do account_statement em mp_expenses
-│   │   └── extrato_coverage_checker.py # Verifica 100% cobertura do extrato
+│   │   ├── extrato_coverage_checker.py # Verifica 100% cobertura do extrato
+│   │   ├── ca_categories_sync.py # Sync categorias CA → ca_categories.json
+│   │   └── legacy/              # Subpacote legado
+│   │       ├── daily_export.py  # Export legado diario (release_report → ZIP → upload)
+│   │       ├── bridge.py        # Bridge para formato legado (CSV → XLSX)
+│   │       └── engine.py        # Motor de reconciliacao legado (~1500 linhas)
 │   └── static/
 │       └── install.html         # Landing page self-service install
 ├── dashboard/                   # React SPA (tem seu proprio CLAUDE.md)
 ├── migrations/
-│   └── 005_expense_batches_gdrive_snapshot.sql # gdrive_* em expense_batches + snapshot_payload em expense_batch_items
+│   ├── 003_expenses_batches_sync_state.sql    # Expense batch tracking + sync_state
+│   ├── 004_onboarding_v2.sql                  # Onboarding V2 schema
+│   └── 005_expense_batches_gdrive_snapshot.sql # gdrive_* em expense_batches + snapshot_payload
 ├── API_DOCUMENTATION.md         # Documentacao completa da API (endpoints detalhados)
 ├── PLANO.md                     # Plano do projeto v1.8
 ├── FLUXO-DETALHADO.md           # Fluxo detalhado v3.3
@@ -183,13 +202,13 @@ lever money/
 ## 6. Expenses Export + GDrive (Admin)
 
 ### Backend
-- `GET /expenses/{seller_slug}/stats` agora retorna contadores explicitos:
-  - `pending_review_count`
-  - `auto_categorized_count`
-- `GET /expenses/{seller_slug}/export` aceita `gdrive_backup`:
+- `GET /expenses/{seller_slug}/stats` retorna contadores explicitos:
+  - `pending_review_count`, `auto_categorized_count`
+  - Aceita `status_filter` query param (ex: `pending_review,auto_categorized`)
+- `GET /expenses/{seller_slug}/export` aceita `gdrive_backup` e `status_filter`:
   - Header sempre presente: `X-Export-Batch-Id`
   - Header condicional: `X-GDrive-Status` (`queued` ou `skipped_no_drive_root`)
-  - Upload para Drive roda em background (`asyncio.to_thread` + `asyncio.create_task`), sem bloquear o download.
+  - Upload para Drive roda em background (`asyncio.to_thread` + `asyncio.create_task`), sem bloquear o download
 - `GET /expenses/{seller_slug}/batches` retorna envelope:
   - `{ seller, count, data }`
 - `GET /expenses/{seller_slug}/batches/{batch_id}/download`:
@@ -205,17 +224,23 @@ lever money/
 - `_persist_batch_metadata()` persiste snapshot por item.
 - `update_batch_gdrive_status()` atualiza apenas campos `gdrive_*`.
 
-### Frontend
-- Nova aba **Despesas** no `AdminPanel` com:
-  - seletor seller + mes/ano
-  - card de stats
-  - export com confirmacao quando houver `pending_review`
-  - historico de batches com status de backup e botao de re-download
-- Novo hook `useExpenses`:
-  - `loadStats`
-  - `exportAndBackup`
-  - `loadBatches` (consome `payload.data`)
-  - `redownloadBatchById`
+### Frontend (Seller Cards Grid)
+- Aba **Despesas** no `AdminPanel` com layout de **cards por seller**:
+  - Grid de cards para todos sellers ativos (ordenados alfabeticamente)
+  - Cada card mostra: total despesas, valor total, pendentes, auto-categorizadas
+  - Botao de export individual por seller card (com confirmacao se `pending_review > 0`)
+  - Botao global **"Exportar Todos os Pendentes"** (exporta sequencialmente todos sellers com pendencias)
+  - Historico de batches **colapsavel** por seller card
+  - Status badges: `queued`, `uploaded`, `skipped`, `failed`
+  - Links diretos para GDrive quando disponivel
+  - Polling de status GDrive (12 tentativas, 5s intervalo)
+  - Re-download por `batch_id`
+  - Sem filtros de mes/ano (usa `status_filter=pending_review,auto_categorized`)
+- Hook `useExpenses`:
+  - `loadStats(sellerSlug, dateFrom?, dateTo?, statusFilter?)`
+  - `exportAndBackup(sellerSlug, dateFrom?, dateTo?, statusFilter?)`
+  - `loadBatches(sellerSlug)` (consome `payload.data`)
+  - `redownloadBatchById(sellerSlug, batchId)`
 
 ### CORS
 - `app/main.py` expoe headers para o frontend:
@@ -308,7 +333,7 @@ O dashboard React tem seu **proprio CLAUDE.md** em `dashboard/claude.md` com doc
 
 Para trabalhar no dashboard, consulte esse arquivo. Resumo:
 - React 19 + TypeScript + Vite 7 + Recharts 3
-- 4 views: Geral, Metas, Entrada, Linhas
+- 5 views: Geral, Metas, Entrada, Linhas, Admin
 - Motor de calculos centralizado em `goalCalculator.ts`
 - Sem backend proprio (SPA → Supabase direto + admin API)
 - CSS Modules, sem Tailwind

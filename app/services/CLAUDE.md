@@ -25,11 +25,21 @@ Routers call services; services never import routers.
 | `extrato_coverage_checker.py` | Verifies 100% of release report lines are covered by payments, mp_expenses, or legacy export. |
 | `onboarding.py` | Seller lifecycle: `create_signup` -> `approve_seller` -> `activate_seller`. Creates revenue_lines and goals. |
 | `onboarding_backfill.py` | Historical payment ingestion for new sellers (by `money_release_date`). Resumable with progress tracking. |
-| `legacy_daily_export.py` | Downloads ML account_statement, runs legacy reconciliation, produces ZIP, uploads to external endpoint. |
 | `gdrive_client.py` | Public helper for expenses backup ZIP upload to Google Drive (`ROOT/DESPESAS/{EMPRESA}/{YYYY-MM}`). Reuses internals from `legacy/daily_export.py`. |
-| `legacy_bridge.py` | Bridge to reuse legacy CSV reconciliation logic. Wraps `legacy_engine.py` and produces XLSX ZIP output. |
-| `legacy_engine.py` | ~1500-line legacy reconciliation engine ported from V1. Processes ML CSVs into XLSX for CA import. |
 | `ca_categories_sync.py` | Daily sync of CA income/expense categories to local `ca_categories.json` file for offline lookups. |
+
+### legacy/ Subpackage
+
+Legacy reconciliation logic ported from V1, organized as a Python subpackage.
+
+| File | Responsibility |
+|------|---------------|
+| `legacy/__init__.py` | Re-exports public API for the subpackage |
+| `legacy/daily_export.py` | Downloads ML account_statement, runs legacy reconciliation, produces ZIP, uploads to external endpoint + GDrive. |
+| `legacy/bridge.py` | Bridge to reuse legacy CSV reconciliation logic. Wraps `engine.py` and produces XLSX ZIP output. |
+| `legacy/engine.py` | ~1500-line legacy reconciliation engine ported from V1. Processes ML CSVs into XLSX for CA import. |
+
+> **Note:** Root-level `legacy_daily_export.py`, `legacy_bridge.py`, and `legacy_engine.py` are thin wrappers / re-exports for backward compatibility. The canonical implementation lives in `legacy/`.
 
 ---
 
@@ -52,8 +62,8 @@ release_report_sync.py ------> ml_api.py (report download)
 extrato_ingester.py ---------> release_report_sync._get_or_create_report
 extrato_coverage_checker.py -> release_report_validator._get_or_create_report
 
-legacy_daily_export.py --> legacy_bridge.py --> legacy_engine.py
-legacy_daily_export.py --> ml_api.py (report download)
+legacy/daily_export.py --> legacy/bridge.py --> legacy/engine.py
+legacy/daily_export.py --> ml_api.py (report download)
 gdrive_client.py ------> legacy/daily_export.py (_build_gdrive_client, _gdrive_ensure_folder, _gdrive_upload_bytes)
 
 faturamento_sync.py --> ml_api.py (fetch_paid_orders)
@@ -67,12 +77,12 @@ ca_categories_sync.py -> ca_api.py (listar_categorias)
 
 ### Background tasks (started in `main.py` lifespan)
 - **CaWorker** (`ca_queue.py`) -- always running, polls ca_jobs every ~1s
-- **FaturamentoSyncer** (`faturamento_sync.py`) -- always running, every 5 min
+- **FaturamentoSyncer** (`faturamento_sync.py`) -- always running, every 1 min (configurable via `SYNC_INTERVAL_MINUTES`)
 - **CA token refresh** (`ca_api._get_ca_token`) -- every 30 min
 - **CA categories sync** (`ca_categories_sync.py`) -- daily at 02:00 BRT
 - **Daily sync** (`daily_sync.py`) -- daily at 00:01 BRT (when nightly pipeline disabled)
 - **Financial closing** (`financial_closing.py`) -- daily at 11:30 BRT (when nightly pipeline disabled)
-- **Legacy daily export** (`legacy_daily_export.py`) -- daily, configurable hour (when enabled)
+- **Legacy daily export** (`legacy/daily_export.py`) -- daily, configurable hour (when enabled)
 - **Nightly pipeline** (`main.py`) -- orchestrates sync -> fee validation -> extrato ingestion -> baixas -> legacy -> coverage -> closing sequentially
 
 ### On-demand (called by routers or other services)
@@ -85,7 +95,7 @@ ca_categories_sync.py -> ca_api.py (listar_categorias)
 - `release_report_validator.py` -- called by admin router, nightly pipeline
 - `extrato_ingester.py` -- called by admin router, nightly pipeline
 - `extrato_coverage_checker.py` -- called by admin router, nightly pipeline
-- `legacy_bridge.py` -- called by expenses router (legacy-export endpoint)
+- `legacy/bridge.py` -- called by expenses router (legacy-export endpoint)
 - `gdrive_client.py` -- called by expenses export router (`gdrive_backup=true`) via background task
 
 ---
@@ -113,7 +123,7 @@ ca_categories_sync.py -> ca_api.py (listar_categorias)
 - **`charges_details` is the source of truth for fees.** Never use `fee_details` (it is incomplete).
 - **`financing_fee` is net-neutral.** It must be excluded from comissao calculations and never generates a CA expense.
 - **ML dates are UTC-4, reports use BRT (UTC-3).** Always use `_to_brt_date(date_approved)` for competencia.
-- **`legacy_engine.py` is a ported monolith (~1500 lines).** Avoid modifying it directly; use `legacy_bridge.py` as the interface.
+- **`legacy/engine.py` is a ported monolith (~1500 lines).** Avoid modifying it directly; use `legacy/bridge.py` as the interface.
 - **Nightly pipeline replaces individual schedulers.** When `nightly_pipeline_enabled=true`, daily_sync/baixas/closing schedulers are NOT started.
 - **`upload_expenses_zip()` is sync.** Routers async devem chamar via `asyncio.to_thread(...)` para nao bloquear event loop.
 - **Contrato de status GDrive para despesas:** `queued`, `uploaded`, `failed`, `skipped_no_drive_root`.
