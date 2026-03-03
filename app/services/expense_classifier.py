@@ -97,6 +97,37 @@ def _extract_febraban(payment: dict) -> str | None:
     return None
 
 
+def _extract_bank_info(payment: dict) -> dict:
+    """Extract payer/collector bank info from point_of_interaction."""
+    td = (
+        (payment.get("point_of_interaction") or {})
+        .get("transaction_data", {})
+        .get("bank_info")
+        or {}
+    )
+    return {
+        "payer_bank": (td.get("payer") or {}).get("long_name") or "",
+        "collector_alias": (td.get("collector") or {}).get("account_alias") or "",
+        "payer_id_type": ((payment.get("payer") or {}).get("identification") or {}).get("type") or "",
+        "payer_id_number": ((payment.get("payer") or {}).get("identification") or {}).get("number") or "",
+    }
+
+
+def _short_bank_name(long_name: str) -> str:
+    """Shorten bank long_name to a readable label."""
+    if not long_name:
+        return ""
+    # Take first meaningful part before " - " or "S.A." etc.
+    name = long_name.split(" - ")[0].split(" S.A.")[0].split(" LTDA")[0].strip()
+    # Capitalize nicely if all upper
+    if name == name.upper() and len(name) > 5:
+        name = name.title()
+    # Truncate very long names (e.g. cooperatives)
+    if len(name) > 40:
+        name = name[:37] + "..."
+    return name
+
+
 def _match_rule(rule: dict, payment: dict, branch: str) -> bool:
     """Check if a rule matches the payment."""
     # Check branch constraint if present
@@ -157,11 +188,17 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
 
     # 4. money_transfer + Intra MP → TRANSFER
     if op_type == "money_transfer" and branch == "Intra MP":
-        return "transfer_intra", "transfer", None, False, f"Transferencia Intra MP - R$ {amount}"[:200]
+        bi = _extract_bank_info(payment)
+        dest = bi["collector_alias"] or bi["payer_id_number"] or ""
+        dest_label = f" p/ {dest}" if dest else ""
+        return "transfer_intra", "transfer", None, False, f"Transferencia Intra MP{dest_label} - R$ {amount}"[:200]
 
     # 5. money_transfer + other → TRANSFER
     if op_type == "money_transfer":
-        return "transfer_pix", "transfer", None, False, f"Transferencia - {description or f'R$ {amount}'}"[:200]
+        bi = _extract_bank_info(payment)
+        dest = bi["collector_alias"] or bi["payer_id_number"] or ""
+        dest_label = f" p/ {dest}" if dest else ""
+        return "transfer_pix", "transfer", None, False, f"Transferencia{dest_label} - {description or f'R$ {amount}'}"[:200]
 
     # 6. branch contains "Bill Payment" → check auto-rules (DARF), else EXPENSE
     if "bill payment" in branch.lower():
@@ -186,7 +223,10 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
 
     # 9. PIX without branch → TRANSFER (deposit/aporte)
     if payment_method == "pix" and not branch:
-        return "deposit", "transfer", None, False, f"Deposito PIX - R$ {amount}"[:200]
+        bi = _extract_bank_info(payment)
+        bank = _short_bank_name(bi["payer_bank"])
+        origin = f" de {bank}" if bank else ""
+        return "deposit", "transfer", None, False, f"Deposito PIX{origin} - R$ {amount}"[:200]
 
     # 10. No match → OTHER
     return "other", "expense", None, False, f"Outro - {description or f'R$ {amount}'}"[:200]
