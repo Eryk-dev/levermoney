@@ -57,3 +57,18 @@ Started: Tue Mar  3 14:29:53 -03 2026
   - The `_daily_baixa_scheduler` (10h BRT) only runs in legacy mode — when nightly pipeline is active, baixas are step 5 inside the pipeline
   - Onboarding backfill is independent of both schedulers — it triggers baixas inline via `_trigger_baixas()`
 ---
+
+## 2026-03-03 - US-005
+- Updated documentation across 5 files to reflect `pending_ca` status and baixa timing
+- Files changed: `CLAUDE.md`, `docs/TABELAS.md`, `docs/REGRAS_NEGOCIO.md`, `docs/FLUXO_DETALHADO.md`, `app/services/CLAUDE.md`
+- Changes:
+  - CLAUDE.md section 7 flow: added `pending_ca` path for sellers without CA config
+  - TABELAS.md: added `pending_ca` to payments status enum
+  - REGRAS_NEGOCIO.md: new section 11.5c documenting `pending_ca` behavior, reprocessing, and idempotency
+  - FLUXO_DETALHADO.md: noted baixas run immediately after sync (step 5), not on separate schedule; updated pipeline to 9 steps
+  - app/services/CLAUDE.md: processor.py description mentions `pending_ca` for sellers without CA config
+- **Learnings for future iterations:**
+  - Root CLAUDE.md does NOT have the payments status enum inline — it's only in `docs/TABELAS.md`
+  - CLAUDE.md section 5 is the project tree structure, not schema definitions
+  - FLUXO_DETALHADO.md pipeline steps were outdated (7 steps vs actual 9) — fixed as part of this story
+---

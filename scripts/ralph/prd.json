@@ -76,7 +76,7 @@
         "Lint passes on all modified files"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Documentation files: CLAUDE.md (root), docs/TABELAS.md, docs/REGRAS_NEGOCIO.md, docs/FLUXO_DETALHADO.md, app/services/CLAUDE.md. Keep changes minimal and factual."
     }
   ]
