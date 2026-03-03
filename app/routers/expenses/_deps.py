@@ -82,17 +82,38 @@ def _signed_amount(row: dict) -> float:
     return -abs(amount)
 
 
+def _date_range_label(rows: list[dict], date_from: str | None = None, date_to: str | None = None) -> str:
+    """Return DD.MM.YYYY_DD.MM.YYYY label for ZIP folder name.
+
+    Uses date_from/date_to params when provided, otherwise computes
+    min/max from row dates.
+    """
+    if date_from and date_to:
+        d1 = datetime.strptime(date_from, "%Y-%m-%d").strftime("%d.%m.%Y")
+        d2 = datetime.strptime(date_to, "%Y-%m-%d").strftime("%d.%m.%Y")
+        return f"{d1}_{d2}"
+
+    dates: list[datetime] = []
+    for r in rows:
+        iso = r.get("date_approved") or r.get("date_created")
+        if iso:
+            try:
+                dates.append(datetime.fromisoformat(iso).astimezone(BRT))
+            except (ValueError, TypeError):
+                pass
+    if not dates:
+        return "sem-data"
+    d1 = min(dates).strftime("%d.%m.%Y")
+    d2 = max(dates).strftime("%d.%m.%Y")
+    return f"{d1}_{d2}"
+
+
 def _group_rows_by_day(rows: list[dict]) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         day = _to_brt_iso_date(row.get("date_approved") or row.get("date_created"))
         grouped[day].append(row)
     return dict(sorted(grouped.items(), key=lambda item: item[0]))
-
-
-def _safe_csv(value) -> str:
-    text = "" if value is None else str(value)
-    return text.replace(",", " ").replace("\n", " ").strip()
 
 
 def _batch_tables_available(db) -> bool:

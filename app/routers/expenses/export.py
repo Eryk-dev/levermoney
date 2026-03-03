@@ -20,9 +20,9 @@ from app.services.gdrive_client import upload_expenses_zip
 from ._deps import (
     MP_CONTATO, MP_CNPJ, ML_CONTATO, ML_CNPJ,
     ConfirmImportRequest,
-    _to_brt_date_str, _to_brt_iso_date,
+    _to_brt_date_str,
     _get_centro_custo_name, _sanitize_path_component,
-    _signed_amount, _group_rows_by_day, _safe_csv,
+    _signed_amount, _date_range_label,
     _batch_tables_available, _persist_batch_metadata, update_batch_gdrive_status,
 )
 
@@ -112,12 +112,11 @@ async def export_expenses(
     mark_exported: bool = Query(False, description="Mark exported rows as 'exported'"),
     gdrive_backup: bool = Query(False, description="Upload ZIP to Google Drive in background"),
 ):
-    """Generate ZIP with folder structure: EMPRESA/YYYY-MM-DD/*.xlsx.
+    """Generate ZIP: EMPRESA_DD.MM.YYYY_DD.MM.YYYY/{PAGAMENTO_CONTAS,TRANSFERENCIAS}.xlsx.
 
-    All non-exported rows are included:
+    All non-exported rows are included in two consolidated XLSX files:
     - expense/income -> PAGAMENTO_CONTAS.xlsx
     - transfer       -> TRANSFERENCIAS.xlsx
-    If category is unknown, Categoria stays blank in XLSX.
     """
     db = get_db()
     seller = get_seller_config(db, seller_slug)
@@ -142,72 +141,30 @@ async def export_expenses(
     result = q.execute()
     rows = result.data or []
 
-    rows_by_day = _group_rows_by_day(rows)
     batch_id = f"exp_{uuid4().hex[:24]}"
 
     empresa_nome = seller.get("dashboard_empresa") or seller_slug
-    empresa_dir = _sanitize_path_component(empresa_nome.upper())
-    written_files = 0
-    manifest_rows: list[tuple[str, int, float]] = []
-    payment_manifest_rows: list[tuple[str, str, int | None, float, str, str, str, str]] = []
+    empresa_base = _sanitize_path_component(empresa_nome.upper())
+    range_label = _date_range_label(rows, date_from, date_to)
+    empresa_dir = f"{empresa_base}_{range_label}" if range_label != "sem-data" else empresa_base
+
+    payment_rows = [r for r in rows if r.get("expense_direction") in ("expense", "income")]
+    transfer_rows = [r for r in rows if r.get("expense_direction") == "transfer"]
 
     # Create ZIP
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for day, day_rows in rows_by_day.items():
-            payment_rows = [r for r in day_rows if r.get("expense_direction") in ("expense", "income")]
-            transfer_rows = [r for r in day_rows if r.get("expense_direction") == "transfer"]
-
-            if payment_rows:
-                file_path = f"{empresa_dir}/{day}/PAGAMENTO_CONTAS.xlsx"
-                zf.writestr(file_path, _build_xlsx(payment_rows, seller, "PAGAMENTO_CONTAS").getvalue())
-                written_files += 1
-                manifest_rows.append((file_path, len(payment_rows), round(sum(_signed_amount(r) for r in payment_rows), 2)))
-                for row in payment_rows:
-                    payment_manifest_rows.append((
-                        day,
-                        "PAGAMENTO_CONTAS.xlsx",
-                        row.get("payment_id"),
-                        _signed_amount(row),
-                        row.get("expense_direction") or "",
-                        row.get("expense_type") or "",
-                        row.get("ca_category") or "",
-                        row.get("status") or "",
-                    ))
-
-            if transfer_rows:
-                file_path = f"{empresa_dir}/{day}/TRANSFERENCIAS.xlsx"
-                zf.writestr(file_path, _build_xlsx(transfer_rows, seller, "TRANSFERENCIAS").getvalue())
-                written_files += 1
-                manifest_rows.append((file_path, len(transfer_rows), round(sum(_signed_amount(r) for r in transfer_rows), 2)))
-                for row in transfer_rows:
-                    payment_manifest_rows.append((
-                        day,
-                        "TRANSFERENCIAS.xlsx",
-                        row.get("payment_id"),
-                        _signed_amount(row),
-                        row.get("expense_direction") or "",
-                        row.get("expense_type") or "",
-                        row.get("ca_category") or "",
-                        row.get("status") or "",
-                    ))
-
-        manifest_content = "arquivo,linhas,valor_total\n"
-        manifest_content += f"batch_id,{batch_id},,\n"
-        for path, row_count, total in manifest_rows:
-            manifest_content += f"{path},{row_count},{total:.2f}\n"
-        zf.writestr(f"{empresa_dir}/manifest.csv", manifest_content)
-
-        payments_manifest = "empresa,data,arquivo,payment_id,valor,direcao,tipo,categoria,status\n"
-        for day, arquivo, payment_id, valor, direcao, tipo, categoria, status in payment_manifest_rows:
-            payments_manifest += (
-                f"{_safe_csv(empresa_nome)},{_safe_csv(day)},{_safe_csv(arquivo)},"
-                f"{_safe_csv(payment_id)},{valor:.2f},{_safe_csv(direcao)},"
-                f"{_safe_csv(tipo)},{_safe_csv(categoria)},{_safe_csv(status)}\n"
+        if payment_rows:
+            zf.writestr(
+                f"{empresa_dir}/PAGAMENTO_CONTAS.xlsx",
+                _build_xlsx(payment_rows, seller, "PAGAMENTO_CONTAS").getvalue(),
             )
-        zf.writestr(f"{empresa_dir}/manifest_pagamentos.csv", payments_manifest)
-
-        if written_files == 0:
+        if transfer_rows:
+            zf.writestr(
+                f"{empresa_dir}/TRANSFERENCIAS.xlsx",
+                _build_xlsx(transfer_rows, seller, "TRANSFERENCIAS").getvalue(),
+            )
+        if not payment_rows and not transfer_rows:
             zf.writestr(f"{empresa_dir}/README.txt", "Nenhuma linha encontrada para os filtros informados.\n")
     zip_buf.seek(0)
 
@@ -251,8 +208,7 @@ async def export_expenses(
             "Batch tables not found. Exported file has batch_id but import confirmation API is disabled."
         )
 
-    date_suffix = f"{date_from or 'all'}_{date_to or 'now'}"
-    filename = f"despesas_{empresa_dir}_{date_suffix}.zip"
+    filename = f"despesas_{empresa_dir}.zip"
 
     # Schedule background GDrive upload if requested and Drive is configured
     if gdrive_backup and drive_configured:
@@ -372,7 +328,10 @@ async def redownload_batch(seller_slug: str, batch_id: str):
 
     empresa_nome = batch.get("company") or seller.get("dashboard_empresa") or seller_slug
     empresa_dir = _sanitize_path_component(empresa_nome.upper())
-    filename = f"despesas_{empresa_dir}_{batch_id}.zip"
+
+    range_label = _date_range_label([], batch.get("date_from"), batch.get("date_to"))
+    empresa_dir_full = f"{empresa_dir}_{range_label}" if range_label != "sem-data" else empresa_dir
+    filename = f"despesas_{empresa_dir_full}_{batch_id}.zip"
 
     # Batches with zero rows are valid and should still be re-downloadable.
     if not items:
@@ -381,15 +340,8 @@ async def redownload_batch(seller_slug: str, batch_id: str):
 
         zip_buf = io.BytesIO()
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            manifest_content = "arquivo,linhas,valor_total\n"
-            manifest_content += f"batch_id,{batch_id},,\n"
-            zf.writestr(f"{empresa_dir}/manifest.csv", manifest_content)
             zf.writestr(
-                f"{empresa_dir}/manifest_pagamentos.csv",
-                "empresa,data,arquivo,payment_id,valor,direcao,tipo,categoria,status\n",
-            )
-            zf.writestr(
-                f"{empresa_dir}/README.txt",
+                f"{empresa_dir_full}/README.txt",
                 "Nenhuma linha encontrada para os filtros informados.\n",
             )
         zip_buf.seek(0)
@@ -415,69 +367,30 @@ async def redownload_batch(seller_slug: str, batch_id: str):
 
     # Reconstruct rows from snapshot_payload
     rows = [item["snapshot_payload"] for item in items]
-    rows_by_day = _group_rows_by_day(rows)
 
-    manifest_rows: list[tuple[str, int, float]] = []
-    payment_manifest_rows: list[tuple[str, str, int | None, float, str, str, str, str]] = []
-    written_files = 0
+    # Refine range label from actual row dates if batch has no date_from/date_to
+    if range_label == "sem-data":
+        range_label = _date_range_label(rows)
+        empresa_dir_full = f"{empresa_dir}_{range_label}" if range_label != "sem-data" else empresa_dir
+        filename = f"despesas_{empresa_dir_full}_{batch_id}.zip"
+
+    payment_rows = [r for r in rows if r.get("expense_direction") in ("expense", "income")]
+    transfer_rows = [r for r in rows if r.get("expense_direction") == "transfer"]
 
     zip_buf = io.BytesIO()
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for day, day_rows in rows_by_day.items():
-            payment_rows = [r for r in day_rows if r.get("expense_direction") in ("expense", "income")]
-            transfer_rows = [r for r in day_rows if r.get("expense_direction") == "transfer"]
-
-            if payment_rows:
-                file_path = f"{empresa_dir}/{day}/PAGAMENTO_CONTAS.xlsx"
-                zf.writestr(file_path, _build_xlsx(payment_rows, seller, "PAGAMENTO_CONTAS").getvalue())
-                written_files += 1
-                manifest_rows.append((file_path, len(payment_rows), round(sum(_signed_amount(r) for r in payment_rows), 2)))
-                for row in payment_rows:
-                    payment_manifest_rows.append((
-                        day,
-                        "PAGAMENTO_CONTAS.xlsx",
-                        row.get("payment_id"),
-                        _signed_amount(row),
-                        row.get("expense_direction") or "",
-                        row.get("expense_type") or "",
-                        row.get("ca_category") or "",
-                        row.get("status") or "",
-                    ))
-
-            if transfer_rows:
-                file_path = f"{empresa_dir}/{day}/TRANSFERENCIAS.xlsx"
-                zf.writestr(file_path, _build_xlsx(transfer_rows, seller, "TRANSFERENCIAS").getvalue())
-                written_files += 1
-                manifest_rows.append((file_path, len(transfer_rows), round(sum(_signed_amount(r) for r in transfer_rows), 2)))
-                for row in transfer_rows:
-                    payment_manifest_rows.append((
-                        day,
-                        "TRANSFERENCIAS.xlsx",
-                        row.get("payment_id"),
-                        _signed_amount(row),
-                        row.get("expense_direction") or "",
-                        row.get("expense_type") or "",
-                        row.get("ca_category") or "",
-                        row.get("status") or "",
-                    ))
-
-        manifest_content = "arquivo,linhas,valor_total\n"
-        manifest_content += f"batch_id,{batch_id},,\n"
-        for path, row_count, total in manifest_rows:
-            manifest_content += f"{path},{row_count},{total:.2f}\n"
-        zf.writestr(f"{empresa_dir}/manifest.csv", manifest_content)
-
-        payments_manifest = "empresa,data,arquivo,payment_id,valor,direcao,tipo,categoria,status\n"
-        for day, arquivo, payment_id, valor, direcao, tipo, categoria, status in payment_manifest_rows:
-            payments_manifest += (
-                f"{_safe_csv(empresa_nome)},{_safe_csv(day)},{_safe_csv(arquivo)},"
-                f"{_safe_csv(payment_id)},{valor:.2f},{_safe_csv(direcao)},"
-                f"{_safe_csv(tipo)},{_safe_csv(categoria)},{_safe_csv(status)}\n"
+        if payment_rows:
+            zf.writestr(
+                f"{empresa_dir_full}/PAGAMENTO_CONTAS.xlsx",
+                _build_xlsx(payment_rows, seller, "PAGAMENTO_CONTAS").getvalue(),
             )
-        zf.writestr(f"{empresa_dir}/manifest_pagamentos.csv", payments_manifest)
-
-        if written_files == 0:
-            zf.writestr(f"{empresa_dir}/README.txt", "Nenhuma linha encontrada para os filtros informados.\n")
+        if transfer_rows:
+            zf.writestr(
+                f"{empresa_dir_full}/TRANSFERENCIAS.xlsx",
+                _build_xlsx(transfer_rows, seller, "TRANSFERENCIAS").getvalue(),
+            )
+        if not payment_rows and not transfer_rows:
+            zf.writestr(f"{empresa_dir_full}/README.txt", "Nenhuma linha encontrada para os filtros informados.\n")
 
     zip_buf.seek(0)
 
