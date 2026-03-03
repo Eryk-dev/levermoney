@@ -7,8 +7,8 @@ import { formatBRL, formatPercent } from './utils/dataParser';
 import { ViewToggle, type ViewType } from './components/ViewToggle';
 import { MultiSelect } from './components/MultiSelect';
 import { DatePicker } from './components/DatePicker';
-import { DatePresets } from './components/DatePresets';
 import { MonthSelector } from './components/MonthSelector';
+import { PeriodNavigator } from './components/PeriodNavigator';
 import { KPICard } from './components/KPICard';
 import { GoalsDashboard } from './components/GoalsDashboard';
 import { GoalSummary } from './components/GoalSummary';
@@ -85,9 +85,13 @@ function App() {
     empresaBreakdown,
     segmentPieData,
     datePreset,
+    granularity,
+    periodLabel,
+    canNavigateForward,
+    navigatePeriod,
+    setGranularity,
     updateFilter,
     toggleFilterValue,
-    setDatePreset,
     clearFilters,
     hasActiveFilters,
     toggleComparison,
@@ -193,7 +197,15 @@ function App() {
       return [...companyDailyPerformance].sort((a, b) => b.realizado - a.realizado);
     }
 
-    return companyGoalData
+    // Apply entity filters to companyGoalData
+    const entityFiltered = companyGoalData.filter((item) => {
+      if (filters.empresas.length > 0 && !filters.empresas.includes(item.empresa)) return false;
+      if (filters.grupos.length > 0 && !filters.grupos.includes(item.grupo)) return false;
+      if (filters.segmentos.length > 0 && !filters.segmentos.includes(item.segmento)) return false;
+      return true;
+    });
+
+    return entityFiltered
       .map((item) => {
         const meta = item.metaProporcional > 0 ? item.metaProporcional : item.metaMensal;
         const gap = item.realizado - meta;
@@ -210,7 +222,7 @@ function App() {
       })
       .filter((item) => item.realizado > 0 || item.meta > 0)
       .sort((a, b) => b.realizado - a.realizado);
-  }, [isDailyPreset, companyDailyPerformance, companyGoalData]);
+  }, [isDailyPreset, companyDailyPerformance, companyGoalData, filters]);
 
   const groupRankingData = useMemo(() => {
     const grouped = new Map<string, { realizado: number; meta: number }>();
@@ -410,7 +422,13 @@ function App() {
               nativeMode="sheet"
             />
             <div className={styles.filtersDivider} />
-            <DatePresets value={datePreset} onChange={setDatePreset} />
+            <PeriodNavigator
+              granularity={granularity}
+              periodLabel={periodLabel}
+              canNavigateForward={canNavigateForward}
+              onGranularityChange={setGranularity}
+              onNavigate={navigatePeriod}
+            />
             <button
               type="button"
               className={`${styles.catchUpToggle} ${gapCatchUpEnabled ? styles.catchUpOn : styles.catchUpOff}`}

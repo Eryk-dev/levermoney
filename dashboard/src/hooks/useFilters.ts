@@ -21,6 +21,7 @@ import {
 } from '../utils/goalCalculator';
 
 export type DatePreset = 'today' | 'yesterday' | 'wtd' | 'mtd' | 'all';
+export type PeriodGranularity = 'day' | 'week' | 'month' | 'all';
 
 export interface CompanyDailyPerformanceItem {
   empresa: string;
@@ -33,20 +34,11 @@ export interface CompanyDailyPerformanceItem {
 }
 
 const GAP_CATCHUP_STORAGE_KEY = 'faturamento-dashboard-gap-catchup-enabled';
-const DATE_PRESET_KEY = 'dashboard-date-preset';
+const GRANULARITY_KEY = 'dashboard-granularity';
 const FILTERS_KEY = 'dashboard-filters';
 const COMPARISON_ENABLED_KEY = 'dashboard-comparison-enabled';
 const COMPARISON_START_KEY = 'dashboard-comparison-start';
 const COMPARISON_END_KEY = 'dashboard-comparison-end';
-
-function getReferenceDateForPreset(preset: DatePreset): Date {
-  const date = new Date();
-  date.setHours(12, 0, 0, 0);
-  if (preset === 'yesterday') {
-    date.setDate(date.getDate() - 1);
-  }
-  return date;
-}
 
 export interface DailyDataPoint {
   date: Date;
@@ -82,12 +74,17 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     }
   });
 
-  const [datePreset, setDatePreset] = useState<DatePreset>(() => {
+  const [granularity, setGranularity] = useState<PeriodGranularity>(() => {
     try {
-      const raw = localStorage.getItem(DATE_PRESET_KEY);
-      if (raw === 'today' || raw === 'yesterday' || raw === 'wtd' || raw === 'mtd' || raw === 'all') return raw;
+      const raw = localStorage.getItem(GRANULARITY_KEY);
+      if (raw === 'day' || raw === 'week' || raw === 'month' || raw === 'all') return raw;
     } catch { /* ignore */ }
-    return 'today';
+    return 'day';
+  });
+  const [periodReference, setPeriodReference] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    return d;
   });
   const [gapCatchUpEnabled, setGapCatchUpEnabled] = useState<boolean>(() => {
     try {
@@ -109,9 +106,9 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
 
   useEffect(() => {
     try {
-      localStorage.setItem(DATE_PRESET_KEY, datePreset);
+      localStorage.setItem(GRANULARITY_KEY, granularity);
     } catch { /* ignore */ }
-  }, [datePreset]);
+  }, [granularity]);
 
   useEffect(() => {
     try {
@@ -142,19 +139,71 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     }));
   }, [lineSets]);
 
-  // Month override for metas tab: when viewing a non-current month
+  // Month override for metas tab: always active when metasMonth/Year are provided
   const monthOverride = useMemo(() => {
     if (metasMonth == null || metasYear == null) return null;
     const now = new Date();
-    if (metasMonth === now.getMonth() + 1 && metasYear === now.getFullYear()) return null;
-    const lastDay = new Date(metasYear, metasMonth, 0);
-    lastDay.setHours(12, 0, 0, 0);
+    const isCurrentMonth = metasMonth === now.getMonth() + 1 && metasYear === now.getFullYear();
+
+    let referenceDate: Date;
+    if (isCurrentMonth) {
+      // Current month: use D-1 (yesterday) as reference
+      referenceDate = new Date();
+      referenceDate.setDate(referenceDate.getDate() - 1);
+      referenceDate.setHours(12, 0, 0, 0);
+    } else {
+      // Past month: last day of that month
+      referenceDate = new Date(metasYear, metasMonth, 0);
+      referenceDate.setHours(12, 0, 0, 0);
+    }
+
     const mStart = new Date(metasYear, metasMonth - 1, 1);
     mStart.setHours(0, 0, 0, 0);
     const mEnd = new Date(metasYear, metasMonth, 0);
     mEnd.setHours(23, 59, 59, 999);
-    return { referenceDate: lastDay, start: mStart, end: mEnd, month: metasMonth, year: metasYear };
+    return { referenceDate, start: mStart, end: mEnd, month: metasMonth, year: metasYear };
   }, [metasMonth, metasYear]);
+
+  // Consolidated reference date: monthOverride (metas tab) > granularity (geral)
+  const currentReferenceDate = useMemo(() => {
+    if (monthOverride) return monthOverride.referenceDate;
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    switch (granularity) {
+      case 'day':
+        return new Date(periodReference.getTime());
+      case 'week': {
+        const weekEnd = endOfWeek(periodReference, { weekStartsOn: 1 });
+        weekEnd.setHours(12, 0, 0, 0);
+        return weekEnd <= today ? weekEnd : today;
+      }
+      case 'month': {
+        const monthEnd = endOfMonth(periodReference);
+        monthEnd.setHours(12, 0, 0, 0);
+        return monthEnd <= today ? monthEnd : today;
+      }
+      case 'all':
+      default:
+        return today;
+    }
+  }, [monthOverride, granularity, periodReference]);
+
+  // Derived datePreset for backward compat with components (PaceChart, GoalSummary, etc.)
+  const datePreset: DatePreset = useMemo(() => {
+    if (monthOverride) return 'mtd';
+    switch (granularity) {
+      case 'day': {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const ref = new Date(periodReference);
+        ref.setHours(0, 0, 0, 0);
+        return ref.getTime() === today.getTime() ? 'today' : 'yesterday';
+      }
+      case 'week': return 'wtd';
+      case 'month': return 'mtd';
+      case 'all': return 'all';
+    }
+  }, [granularity, periodReference, monthOverride]);
 
   const companyMetaInfo = useMemo(
     () => buildCompanyMetaInfo(yearlyGoals, lines),
@@ -167,14 +216,13 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
 
   // Extract unique values for dropdowns
   const options = useMemo(() => {
-    const isSingleDayPreset = datePreset === 'today' || datePreset === 'yesterday';
+    const isSingleDay = !monthOverride && granularity === 'day';
     const empresasComResultadoNoDia = new Set<string>();
 
-    if (isSingleDayPreset) {
-      const referenceDate = getReferenceDateForPreset(datePreset);
-      const dayStart = new Date(referenceDate);
+    if (isSingleDay) {
+      const dayStart = new Date(currentReferenceDate);
       dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(referenceDate);
+      const dayEnd = new Date(currentReferenceDate);
       dayEnd.setHours(23, 59, 59, 999);
 
       data.forEach((record) => {
@@ -186,7 +234,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       });
     }
 
-    const empresas = (isSingleDayPreset
+    const empresas = (isSingleDay
       ? Array.from(empresasComResultadoNoDia)
       : [...new Set(lines.map((c) => c.empresa))]
     ).sort();
@@ -201,45 +249,35 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
   }, [
     data,
     lines,
-    datePreset,
+    granularity,
+    currentReferenceDate,
+    monthOverride,
     filters.grupos,
     filters.segmentos,
   ]);
 
-  // Calculate effective date range based on preset or custom dates
+  // Calculate effective date range from granularity + periodReference
   const effectiveDateRange = useMemo(() => {
     if (monthOverride) {
       return { start: monthOverride.start, end: monthOverride.end };
     }
 
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-
-    switch (datePreset) {
-      case 'today': {
-        const start = new Date(today);
+    switch (granularity) {
+      case 'day': {
+        const start = new Date(periodReference);
         start.setHours(0, 0, 0, 0);
-        const end = new Date(today);
+        const end = new Date(periodReference);
         end.setHours(23, 59, 59, 999);
         return { start, end };
       }
-      case 'yesterday': {
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const start = new Date(yesterday);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(yesterday);
-        end.setHours(23, 59, 59, 999);
+      case 'week': {
+        const start = startOfWeek(periodReference, { weekStartsOn: 1 });
+        const end = endOfWeek(periodReference, { weekStartsOn: 1 });
         return { start, end };
       }
-      case 'wtd': {
-        const start = startOfWeek(today, { weekStartsOn: 1 });
-        const end = endOfWeek(today, { weekStartsOn: 1 });
-        return { start, end };
-      }
-      case 'mtd': {
-        const start = startOfMonth(today);
-        const end = endOfMonth(today);
+      case 'month': {
+        const start = startOfMonth(periodReference);
+        const end = endOfMonth(periodReference);
         return { start, end };
       }
       case 'all':
@@ -249,7 +287,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
           end: filters.dataFim,
         };
     }
-  }, [monthOverride, datePreset, filters.dataInicio, filters.dataFim]);
+  }, [monthOverride, granularity, periodReference, filters.dataInicio, filters.dataFim]);
 
   // Apply filters to data
   const filteredData = useMemo(() => {
@@ -274,14 +312,13 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
   }, [data, filters.empresas, filters.grupos, filters.segmentos]);
 
   const adaptiveGoalPlanner = useMemo(() => {
-    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
     return buildAdaptiveDailyGoalPlanner(
       selectedCompaniesForGoals,
       entityFilteredData,
-      referenceDate,
+      currentReferenceDate,
       { catchUpEnabled: gapCatchUpEnabled }
     );
-  }, [selectedCompaniesForGoals, entityFilteredData, datePreset, gapCatchUpEnabled, monthOverride]);
+  }, [selectedCompaniesForGoals, entityFilteredData, currentReferenceDate, gapCatchUpEnabled]);
 
   // Data filtered only by date (for total calculations)
   const dateFilteredData = useMemo(() => {
@@ -307,25 +344,20 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     };
   }, [filteredData, dateFilteredData]);
 
-  // Use o mês da referência ativa (Hoje/Ontem) para metas
+  // Sync selected month from current reference
   useEffect(() => {
-    if (monthOverride) {
-      setSelectedMonth(monthOverride.month);
-    } else {
-      const referenceDate = getReferenceDateForPreset(datePreset);
-      setSelectedMonth(referenceDate.getMonth() + 1);
-    }
-  }, [setSelectedMonth, datePreset, monthOverride]);
+    setSelectedMonth(currentReferenceDate.getMonth() + 1);
+  }, [setSelectedMonth, currentReferenceDate]);
 
   // Calculate goal metrics (metas)
   const goalMetrics = useMemo((): GoalMetrics => {
-    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
+    const referenceDate = currentReferenceDate;
     const dayStart = new Date(referenceDate);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(referenceDate);
     dayEnd.setHours(23, 59, 59, 999);
 
-    const isAllPreset = datePreset === 'all';
+    const isAllPreset = !monthOverride && granularity === 'all';
     const hasCustomRange = isAllPreset && !!effectiveDateRange.start && !!effectiveDateRange.end;
     const refMonth = referenceDate.getMonth() + 1;
     const refYear = referenceDate.getFullYear();
@@ -486,31 +518,58 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     };
   }, [
     filteredData,
-    datePreset,
+    currentReferenceDate,
+    granularity,
+    monthOverride,
     effectiveDateRange,
     selectedCompaniesForGoals,
     entityFilteredData,
     adaptiveGoalPlanner,
-    monthOverride,
   ]);
 
-  // Company goal breakdown for table
+  // Company goal breakdown for table (period-aware)
   const companyGoalData = useMemo(() => {
-    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
+    const referenceDate = currentReferenceDate;
     const refMonth = referenceDate.getMonth() + 1;
-    const refYear = referenceDate.getFullYear();
     const monthStart = startOfMonth(referenceDate);
     const referenceEnd = new Date(referenceDate);
     referenceEnd.setHours(23, 59, 59, 999);
 
-    const allMonthData = data.filter((record) => {
-      const recordMonth = record.data.getMonth() + 1;
-      const recordYear = record.data.getFullYear();
-      return recordMonth === refMonth && recordYear === refYear && record.data <= referenceEnd;
+    // Determine period based on granularity
+    const isAllNoRange = granularity === 'all' && !monthOverride
+      && !effectiveDateRange.start && !effectiveDateRange.end;
+    let periodStart: Date | null;
+    let periodEnd: Date = referenceEnd;
+    let goalRangeEnd: Date = referenceDate;
+
+    if (monthOverride) {
+      periodStart = monthOverride.start;
+    } else {
+      switch (granularity) {
+        case 'week':
+          periodStart = startOfWeek(referenceDate, { weekStartsOn: 1 });
+          break;
+        case 'all':
+          periodStart = effectiveDateRange.start ?? null;
+          if (effectiveDateRange.end) {
+            periodEnd = effectiveDateRange.end;
+            goalRangeEnd = effectiveDateRange.end;
+          }
+          break;
+        default: // day, month
+          periodStart = monthStart;
+          break;
+      }
+    }
+
+    const periodData = data.filter((record) => {
+      if (periodStart && record.data < periodStart) return false;
+      if (record.data > periodEnd) return false;
+      return true;
     });
 
     const byEmpresa = new Map<string, number>();
-    allMonthData.forEach((record) => {
+    periodData.forEach((record) => {
       byEmpresa.set(record.empresa, (byEmpresa.get(record.empresa) || 0) + record.faturamento);
     });
 
@@ -533,7 +592,19 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
         referenceDate,
         { catchUpEnabled: gapCatchUpEnabled }
       );
-      const metaProporcional = companyPlanner.sumGoalsForRange(monthStart, referenceDate);
+
+      let metaProporcional: number;
+      if (isAllNoRange) {
+        // All data without custom range: sum goals only for dates with data
+        const companyRecords = periodData.filter(r => r.empresa === company.empresa);
+        const uniqueDateKeys = [...new Set(companyRecords.map(r => r.data.toISOString().split('T')[0]))];
+        metaProporcional = uniqueDateKeys.reduce((sum, key) => {
+          return sum + companyPlanner.getGoalForDate(new Date(key + 'T12:00:00'));
+        }, 0);
+      } else {
+        metaProporcional = companyPlanner.sumGoalsForRange(periodStart ?? monthStart, goalRangeEnd);
+      }
+
       const percentualMeta = metaMensal > 0 ? (realizado / metaMensal) * 100 : 0;
       const gap = realizado - metaProporcional;
 
@@ -548,12 +619,12 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
         gap,
       };
     }).filter((item) => item.metaMensal > 0 || item.realizado > 0);
-  }, [data, companyMetaInfo, datePreset, gapCatchUpEnabled, monthOverride]);
+  }, [data, companyMetaInfo, currentReferenceDate, gapCatchUpEnabled, granularity, monthOverride, effectiveDateRange]);
 
   // Daily totals for chart - with breakdown by company and group
   const dailyData = useMemo(() => {
     const grouped = new Map<string, { total: number; byCompany: Map<string, number>; byGroup: Map<string, number> }>();
-    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
+    const referenceDate = currentReferenceDate;
 
     const ensureDateBucket = (date: Date) => {
       const key = date.toISOString().split('T')[0];
@@ -563,7 +634,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       return key;
     };
 
-    if ((monthOverride || datePreset === 'mtd' || datePreset === 'wtd') && effectiveDateRange.start && effectiveDateRange.end) {
+    if ((monthOverride || granularity !== 'all') && effectiveDateRange.start && effectiveDateRange.end) {
       const rangeStart = new Date(effectiveDateRange.start);
       const rangeEnd = new Date(effectiveDateRange.end);
       let cursor = new Date(rangeStart);
@@ -591,7 +662,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     const referenceKey = referenceDate.toISOString().split('T')[0];
     const inRange = (!effectiveDateRange.start || referenceDate >= effectiveDateRange.start) &&
       (!effectiveDateRange.end || referenceDate <= effectiveDateRange.end);
-    if (datePreset !== 'all' && inRange && !grouped.has(referenceKey)) {
+    if ((monthOverride || granularity !== 'all') && inRange && !grouped.has(referenceKey)) {
       grouped.set(referenceKey, { total: 0, byCompany: new Map(), byGroup: new Map() });
     }
 
@@ -626,7 +697,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
         return point;
       })
       .sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [filteredData, adaptiveGoalPlanner, datePreset, effectiveDateRange, monthOverride]);
+  }, [filteredData, adaptiveGoalPlanner, currentReferenceDate, granularity, monthOverride, effectiveDateRange]);
 
   // Comparison state
   const [comparisonEnabled, setComparisonEnabled] = useState<boolean>(() => {
@@ -737,7 +808,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       return key;
     };
 
-    if ((datePreset === 'mtd' || datePreset === 'wtd') && comparisonDateRange) {
+    if ((granularity === 'week' || granularity === 'month') && comparisonDateRange) {
       const monthStart = new Date(comparisonDateRange.start);
       monthStart.setHours(12, 0, 0, 0);
       const monthEnd = new Date(comparisonDateRange.end);
@@ -784,7 +855,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
         return point;
       })
       .sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [comparisonFilteredData, datePreset, comparisonDateRange]);
+  }, [comparisonFilteredData, granularity, comparisonDateRange]);
 
   const comparisonLabel = comparisonDateRange?.label ?? null;
 
@@ -795,10 +866,9 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
 
   // Get list of companies in the chart data (for line chart)
   const companiesWithDailyResult = useMemo(() => {
-    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
-    const dayStart = new Date(referenceDate);
+    const dayStart = new Date(currentReferenceDate);
     dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(referenceDate);
+    const dayEnd = new Date(currentReferenceDate);
     dayEnd.setHours(23, 59, 59, 999);
 
     const totals = new Map<string, number>();
@@ -812,18 +882,18 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       .filter(([, total]) => total > 0)
       .sort((a, b) => b[1] - a[1])
       .map(([empresa]) => empresa);
-  }, [entityFilteredData, datePreset, monthOverride]);
+  }, [entityFilteredData, currentReferenceDate]);
 
   const chartCompanies = useMemo(() => {
     if (filters.empresas.length > 1) return filters.empresas;
-    if (datePreset === 'today' && filters.empresas.length === 0) {
+    if (granularity === 'day' && filters.empresas.length === 0) {
       return companiesWithDailyResult;
     }
     return [];
-  }, [filters.empresas, datePreset, companiesWithDailyResult]);
+  }, [filters.empresas, granularity, companiesWithDailyResult]);
 
   const companyDailyPerformance = useMemo((): CompanyDailyPerformanceItem[] => {
-    const referenceDate = monthOverride?.referenceDate ?? getReferenceDateForPreset(datePreset);
+    const referenceDate = currentReferenceDate;
     const dayStart = new Date(referenceDate);
     dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(referenceDate);
@@ -874,7 +944,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       })
       .filter((item) => item.realizado > 0)
       .sort((a, b) => b.realizado - a.realizado);
-  }, [selectedCompaniesForGoals, entityFilteredData, datePreset, gapCatchUpEnabled, monthOverride]);
+  }, [selectedCompaniesForGoals, entityFilteredData, currentReferenceDate, gapCatchUpEnabled]);
 
   // Get all unique companies from filtered data (for stacked bar chart)
   const allCompaniesInData = useMemo(() => {
@@ -952,20 +1022,20 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
   const segmentPieData = useMemo(() => {
     const grouped = new Map<string, number>();
 
-    dateFilteredData.forEach((record) => {
+    filteredData.forEach((record) => {
       grouped.set(record.segmento, (grouped.get(record.segmento) || 0) + record.faturamento);
     });
 
     return Array.from(grouped.entries())
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
-  }, [dateFilteredData]);
+  }, [filteredData]);
 
   const updateFilter = useCallback(
     <K extends keyof Filters>(key: K, value: Filters[K]) => {
       setFilters((prev) => ({ ...prev, [key]: value }));
       if (key === 'dataInicio' || key === 'dataFim') {
-        setDatePreset('all');
+        setGranularity('all');
       }
     },
     []
@@ -984,11 +1054,119 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     []
   );
 
-  const setDatePresetHandler = useCallback((preset: DatePreset) => {
-    setDatePreset(preset);
-    if (preset !== 'all') {
+  const setGranularityHandler = useCallback((g: PeriodGranularity) => {
+    setGranularity(g);
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    setPeriodReference(today);
+    if (g !== 'all') {
       setFilters((prev) => ({ ...prev, dataInicio: null, dataFim: null }));
     }
+  }, []);
+
+  const navigatePeriod = useCallback((direction: -1 | 1) => {
+    setPeriodReference((prev) => {
+      const next = new Date(prev);
+      switch (granularity) {
+        case 'day':
+          next.setDate(next.getDate() + direction);
+          break;
+        case 'week':
+          next.setDate(next.getDate() + direction * 7);
+          break;
+        case 'month':
+          next.setMonth(next.getMonth() + direction);
+          break;
+      }
+      next.setHours(12, 0, 0, 0);
+      const today = new Date();
+      today.setHours(12, 0, 0, 0);
+      if (next > today) return prev;
+      return next;
+    });
+  }, [granularity]);
+
+  const canNavigateForward = useMemo(() => {
+    if (granularity === 'all') return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const ref = new Date(periodReference);
+    ref.setHours(0, 0, 0, 0);
+    switch (granularity) {
+      case 'day':
+        return ref < today;
+      case 'week': {
+        const currentWeekStart = startOfWeek(today, { weekStartsOn: 1 });
+        const refWeekStart = startOfWeek(ref, { weekStartsOn: 1 });
+        return refWeekStart < currentWeekStart;
+      }
+      case 'month':
+        return ref.getMonth() !== today.getMonth() || ref.getFullYear() !== today.getFullYear();
+      default:
+        return false;
+    }
+  }, [granularity, periodReference]);
+
+  const periodLabel = useMemo(() => {
+    const MONTHS_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const MONTHS_FULL = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    switch (granularity) {
+      case 'day': {
+        const ref = new Date(periodReference);
+        ref.setHours(0, 0, 0, 0);
+        if (ref.getTime() === today.getTime()) return 'Hoje';
+        if (ref.getTime() === yesterday.getTime()) return 'Ontem';
+        return `${ref.getDate().toString().padStart(2, '0')} ${MONTHS_SHORT[ref.getMonth()]}`;
+      }
+      case 'week': {
+        const wStart = startOfWeek(periodReference, { weekStartsOn: 1 });
+        const wEnd = endOfWeek(periodReference, { weekStartsOn: 1 });
+        const s = `${wStart.getDate().toString().padStart(2, '0')} ${MONTHS_SHORT[wStart.getMonth()]}`;
+        const e = `${wEnd.getDate().toString().padStart(2, '0')} ${MONTHS_SHORT[wEnd.getMonth()]}`;
+        return `${s} - ${e}`;
+      }
+      case 'month':
+        return `${MONTHS_FULL[periodReference.getMonth()]} ${periodReference.getFullYear()}`;
+      case 'all':
+      default:
+        return '';
+    }
+  }, [granularity, periodReference]);
+
+  // Keep backward compat: setDatePreset maps to setGranularity
+  const setDatePresetHandler = useCallback((preset: DatePreset) => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    switch (preset) {
+      case 'today':
+        setGranularity('day');
+        setPeriodReference(today);
+        break;
+      case 'yesterday': {
+        setGranularity('day');
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        setPeriodReference(yesterday);
+        break;
+      }
+      case 'wtd':
+        setGranularity('week');
+        setPeriodReference(today);
+        break;
+      case 'mtd':
+        setGranularity('month');
+        setPeriodReference(today);
+        break;
+      case 'all':
+        setGranularity('all');
+        break;
+    }
+    setFilters((prev) => ({ ...prev, dataInicio: null, dataFim: null }));
   }, []);
 
   const clearFilters = useCallback(() => {
@@ -999,7 +1177,10 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
       dataInicio: null,
       dataFim: null,
     });
-    setDatePreset('mtd');
+    setGranularity('day');
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    setPeriodReference(today);
     setComparisonEnabled(false);
     setCustomComparisonStart(null);
     setCustomComparisonEnd(null);
@@ -1029,7 +1210,7 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     filters.segmentos.length > 0 ||
     filters.dataInicio !== null ||
     filters.dataFim !== null ||
-    datePreset !== 'all' ||
+    granularity !== 'all' ||
     comparisonEnabled;
 
   return {
@@ -1059,6 +1240,11 @@ export function useFilters(data: FaturamentoRecord[], goalHelpers: GoalHelpers) 
     segmentPieData,
     datePreset,
     effectiveDateRange,
+    granularity,
+    periodLabel,
+    canNavigateForward,
+    navigatePeriod,
+    setGranularity: setGranularityHandler,
     updateFilter,
     toggleFilterValue,
     setDatePreset: setDatePresetHandler,
