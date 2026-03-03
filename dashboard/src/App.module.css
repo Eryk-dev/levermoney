@@ -3,10 +3,12 @@
   max-width: 100%;
   margin: 0 auto;
   padding: clamp(16px, 3vw, 40px);
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
   min-height: 100vh;
+  overflow-x: clip;
 }
 
 .header {
@@ -346,6 +348,9 @@
   display: flex;
   align-items: stretch;
   gap: var(--space-4);
+  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .kpiCards {
@@ -373,10 +378,17 @@
   display: flex;
   gap: var(--space-4);
   align-items: flex-start;
+  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .chartRowToday {
   align-items: stretch;
+}
+
+.chartRow > * {
+  min-width: 0;
 }
 
 .mainChart {
@@ -390,6 +402,13 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
+  width: 100%;
+  max-width: 100%;
+}
+
+.dailyRankingsGrid > * {
+  min-width: 0;
+  width: 100%;
 }
 
 .sideChart {
@@ -399,6 +418,8 @@
 
 .fullWidthChart {
   width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .pieSwitcher {
@@ -445,6 +466,9 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-4);
+  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .gridItem {
