@@ -169,7 +169,7 @@ lever money/
 │   │   ├── release_checker.py   # Verifica money_release_status antes de baixas
 │   │   ├── rate_limiter.py      # Token bucket (9 req/s, 540 req/min)
 │   │   ├── onboarding.py        # Seller signup → approve → activate
-│   │   ├── onboarding_backfill.py # Backfill de ativacao (dashboard_ca)
+│   │   ├── onboarding_backfill.py # Backfill de ativacao (dashboard_ca) + release report
 │   │   ├── gdrive_client.py     # Upload ZIP despesas no Google Drive (ROOT/DESPESAS/EMPRESA/YYYY-MM)
 │   │   ├── release_report_sync.py # Sync release report → mp_expenses
 │   │   ├── release_report_validator.py # Valida fees do processor vs release report
@@ -262,6 +262,8 @@ Daily Sync (00:01 BRT, D-1 a D-3) ou Backfill manual
            ├─ Tem order_id? → process_payment_webhook(payment_data=payment)
            ├─ Sem order_id? → classify_non_order_payment() → mp_expenses
            ├─ Filtros order: skip se marketplace_shipment, collector_id (purchase)
+           │
+           ├─ Seller sem config CA? → status = "pending_ca" (reprocessado quando seller migrar)
            │
            ├─ status = "approved" / "in_mediation"
            │   └─ _process_approved()

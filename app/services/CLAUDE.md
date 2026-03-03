@@ -9,7 +9,7 @@ Routers call services; services never import routers.
 
 | File | Responsibility |
 |------|---------------|
-| `processor.py` | **CORE.** Maps ML payments to CA financial events (receita, comissao, frete, estorno). Entry point: `process_payment_webhook()`. |
+| `processor.py` | **CORE.** Maps ML payments to CA financial events (receita, comissao, frete, estorno). Entry point: `process_payment_webhook()`. Sellers without CA config (`ca_conta_bancaria`/`ca_centro_custo_variavel`) get `status='pending_ca'` instead of being skipped. |
 | `ca_api.py` | HTTP client for Conta Azul API v2. Token cache + OAuth2 refresh with asyncio.Lock. All requests go through `rate_limiter`. |
 | `ml_api.py` | HTTP client for ML/MP APIs. Per-seller token management with auto-refresh. Raises `MLAuthError` on revoked tokens. |
 | `ca_queue.py` | Persistent job queue backed by Supabase `ca_jobs`. `CaWorker` polls and executes jobs with retry/backoff/dead-letter. |
@@ -24,7 +24,7 @@ Routers call services; services never import routers.
 | `extrato_ingester.py` | Ingests account_statement gap lines (DIFAL, faturas ML, dispute refunds, etc.) into `mp_expenses`. |
 | `extrato_coverage_checker.py` | Verifies 100% of release report lines are covered by payments, mp_expenses, or legacy export. |
 | `onboarding.py` | Seller lifecycle: `create_signup` -> `approve_seller` -> `activate_seller`. Creates revenue_lines and goals. |
-| `onboarding_backfill.py` | Historical payment ingestion for new sellers (by `money_release_date`). Resumable with progress tracking. |
+| `onboarding_backfill.py` | Historical payment ingestion for new sellers (by `money_release_date`). Includes release report backfill (payouts, cashback, shipping credits). Resumable with progress tracking. |
 | `gdrive_client.py` | Public helper for expenses backup ZIP upload to Google Drive (`ROOT/DESPESAS/{EMPRESA}/{YYYY-MM}`). Reuses internals from `legacy/daily_export.py`. |
 | `ca_categories_sync.py` | Daily sync of CA income/expense categories to local `ca_categories.json` file for offline lookups. |
 
@@ -55,7 +55,7 @@ Legacy reconciliation logic ported from V1, organized as a Python subpackage.
                       rate_limiter.py
 
 daily_sync.py -----> processor.py + expense_classifier.py
-onboarding_backfill.py --> processor.py + expense_classifier.py + ml_api.py
+onboarding_backfill.py --> processor.py + expense_classifier.py + ml_api.py + release_report_sync.py
 
 release_report_validator.py --> ca_queue.py + ml_api.py + processor._build_despesa_payload
 release_report_sync.py ------> ml_api.py (report download)
@@ -83,7 +83,7 @@ ca_categories_sync.py -> ca_api.py (listar_categorias)
 - **Daily sync** (`daily_sync.py`) -- daily at 00:01 BRT (when nightly pipeline disabled)
 - **Financial closing** (`financial_closing.py`) -- daily at 11:30 BRT (when nightly pipeline disabled)
 - **Legacy daily export** (`legacy/daily_export.py`) -- daily, configurable hour (when enabled)
-- **Nightly pipeline** (`main.py`) -- orchestrates sync -> fee validation -> extrato ingestion -> baixas -> legacy -> coverage -> closing sequentially
+- **Nightly pipeline** (`main.py`) -- orchestrates sync -> release report -> fee validation -> extrato ingestion -> baixas -> legacy -> coverage -> CA categories -> closing sequentially
 
 ### On-demand (called by routers or other services)
 - `processor.py` -- called by daily_sync, backfill router, onboarding_backfill

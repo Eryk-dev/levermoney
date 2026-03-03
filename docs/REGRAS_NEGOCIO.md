@@ -84,6 +84,21 @@ Quando o ML separa um pacote em etiquetas diferentes, o payment original e cance
 **Impacto medido:** R$987,86 de inflacao no DRE da easy-utilidades (7 by_admin em 12 dias).
 Apos correcao, receita bruta alinha com painel ML (R$78.234 vs R$79.222 anterior).
 
+### 11.5c Status `pending_ca` (Sellers sem Config CA)
+
+Quando o processor processa um payment de um seller que **nao tem config CA** (`ca_conta_bancaria` ou `ca_centro_custo_variavel` ausentes), o payment e salvo com `status='pending_ca'` em vez de `'skipped'`.
+
+**Comportamento:**
+- `processor.py` detecta campos CA faltantes via `get_missing_ca_launch_fields(seller)`
+- Salva com `status='pending_ca'`, `error='missing_ca_config:campo1,campo2'`
+- `processor_fee` e `processor_shipping` sao calculados e salvos (mesmo sem CA)
+- `raw_payment` (dados ML) e preservado normalmente
+
+**Reprocessamento:**
+- **Nightly sync:** `daily_sync.py` trata `pending_ca` como reprocessavel — se o seller agora tem config CA, o processor cria ca_jobs e muda status para `queued`
+- **Onboarding backfill:** `_load_already_done()` NAO inclui `pending_ca` no conjunto de "ja feitos" — payments pendentes sao reprocessados automaticamente
+- Se o seller ainda nao tem config CA, o processor salva como `pending_ca` novamente (idempotente)
+
 ### 11.6 CA API v2
 - Respostas sao **async**: retornam `{"protocolo": "...", "status": "PENDING"}`, NAO `{"id": "..."}`
 - Busca de parcelas e **GET** com params (nao POST com body)

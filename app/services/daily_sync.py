@@ -346,8 +346,9 @@ async def sync_seller_payments(seller_slug: str, begin_date: str, end_date: str)
                     should_reprocess = True
                 elif existing.get("status_detail") != status_detail:
                     should_reprocess = True
-                elif existing.get("processor_status") in ("pending", "queued"):
+                elif existing.get("processor_status") in ("pending", "queued", "pending_ca"):
                     # Keep pushing unresolved items until processor settles them.
+                    # pending_ca: seller lacked CA config; reprocess in case they upgraded.
                     should_reprocess = True
 
             if existing and not should_reprocess:

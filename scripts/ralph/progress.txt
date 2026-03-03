@@ -1,81 +1,74 @@
 # Ralph Progress Log
-Started: Mon Mar  2 19:59:56 -03 2026
+Started: Tue Mar  3 14:29:53 -03 2026
+---
 
 ## Codebase Patterns
-- ExpensesExportTab receives `sellers: Seller[]` and `onLogout` from AdminPanel; filter active sellers inside the component
-- useExpenses hook provides loadStats, exportAndBackup, loadBatches, redownloadBatchById - all accept sellerSlug as first param
-- loadStats supports optional `statusFilter` param (4th arg) - when provided, dates are not sent
-- CSS uses CSS custom properties (--space-N, --text-xs, --ink, --ink-muted, --surface, --paper, --border) from global styles
-- Dashboard uses CSS Modules (*.module.css), no Tailwind
-- `dashboard_empresa` is the display name for sellers; fallback to `name` if not set
-- PENDING_STATUS_FILTER = 'pending_review,auto_categorized' is the standard filter for pending expenses
-- Export buttons should disable ALL export buttons while any export is in progress (use a single exportingSlug state)
-- Confirmation modal pattern: store slug in state (null = closed), clear before triggering async action
-- Polling pattern: use useRef for intervals/counts to avoid stale closures; stop polling on collapse, max retries, or condition met; cleanup all intervals on unmount
+- `_extract_processor_charges(payment)` returns 5-tuple: `(mp_fee, shipping_cost_seller, shipping_id, reconciled_net, net_diff)`
+- `_upsert_payment()` accepts optional `processor_fee`, `processor_shipping`, `error`, `ca_evento_id` kwargs
+- Pre-existing lint error on processor.py line 508 (f-string without placeholders) — not introduced by Ralph
+- `get_missing_ca_launch_fields(seller)` checks for `ca_conta_bancaria` and `ca_centro_custo_variavel`
+- `daily_sync.py` `should_reprocess` tuple on line 349 is the gate for re-sending known payments to processor — add new reprocessable statuses there
+- `onboarding_backfill.py` `_load_already_done()` `.in_("status", [...])` on line 561 controls which payments are skipped — new statuses are excluded by default
+- `main.py` lifespan: `nightly_pipeline_enabled` → single pipeline scheduler; `else` → individual schedulers (baixa, sync, closing, legacy). Baixas are step 5 in nightly pipeline, no standalone scheduler.
+
 ---
 
-## 2026-03-02 20:05 - US-003
-- Restructured ExpensesExportTab from dropdown-based to seller cards grid
-- Removed: seller dropdown, selectedSlug state, ALL_SELLERS_VALUE constant, batch history table, export button, polling logic, confirmation modal
-- Added: CSS Grid layout (auto-fill, minmax 280px), per-seller stats Map, parallel Promise.all stats loading on mount
-- Each card shows: seller name (dashboard_empresa || name), total expenses, total amount (R$ formatted), pending_review_count, auto_categorized_count
-- Cards with total === 0 have opacity: 0.5
-- Files changed: dashboard/src/components/ExpensesExportTab.tsx, dashboard/src/components/ExpensesExportTab.module.css
+## 2026-03-03 - US-001
+- Changed processor.py early-return block (lines 224-243) to save `pending_ca` instead of `skipped` when seller lacks CA config
+- Computed `processor_fee` and `processor_shipping` via `_extract_processor_charges()` and passed to `_upsert_payment()`
+- Files changed: `app/services/processor.py`
 - **Learnings for future iterations:**
-  - activeSellers must be memoized with useMemo to avoid infinite re-renders in the useEffect dependency array
-  - The useExpenses hook functions (loadStats etc) are stable via useCallback, safe to use in deps
-  - Removed batch/export/modal code for clean US-003; US-004/005/006 will add export buttons and batch history per-card
-  - Keep CSS module classes minimal - future stories will add .exportBtn, .historySection etc. back into the card structure
+  - The `_upsert_payment` function always saves `raw_payment` (the full ML payment dict) — no extra work needed
+  - The error field format is `missing_ca_config:field1,field2` for traceability
+  - Only the `if missing_ca_fields:` block needed changing; everything downstream (approved flow, refund flow) is untouched
 ---
 
-## 2026-03-02 21:15 - US-004
-- Added per-seller export button 'Exportar Pendentes' below stats in each card
-- Export uses statusFilter='pending_review,auto_categorized' (no dates) via exportAndBackup
-- Button disabled when total === 0 or during any export operation (prevents concurrent exports)
-- Button shows 'Exportando...' with cursor: wait during export
-- Confirmation modal shown when pending_review_count > 0 before exporting
-- After successful export, card displays batch_id (12 chars) and gdrive_status badge (queued/uploaded/skipped)
-- Stats auto-reload after successful export via reloadSellerStats helper
-- Added CSS for: .exportBtn, .exportResult, .badge/.badgeQueued/.badgeUploaded/.badgeSkipped, .modalOverlay/.modal/.modalText/.modalActions/.modalBtnCancel/.modalBtnConfirm
-- Files changed: dashboard/src/components/ExpensesExportTab.tsx, dashboard/src/components/ExpensesExportTab.module.css
+## 2026-03-03 - US-002
+- Added `"pending_ca"` to the `should_reprocess` tuple in `daily_sync.py` line 349
+- This ensures payments with `processor_status='pending_ca'` are reprocessed each nightly sync
+- If seller now has CA config, processor will create ca_jobs and set status=queued
+- If seller still lacks CA config, processor saves as pending_ca again (idempotent)
+- Files changed: `app/services/daily_sync.py`
 - **Learnings for future iterations:**
-  - exportingSlug state tracks which seller is currently exporting; disabling all export buttons during any export prevents race conditions
-  - ExportResult type is already exported from useExpenses hook, import it directly
-  - Confirmation modal pattern: store slug in confirmSlug state, null to close; on confirm, clear state then trigger async export
-  - gdriveLabel helper maps backend statuses to display labels (e.g., 'skipped_no_drive_root' → 'skipped')
+  - `existing_orders` query loads ALL payments for the seller (no status filter), so no change needed there
+  - The `should_reprocess` logic is the single gate controlling whether a known payment gets re-sent to `process_payment_webhook()`
+  - The change is minimal: just one tuple expansion + one comment line
 ---
 
-## 2026-03-02 22:30 - US-005
-- Added global 'Exportar Todos os Pendentes' button above the seller cards grid
-- Button executes exportAndBackup sequentially for each seller with total > 0
-- Shows live progress 'Exportando N/M...' during global export
-- Disabled when: no sellers have pending, or any individual/global export in progress
-- After completion, shows summary with batch_id chips (blue pills, monospace, 12 chars)
-- Stats auto-reload for all sellers after global export completes via Promise.all
-- Individual export buttons also disabled during global export (globalExportProgress !== null check)
-- Added CSS: .globalExportRow, .globalExportBtn, .globalSummary, .batchIdChip
-- Files changed: dashboard/src/components/ExpensesExportTab.tsx, dashboard/src/components/ExpensesExportTab.module.css
+## 2026-03-03 - US-003
+- Verified `_load_already_done()` in onboarding_backfill.py does NOT include `pending_ca` in the done set
+- The `.in_("status", [...])` filter on line 561 lists: `synced, queued, refunded, skipped, skipped_non_sale` — `pending_ca` is absent
+- Updated docstring to explicitly document that `pending_ca` payments are re-evaluated by the backfill
+- Files changed: `app/services/onboarding_backfill.py`
 - **Learnings for future iterations:**
-  - globalExportProgress state (current/total) is separate from exportingSlug to allow both tracking which seller is exporting AND global progress display
-  - During global export, exportingSlug is updated per seller in the loop, so individual card buttons show 'Exportando...' for the current seller
-  - anySellerHasPending uses useMemo to avoid recomputing on every render
-  - The global export handler uses try/finally to always clean up both exportingSlug and globalExportProgress even if an error occurs mid-sequence
+  - `_load_already_done()` is the single gate for backfill resumability — only statuses in its `.in_()` list are skipped
+  - Since `pending_ca` is a new status, it was already excluded by default — the change was purely a docstring clarification
+  - The backfill also loads from `mp_expenses` table (non-order payments), but that table has no status filter concern for `pending_ca`
 ---
 
-## 2026-03-02 23:45 - US-006
-- Added collapsible batch history section per seller card
-- History toggle button (chevron ▸) closed by default, lazy loads batches on first expand
-- Batch table with columns: Data (DD/MM/YYYY HH:mm), Linhas, Valor (R$), Status (badge), Backup (badge), Batch ID (12 chars), Acoes (Baixar button)
-- Status badges: generated=yellow, exported=blue, imported=green
-- Backup badges: queued=yellow, uploaded=green (with link to gdrive_file_link), failed=red, skipped=gray
-- Baixar button calls redownloadBatchById to download the blob
-- Polling: if any batch has gdrive_status==='queued', setInterval 5s to reload batches (max 12 attempts)
-- Polling stops when collapsing the section or when no batch has queued status
-- Cleanup: all intervals cleared on unmount via useEffect return + useRef
-- Files changed: dashboard/src/components/ExpensesExportTab.tsx, dashboard/src/components/ExpensesExportTab.module.css
+## 2026-03-03 - US-004
+- Verified nightly pipeline baixa timing: when `nightly_pipeline_enabled=true`, `_daily_baixa_scheduler` is NOT started (it's in the `else` branch of `lifespan`)
+- Verified `_run_nightly_pipeline()` runs `_run_baixas_all_sellers()` as step 5 sequentially after steps 1-4
+- Verified onboarding backfill calls `_trigger_baixas()` as step 7, inline with no time dependency
+- Added clarifying comments in `lifespan()` (lines 357-362) and at step 5 of `_run_nightly_pipeline()` (lines 274-275)
+- Files changed: `app/main.py`
 - **Learnings for future iterations:**
-  - Use useRef for polling intervals/counts to avoid stale closures in setInterval callbacks
-  - toggleHistory uses functional setState (setExpandedSlugs) to avoid stale closure over expandedSlugs
-  - The IIFE pattern `(() => { ... })()` works well inside JSX for complex conditional rendering with local variables
-  - Batch history is fully lazy-loaded: no API calls until user clicks expand, reducing initial load
+  - `lifespan()` has a clear `if/else` on `nightly_pipeline_enabled`: nightly mode starts ONE scheduler; legacy mode starts individual schedulers
+  - The `_daily_baixa_scheduler` (10h BRT) only runs in legacy mode — when nightly pipeline is active, baixas are step 5 inside the pipeline
+  - Onboarding backfill is independent of both schedulers — it triggers baixas inline via `_trigger_baixas()`
+---
+
+## 2026-03-03 - US-005
+- Updated documentation across 5 files to reflect `pending_ca` status and baixa timing
+- Files changed: `CLAUDE.md`, `docs/TABELAS.md`, `docs/REGRAS_NEGOCIO.md`, `docs/FLUXO_DETALHADO.md`, `app/services/CLAUDE.md`
+- Changes:
+  - CLAUDE.md section 7 flow: added `pending_ca` path for sellers without CA config
+  - TABELAS.md: added `pending_ca` to payments status enum
+  - REGRAS_NEGOCIO.md: new section 11.5c documenting `pending_ca` behavior, reprocessing, and idempotency
+  - FLUXO_DETALHADO.md: noted baixas run immediately after sync (step 5), not on separate schedule; updated pipeline to 9 steps
+  - app/services/CLAUDE.md: processor.py description mentions `pending_ca` for sellers without CA config
+- **Learnings for future iterations:**
+  - Root CLAUDE.md does NOT have the payments status enum inline — it's only in `docs/TABELAS.md`
+  - CLAUDE.md section 5 is the project tree structure, not schema definitions
+  - FLUXO_DETALHADO.md pipeline steps were outdated (7 steps vs actual 9) — fixed as part of this story
 ---

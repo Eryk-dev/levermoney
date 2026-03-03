@@ -37,10 +37,28 @@ Para cada seller ativo:
 ```
 Substitui schedulers individuais. Execucao sequencial:
     1. sync_all_sellers() → Daily sync de payments
-    2. validate_release_fees_all_sellers() → Valida fees vs release report, cria ajustes CA
-    3. ingest_extrato_all_sellers() → Ingesta lacunas do account_statement
-    4. _run_baixas_all_sellers() → Baixas
-    5. run_legacy_daily_for_all() → Legacy export (dias configurados)
-    6. check_extrato_coverage_all_sellers() → Verifica 100% cobertura do extrato
-    7. _run_financial_closing() → Fechamento financeiro (inclui coverage data)
+    2. sync_release_report_all_sellers() → Sync release report (payouts, cashback, shipping credits)
+    3. validate_release_fees_all_sellers() → Valida fees vs release report, cria ajustes CA
+    4. ingest_extrato_all_sellers() → Ingesta lacunas do account_statement
+    5. _run_baixas_all_sellers() → Baixas (roda imediatamente apos sync, NAO em scheduler separado)
+    6. run_legacy_daily_for_all() → Legacy export (dias configurados)
+    7. check_extrato_coverage_all_sellers() → Verifica 100% cobertura do extrato
+    8. sync_ca_categories() → Sync categorias CA
+    9. _run_financial_closing() → Fechamento financeiro (inclui coverage data)
+```
+
+### Onboarding Backfill (on-demand, via admin)
+```
+run_onboarding_backfill(seller_slug):
+    1. Load seller config (ca_start_date, integration_mode)
+    2. Mark ca_backfill_status = "running"
+    3. Fetch ALL payments by money_release_date (ca_start_date → today+90d)
+    4. Build already-done set (payments + mp_expenses) para resumability
+    5. Process each payment:
+       ├─ Com order_id → process_payment_webhook()
+       └─ Sem order_id → classify_non_order_payment()
+    6. Backfill release report (ca_start_date → yesterday)
+       └─ Captura payouts, DARFs, cashback, shipping credits do CSV
+    7. Trigger baixas para parcelas com vencimento <= hoje
+    8. Mark ca_backfill_status = "completed"
 ```

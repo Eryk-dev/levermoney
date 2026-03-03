@@ -237,7 +237,16 @@ async def _run_nightly_pipeline():
     except Exception as e:
         logger.error("NightlyPipeline: sync_all_sellers failed: %s", e, exc_info=True)
 
-    # 2. Validate release report fees (adjustments for hidden charges)
+    # 2. Sync release report (captures payouts, cashback, shipping credits)
+    try:
+        from app.services.release_report_sync import sync_release_report_all_sellers
+        rr_results = await sync_release_report_all_sellers()
+        total_rr_new = sum(r.get("new_expenses", 0) for r in rr_results)
+        logger.info("NightlyPipeline: release report sync done (new=%s)", total_rr_new)
+    except Exception as e:
+        logger.error("NightlyPipeline: release report sync failed: %s", e, exc_info=True)
+
+    # 3. Validate release report fees (adjustments for hidden charges)
     try:
         from app.services.release_report_validator import validate_release_fees_all_sellers
         validation_results = await validate_release_fees_all_sellers()
@@ -246,7 +255,7 @@ async def _run_nightly_pipeline():
     except Exception as e:
         logger.error("NightlyPipeline: fee validation failed: %s", e, exc_info=True)
 
-    # 3. Ingest account_statement lines (fills gaps not covered by Payments API)
+    # 4. Ingest account_statement lines (fills gaps not covered by Payments API)
     try:
         from app.services.extrato_ingester import ingest_extrato_all_sellers
         lookback_days = 3
@@ -260,14 +269,15 @@ async def _run_nightly_pipeline():
     except Exception as e:
         logger.error("NightlyPipeline: extrato ingestion failed: %s", e, exc_info=True)
 
-    # 4. Baixas
+    # 5. Baixas — runs immediately after sync steps (no separate schedule).
+    #    Onboarding backfill also triggers baixas inline (step 7) via _trigger_baixas().
     try:
         await _run_baixas_all_sellers()
         logger.info("NightlyPipeline: baixas done")
     except Exception as e:
         logger.error("NightlyPipeline: baixas failed: %s", e, exc_info=True)
 
-    # 5. Legacy export (specific weekdays)
+    # 6. Legacy export (specific weekdays)
     if now_brt.weekday() in legacy_weekdays:
         try:
             legacy_results = await run_legacy_daily_for_all(target_day=target_day, upload=True)
@@ -281,7 +291,7 @@ async def _run_nightly_pipeline():
             sorted(legacy_weekdays),
         )
 
-    # 6. Extrato coverage check
+    # 7. Extrato coverage check
     try:
         from app.services.extrato_coverage_checker import check_extrato_coverage_all_sellers
         coverage_results = await check_extrato_coverage_all_sellers()
@@ -294,7 +304,7 @@ async def _run_nightly_pipeline():
     except Exception as e:
         logger.error("NightlyPipeline: coverage check failed: %s", e, exc_info=True)
 
-    # 7. Sync CA categories
+    # 8. Sync CA categories
     try:
         from app.services.ca_categories_sync import sync_ca_categories
         await sync_ca_categories()
@@ -302,7 +312,7 @@ async def _run_nightly_pipeline():
     except Exception as e:
         logger.error("NightlyPipeline: CA categories sync failed: %s", e, exc_info=True)
 
-    # 8. Financial closing
+    # 9. Financial closing
     await _run_financial_closing()
     logger.info("NightlyPipeline: finished target_day=%s", target_day)
 
@@ -346,8 +356,12 @@ async def lifespan(app):
     nightly_pipeline_task = None
 
     if settings.nightly_pipeline_enabled:
+        # Nightly pipeline runs ALL steps sequentially (sync → release report →
+        # fee validation → extrato ingestion → baixas → …).  Baixas execute
+        # immediately after sync as step 5 — no standalone 10 h BRT scheduler.
         nightly_pipeline_task = asyncio.create_task(_nightly_pipeline_scheduler())
     else:
+        # Legacy mode: individual schedulers with independent time triggers.
         baixa_task = asyncio.create_task(_daily_baixa_scheduler())
         daily_sync_task = asyncio.create_task(_daily_sync_scheduler())
         closing_task = asyncio.create_task(_financial_closing_scheduler())

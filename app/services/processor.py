@@ -222,17 +222,24 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
         return
 
     # Only sellers with full CA launch config can create CA entries/jobs.
+    # Sellers without config get pending_ca so onboarding backfill can reprocess them later.
     if status in ("approved", "in_mediation", "refunded", "charged_back"):
         missing_ca_fields = get_missing_ca_launch_fields(seller)
         if missing_ca_fields:
             reason = f"missing_ca_config:{','.join(missing_ca_fields)}"
             logger.warning(
-                "Payment %s seller %s skipped: %s",
+                "Payment %s seller %s pending_ca: %s",
                 payment_id,
                 seller_slug,
                 reason,
             )
-            _upsert_payment(db, seller_slug, payment, "skipped", error=reason)
+            mp_fee, shipping_cost_seller, _, _, _ = _extract_processor_charges(payment)
+            _upsert_payment(
+                db, seller_slug, payment, "pending_ca",
+                error=reason,
+                processor_fee=mp_fee,
+                processor_shipping=shipping_cost_seller,
+            )
             return
 
     if status in ("approved", "in_mediation"):

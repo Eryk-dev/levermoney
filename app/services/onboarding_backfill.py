@@ -65,6 +65,8 @@ async def run_onboarding_backfill(seller_slug: str) -> None:
          - Without order_id → classify_non_order_payment(db, seller_slug, payment)
       6. Persist progress counters to sellers.ca_backfill_progress every
          _PROGRESS_PERSIST_INTERVAL payments.
+      6b. Backfill release report (payouts, cashback, shipping credits) for
+          the same period — these are invisible to the Payments API.
       7. After all payments are processed, trigger baixas for this seller to
          immediately settle parcelas whose money_release_date <= today.
       8. On success: ca_backfill_status = "completed", ca_backfill_completed_at = now.
@@ -136,7 +138,8 @@ async def run_onboarding_backfill(seller_slug: str) -> None:
         )
         logger.info(
             "OnboardingBackfill %s: completed — total=%d processed=%d "
-            "orders=%d expenses=%d skipped=%d errors=%d baixas=%d",
+            "orders=%d expenses=%d skipped=%d errors=%d "
+            "release_report_new=%d baixas=%d",
             seller_slug,
             result.get("total", 0),
             result.get("processed", 0),
@@ -144,6 +147,7 @@ async def run_onboarding_backfill(seller_slug: str) -> None:
             result.get("expenses_classified", 0),
             result.get("skipped", 0),
             result.get("errors", 0),
+            result.get("release_report_new", 0),
             result.get("baixas_created", 0),
         )
 
@@ -414,6 +418,34 @@ async def _execute_backfill(
         if processed_count % _PAYMENT_SLEEP_EVERY_N == 0:
             await asyncio.sleep(_PAYMENT_SLEEP_SECONDS)
 
+    # --- 6. Backfill release report (payouts, cashback, shipping credits) ------
+    # These transactions are invisible to the Payments API and only appear in
+    # the release report CSV.  We backfill the same period (ca_start_date →
+    # yesterday) so the mp_expenses table has full coverage before baixas run.
+    try:
+        from app.services.release_report_sync import backfill_release_report
+
+        yesterday = (today - timedelta(days=1)).isoformat()
+        rr_result = await backfill_release_report(
+            seller_slug, ca_start_date_raw, yesterday
+        )
+        progress["release_report_new"] = rr_result.get("new_expenses", 0)
+        progress["release_report_errors"] = rr_result.get("errors", 0)
+        logger.info(
+            "OnboardingBackfill %s: release report backfill done — "
+            "new=%d errors=%d reports=%d",
+            seller_slug,
+            rr_result.get("new_expenses", 0),
+            rr_result.get("errors", 0),
+            rr_result.get("reports_processed", 0),
+        )
+    except Exception as exc:
+        logger.warning(
+            "OnboardingBackfill %s: release report backfill failed (non-fatal): %s",
+            seller_slug,
+            exc,
+        )
+
     # --- 7. Trigger baixas for parcelas with vencimento <= today ----------------
     # Decision 22 from ONBOARDING-V2-PLANO.md: create baixas immediately for
     # money_release_date <= today so that at the end of backfill all vencidas
@@ -513,8 +545,9 @@ def _load_already_done(db, seller_slug: str) -> set[int]:
     the backfill simply skips everything already in Supabase.
 
     Only statuses that represent completed processing are considered done.
-    Payments with status "pending" or "queued" are re-evaluated because they
-    may not have been fully processed yet.
+    Payments with status "pending" or "pending_ca" are NOT in this set,
+    so they will be re-evaluated by the backfill (pending_ca payments get
+    reprocessed once the seller has CA config).
     """
     done: set[int] = set()
 
