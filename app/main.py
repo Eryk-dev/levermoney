@@ -225,8 +225,6 @@ async def _run_nightly_pipeline():
     now_brt = datetime.now(ZoneInfo("America/Sao_Paulo"))
     target_day = (now_brt - timedelta(days=1)).strftime("%Y-%m-%d")
     legacy_weekdays = _parse_weekdays(settings.nightly_pipeline_legacy_weekdays)
-    if not legacy_weekdays:
-        legacy_weekdays = {0, 3}
 
     logger.info("NightlyPipeline: start target_day=%s", target_day)
 
@@ -277,18 +275,28 @@ async def _run_nightly_pipeline():
     except Exception as e:
         logger.error("NightlyPipeline: baixas failed: %s", e, exc_info=True)
 
-    # 6. Legacy export (specific weekdays)
-    if now_brt.weekday() in legacy_weekdays:
-        try:
-            legacy_results = await run_legacy_daily_for_all(target_day=target_day, upload=True)
-            logger.info("NightlyPipeline: legacy daily done (sellers=%s)", len(legacy_results))
-        except Exception as e:
-            logger.error("NightlyPipeline: legacy daily failed: %s", e, exc_info=True)
+    # 6. Legacy export (optional automation; otherwise operator runs via platform)
+    if settings.legacy_daily_enabled:
+        if legacy_weekdays and now_brt.weekday() in legacy_weekdays:
+            try:
+                legacy_results = await run_legacy_daily_for_all(target_day=target_day, upload=True)
+                logger.info("NightlyPipeline: legacy daily done (sellers=%s)", len(legacy_results))
+            except Exception as e:
+                logger.error("NightlyPipeline: legacy daily failed: %s", e, exc_info=True)
+        elif not legacy_weekdays:
+            logger.info(
+                "NightlyPipeline: legacy daily enabled but no weekdays configured; skipping."
+            )
+        else:
+            logger.info(
+                "NightlyPipeline: skipping legacy daily today (weekday=%s, allowed=%s)",
+                now_brt.weekday(),
+                sorted(legacy_weekdays),
+            )
     else:
         logger.info(
-            "NightlyPipeline: skipping legacy daily today (weekday=%s, allowed=%s)",
-            now_brt.weekday(),
-            sorted(legacy_weekdays),
+            "NightlyPipeline: legacy daily automation disabled (legacy_daily_enabled=false); "
+            "operator should run legacy export manually via platform."
         )
 
     # 7. Extrato coverage check

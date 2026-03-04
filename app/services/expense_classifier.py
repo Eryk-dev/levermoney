@@ -184,7 +184,17 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
 
     # 3. money_transfer + Cashback → INCOME
     if op_type == "money_transfer" and branch == "Cashback":
-        if "flex" in description.lower():
+        description_lower = description.lower()
+
+        # Ressarcimento por perda no Full: classificar como receita eventual
+        # (nao como estorno de taxa/tarifa).
+        if (
+            "programa de proteção do mercado envios full" in description_lower
+            or "programa de protecao do mercado envios full" in description_lower
+        ):
+            return "cashback", "income", "1.4.2 Outras Receitas Eventuais", True, f"Ressarcimento Full ML - {description}"[:200]
+
+        if "flex" in description_lower:
             return "cashback", "income", "1.3.4 Descontos e Estornos de Taxas e Tarifas", True, f"Bonificacao Flex ML - {description}"[:200]
         return "cashback", "income", "1.3.4 Descontos e Estornos de Taxas e Tarifas", True, f"Ressarcimento ML - {description}"[:200]
 
