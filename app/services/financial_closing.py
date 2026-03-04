@@ -52,6 +52,10 @@ def _signed_amount(row: dict) -> float:
     direction = row.get("expense_direction", "expense")
     if direction == "income":
         return abs(amount)
+    if direction == "transfer":
+        expense_type = row.get("expense_type", "")
+        if expense_type in ("deposit", "deposito_avulso"):
+            return abs(amount)
     return -abs(amount)
 
 

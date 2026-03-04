@@ -73,11 +73,28 @@ def _sanitize_path_component(value: str) -> str:
     return cleaned.strip("._") or "SEM_NOME"
 
 
-def _signed_amount(row: dict) -> float:
+def _is_incoming_transfer(row: dict, seller_ml_id: str = "") -> bool:
+    """Return True when a transfer-direction row represents money IN."""
+    expense_type = row.get("expense_type", "")
+    # Deposits are always incoming
+    if expense_type in ("deposit", "deposito_avulso"):
+        return True
+    # For payments_api rows: seller is collector → money received
+    if seller_ml_id:
+        rp = row.get("raw_payment") or {}
+        collector = str(rp.get("collector_id") or "")
+        if collector and collector == seller_ml_id:
+            return True
+    return False
+
+
+def _signed_amount(row: dict, seller_ml_id: str = "") -> float:
     """Amount using the same sign convention as XLSX export."""
     amount = float(row.get("amount") or 0)
     direction = row.get("expense_direction", "expense")
     if direction == "income":
+        return abs(amount)
+    if direction == "transfer" and _is_incoming_transfer(row, seller_ml_id):
         return abs(amount)
     return -abs(amount)
 
@@ -128,7 +145,8 @@ def _batch_tables_available(db) -> bool:
 
 def _build_snapshot_payload(row: dict) -> dict:
     """Build a snapshot of expense fields needed for deterministic re-download."""
-    return {
+    rp = row.get("raw_payment") or {}
+    snap: dict = {
         "date_approved": row.get("date_approved"),
         "date_created": row.get("date_created"),
         "expense_direction": row.get("expense_direction"),
@@ -142,6 +160,11 @@ def _build_snapshot_payload(row: dict) -> dict:
         "notes": row.get("notes"),
         "auto_categorized": row.get("auto_categorized"),
     }
+    # Preserve collector_id for transfer sign determination on re-download
+    collector_id = rp.get("collector_id")
+    if collector_id is not None:
+        snap["raw_payment"] = {"collector_id": collector_id}
+    return snap
 
 
 def _persist_batch_metadata(
@@ -154,6 +177,7 @@ def _persist_batch_metadata(
     date_from: str | None,
     date_to: str | None,
     gdrive_status: str | None = None,
+    seller_ml_id: str = "",
 ):
     """Persist export batch metadata and item mapping."""
     now = datetime.now().isoformat()
@@ -163,7 +187,7 @@ def _persist_batch_metadata(
         "company": company,
         "status": status,
         "rows_count": len(rows),
-        "amount_total_signed": round(sum(_signed_amount(r) for r in rows), 2),
+        "amount_total_signed": round(sum(_signed_amount(r, seller_ml_id) for r in rows), 2),
         "date_from": date_from,
         "date_to": date_to,
         "exported_at": now if status == "exported" else None,
@@ -185,7 +209,7 @@ def _persist_batch_metadata(
             "payment_id": row.get("payment_id"),
             "expense_date": _to_brt_iso_date(row.get("date_approved") or row.get("date_created")),
             "expense_direction": row.get("expense_direction"),
-            "amount_signed": _signed_amount(row),
+            "amount_signed": _signed_amount(row, seller_ml_id),
             "status_snapshot": row.get("status"),
             "snapshot_payload": _build_snapshot_payload(row),
             "created_at": now,

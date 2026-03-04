@@ -22,7 +22,7 @@ from ._deps import (
     ConfirmImportRequest,
     _to_brt_date_str,
     _get_centro_custo_name, _sanitize_path_component,
-    _signed_amount, _date_range_label,
+    _signed_amount, _date_range_label, _is_incoming_transfer,
     _batch_tables_available, _persist_batch_metadata, update_batch_gdrive_status,
 )
 
@@ -54,17 +54,23 @@ def _build_xlsx(rows: list[dict], seller: dict, sheet_name: str) -> io.BytesIO:
     ws.append(headers)
 
     centro_custo = _get_centro_custo_name(seller)
+    seller_ml_id = str(seller.get("ml_user_id") or "")
 
     for r in rows:
         date_str = _to_brt_date_str(r.get("date_approved") or r.get("date_created"))
         direction = r.get("expense_direction", "expense")
         amount = float(r.get("amount") or 0)
 
-        # Sign convention: expenses negative, income positive, transfers negative
+        # Sign convention: expenses negative, income positive,
+        # transfers: incoming (deposit, received intra) positive, outgoing negative
         if direction == "income":
             valor = abs(amount)
             contato = ML_CONTATO
             cnpj = ML_CNPJ
+        elif direction == "transfer" and _is_incoming_transfer(r, seller_ml_id):
+            valor = abs(amount)
+            contato = MP_CONTATO
+            cnpj = MP_CNPJ
         else:
             valor = -abs(amount)
             contato = MP_CONTATO
@@ -203,6 +209,7 @@ async def export_expenses(
                 date_from=date_from,
                 date_to=date_to,
                 gdrive_status=gdrive_initial_status,
+                seller_ml_id=str(seller.get("ml_user_id") or ""),
             )
         except Exception as e:
             logger.warning(f"Failed to persist batch metadata {batch_id}: {e}")
