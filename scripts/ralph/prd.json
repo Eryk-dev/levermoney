@@ -1,76 +1,74 @@
 {
   "project": "LeverMoney",
-  "branchName": "ralph/migrar-leituras",
-  "description": "Etapa 4: Migrar leituras de mp_expenses para event ledger. Feature flag para rollback. Todos os consumers passam a ler do ledger.",
+  "branchName": "ralph/deprecar-mp-expenses",
+  "description": "Etapa 5: Deprecar mp_expenses. Parar dual-write, migrar dados historicos, remover todas as referencias, criar view de compatibilidade.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Ledger read helpers: get_pending_exports, get_expense_list, get_expense_stats",
-      "description": "As a system, I need helper functions in event_ledger.py that reconstruct expense data from the ledger, replacing direct mp_expenses queries.",
+      "title": "Stop dual-write: remove mp_expenses writes from all services",
+      "description": "As a system, I need expense_classifier.py, extrato_ingester.py, release_report_sync.py and export.py to STOP writing to mp_expenses and write ONLY to the event ledger.",
       "acceptanceCriteria": [
-        "Function get_pending_exports(seller_slug, date_from=None, date_to=None, status_filter=None) added to event_ledger.py",
-        "get_pending_exports returns expenses with expense_captured but WITHOUT expense_exported, enriched with metadata from expense_classified",
-        "Returns list of dicts with same fields as mp_expenses rows: amount, expense_direction, ca_category, description, payment_id, date_approved, date_created, auto_categorized, external_reference, notes, expense_type, status (derived)",
-        "Function get_expense_list(seller_slug, status=None, expense_type=None, direction=None, date_from=None, date_to=None, limit=100, offset=0) added",
-        "get_expense_list derives status via derive_expense_status() for each unique reference_id",
-        "Function get_expense_stats(seller_slug, date_from=None, date_to=None, status_filter=None) added",
-        "get_expense_stats returns same shape as current stats endpoint: total, total_amount, by_type, by_direction, by_status, pending_review_count, auto_categorized_count",
-        "Unit tests for all 3 functions",
+        "expense_classifier.py: removed upsert to mp_expenses. Only calls record_expense_event()",
+        "extrato_ingester.py: removed all upsert/insert to mp_expenses (multiple locations). Only calls record_expense_event()",
+        "release_report_sync.py: removed insert to mp_expenses for payouts/cashback/shipping. Only calls record_expense_event()",
+        "expenses/export.py: removed update of status in mp_expenses. Only writes expense_exported events",
+        "No import of mp_expenses table name remains in these 4 files",
         "python3 -m pytest passes"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Read rfcs/plano-execucao/05-fase3-migrar-leituras.md for full specs. Read app/routers/expenses/crud.py to understand the response shapes these helpers must match. Read app/routers/expenses/export.py _build_xlsx() to see all fields required for XLSX generation. The metadata of expense_captured events (stored by dual-write in Etapa 3) must contain all these fields."
+      "passes": false,
+      "notes": "Read app/services/expense_classifier.py, app/services/extrato_ingester.py, app/services/release_report_sync.py, and app/routers/expenses/export.py. Remove all db.table('mp_expenses') calls. The event ledger writes (record_expense_event) were added in Etapa 3 — they should already be there. Verify each function still works end-to-end."
     },
     {
       "id": "US-002",
-      "title": "Feature flag + migrate financial_closing and coverage_checker",
-      "description": "As a system, I need a feature flag to toggle expense reads between mp_expenses and ledger, and migrate financial_closing and extrato_coverage_checker.",
+      "title": "Migrate historical mp_expenses to event ledger",
+      "description": "As a system, I need all existing mp_expenses records that don't have a corresponding expense_captured event to be migrated to the event ledger.",
       "acceptanceCriteria": [
-        "Setting expenses_source: str = 'mp_expenses' added to app/config.py (values: 'mp_expenses' or 'ledger')",
-        "financial_closing.py _compute_manual_lane(): when expenses_source == 'ledger', reads from event ledger via get_expense_list() instead of mp_expenses table",
-        "extrato_coverage_checker.py _lookup_expense_ids(): when expenses_source == 'ledger', queries payment_events WHERE event_type = 'expense_captured' instead of mp_expenses",
-        "Both functions: when expenses_source == 'mp_expenses', behavior is identical to current",
-        "python3 -m pytest passes with expenses_source=mp_expenses (default)",
-        "python3 -m pytest passes with expenses_source=ledger"
+        "Script testes/migrate_mp_expenses_to_ledger.py created",
+        "For each mp_expense without matching expense_captured: creates expense_captured event with full metadata",
+        "If auto_categorized: also creates expense_classified event",
+        "If status == 'exported': also creates expense_exported event with batch_id='legacy_migration'",
+        "If status == 'manually_categorized': also creates expense_reviewed event",
+        "Script is idempotent (re-run creates 0 new events)",
+        "Validation: SELECT seller_slug, COUNT(*) FROM mp_expenses GROUP BY seller_slug matches SELECT seller_slug, COUNT(*) FROM payment_events WHERE event_type = 'expense_captured' GROUP BY seller_slug",
+        "python3 -m pytest passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Read app/services/financial_closing.py _compute_manual_lane() (line 84) — it queries mp_expenses directly. Read app/services/extrato_coverage_checker.py _lookup_expense_ids() (line 54) — it queries mp_expenses. Both need conditional logic based on settings.expenses_source. Import settings from app.config."
+      "passes": false,
+      "notes": "Read rfcs/plano-execucao/06-fase4-deprecar-mp-expenses.md Etapa 2 for script structure. The idempotency key {seller}:{payment_id}:expense_captured prevents duplicates. Use pagination when reading mp_expenses (may have thousands of rows). The signed_amount must follow convention: positive for income, negative for expense."
     },
     {
       "id": "US-003",
-      "title": "Migrate expenses/crud.py and expenses/export.py",
-      "description": "As a system, I need the expenses CRUD and export endpoints to read from the event ledger when the feature flag is set to 'ledger'.",
+      "title": "Migrate dedup + remove all mp_expenses references",
+      "description": "As a system, I need daily_sync.py and onboarding_backfill.py to use the event ledger for expense dedup, the feature flag removed, and zero mp_expenses references remaining.",
       "acceptanceCriteria": [
-        "expenses/crud.py list_expenses: when expenses_source == 'ledger', calls get_expense_list()",
-        "expenses/crud.py expense_stats: when expenses_source == 'ledger', calls get_expense_stats()",
-        "expenses/crud.py review_expense: when expenses_source == 'ledger', writes expense_reviewed event instead of updating mp_expenses row",
-        "expenses/crud.py pending_review_summary: when expenses_source == 'ledger', derives pending status from ledger",
-        "expenses/export.py export_expenses: when expenses_source == 'ledger', calls get_pending_exports() and marks exported via expense_exported events",
-        "All endpoints: when expenses_source == 'mp_expenses', behavior is identical to current",
+        "daily_sync.py: expense dedup uses payment_events WHERE event_type = 'expense_captured' instead of mp_expenses",
+        "onboarding_backfill.py: expense dedup uses payment_events WHERE event_type = 'expense_captured' instead of mp_expenses",
+        "Feature flag expenses_source removed from app/config.py",
+        "All conditional branches (if expenses_source == 'mp_expenses') removed from all consumers",
+        "Verification: grep -r 'mp_expenses' app/ --include='*.py' returns ZERO results",
         "python3 -m pytest passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Read app/routers/expenses/crud.py and app/routers/expenses/export.py fully. These files query mp_expenses directly. Add conditional branches based on settings.expenses_source. The response shapes MUST remain identical regardless of source — the frontend should not notice any difference."
+      "passes": false,
+      "notes": "Read app/services/daily_sync.py — it builds an already_done_expenses set from mp_expenses. Change to query payment_events WHERE event_type = 'expense_captured'. Read app/services/onboarding_backfill.py — same pattern. Then grep -r mp_expenses app/ to find and remove ALL remaining references."
     },
     {
       "id": "US-004",
-      "title": "Parity validation: old vs new responses",
-      "description": "As an operator, I need to verify that ledger-based responses are identical to mp_expenses-based responses for 141air jan2026.",
+      "title": "Migration 009: deprecate mp_expenses table",
+      "description": "As a DBA, I need to rename mp_expenses to mp_expenses_deprecated and create a compatibility view.",
       "acceptanceCriteria": [
-        "Script or test that compares for 141air: list_expenses returns same count and same payment_ids from both sources",
-        "expense_stats returns same totals and counters from both sources",
-        "export ZIP generates same XLSX content (same rows, same values) from both sources",
-        "financial_closing manual lane returns same day totals from both sources",
-        "Zero unexplained differences documented",
-        "DRE unchanged",
+        "File migrations/009_deprecate_mp_expenses.sql created",
+        "SQL renames: ALTER TABLE mp_expenses RENAME TO mp_expenses_deprecated",
+        "SQL creates view: CREATE VIEW mp_expenses AS SELECT ... FROM payment_events WHERE event_type = 'expense_captured'",
+        "View maps metadata JSONB fields to expected columns: payment_id, amount, expense_type, expense_direction, ca_category, auto_categorized, description, status (derived via CASE WHEN EXISTS subqueries)",
+        "Migration applied to Supabase",
+        "Verification: SELECT COUNT(*) FROM mp_expenses returns data via the view",
         "python3 -m pytest passes"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "This is a validation story. Compare by running queries with expenses_source=mp_expenses and expenses_source=ledger. Use mcp__supabase__execute_sql for SQL validation. If differences exist, they indicate missing metadata in expense_captured events — fix in the dual-write code from Etapa 3."
+      "passes": false,
+      "notes": "Read rfcs/plano-execucao/06-fase4-deprecar-mp-expenses.md Etapa 4 for the full SQL including the CASE WHEN EXISTS pattern for status derivation. The view serves as a safety net — if any query escaped the grep cleanup, it still works. After 1 month without errors, the deprecated table can be dropped manually."
     }
   ]
 }
