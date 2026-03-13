@@ -1,0 +1,74 @@
+{
+  "project": "LeverMoney",
+  "branchName": "ralph/deprecar-mp-expenses",
+  "description": "Etapa 5: Deprecar mp_expenses. Parar dual-write, migrar dados historicos, remover todas as referencias, criar view de compatibilidade.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Stop dual-write: remove mp_expenses writes from all services",
+      "description": "As a system, I need expense_classifier.py, extrato_ingester.py, release_report_sync.py and export.py to STOP writing to mp_expenses and write ONLY to the event ledger.",
+      "acceptanceCriteria": [
+        "expense_classifier.py: removed upsert to mp_expenses. Only calls record_expense_event()",
+        "extrato_ingester.py: removed all upsert/insert to mp_expenses (multiple locations). Only calls record_expense_event()",
+        "release_report_sync.py: removed insert to mp_expenses for payouts/cashback/shipping. Only calls record_expense_event()",
+        "expenses/export.py: removed update of status in mp_expenses. Only writes expense_exported events",
+        "No import of mp_expenses table name remains in these 4 files",
+        "python3 -m pytest passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Read app/services/expense_classifier.py, app/services/extrato_ingester.py, app/services/release_report_sync.py, and app/routers/expenses/export.py. Remove all db.table('mp_expenses') calls. The event ledger writes (record_expense_event) were added in Etapa 3 — they should already be there. Verify each function still works end-to-end."
+    },
+    {
+      "id": "US-002",
+      "title": "Migrate historical mp_expenses to event ledger",
+      "description": "As a system, I need all existing mp_expenses records that don't have a corresponding expense_captured event to be migrated to the event ledger.",
+      "acceptanceCriteria": [
+        "Script testes/migrate_mp_expenses_to_ledger.py created",
+        "For each mp_expense without matching expense_captured: creates expense_captured event with full metadata",
+        "If auto_categorized: also creates expense_classified event",
+        "If status == 'exported': also creates expense_exported event with batch_id='legacy_migration'",
+        "If status == 'manually_categorized': also creates expense_reviewed event",
+        "Script is idempotent (re-run creates 0 new events)",
+        "Validation: SELECT seller_slug, COUNT(*) FROM mp_expenses GROUP BY seller_slug matches SELECT seller_slug, COUNT(*) FROM payment_events WHERE event_type = 'expense_captured' GROUP BY seller_slug",
+        "python3 -m pytest passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Read rfcs/plano-execucao/06-fase4-deprecar-mp-expenses.md Etapa 2 for script structure. The idempotency key {seller}:{payment_id}:expense_captured prevents duplicates. Use pagination when reading mp_expenses (may have thousands of rows). The signed_amount must follow convention: positive for income, negative for expense."
+    },
+    {
+      "id": "US-003",
+      "title": "Migrate dedup + remove all mp_expenses references",
+      "description": "As a system, I need daily_sync.py and onboarding_backfill.py to use the event ledger for expense dedup, the feature flag removed, and zero mp_expenses references remaining.",
+      "acceptanceCriteria": [
+        "daily_sync.py: expense dedup uses payment_events WHERE event_type = 'expense_captured' instead of mp_expenses",
+        "onboarding_backfill.py: expense dedup uses payment_events WHERE event_type = 'expense_captured' instead of mp_expenses",
+        "Feature flag expenses_source removed from app/config.py",
+        "All conditional branches (if expenses_source == 'mp_expenses') removed from all consumers",
+        "Verification: grep -r 'mp_expenses' app/ --include='*.py' returns ZERO results",
+        "python3 -m pytest passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Read app/services/daily_sync.py — it builds an already_done_expenses set from mp_expenses. Change to query payment_events WHERE event_type = 'expense_captured'. Read app/services/onboarding_backfill.py — same pattern. Then grep -r mp_expenses app/ to find and remove ALL remaining references."
+    },
+    {
+      "id": "US-004",
+      "title": "Migration 009: deprecate mp_expenses table",
+      "description": "As a DBA, I need to rename mp_expenses to mp_expenses_deprecated and create a compatibility view.",
+      "acceptanceCriteria": [
+        "File migrations/009_deprecate_mp_expenses.sql created",
+        "SQL renames: ALTER TABLE mp_expenses RENAME TO mp_expenses_deprecated",
+        "SQL creates view: CREATE VIEW mp_expenses AS SELECT ... FROM payment_events WHERE event_type = 'expense_captured'",
+        "View maps metadata JSONB fields to expected columns: payment_id, amount, expense_type, expense_direction, ca_category, auto_categorized, description, status (derived via CASE WHEN EXISTS subqueries)",
+        "Migration applied to Supabase",
+        "Verification: SELECT COUNT(*) FROM mp_expenses returns data via the view",
+        "python3 -m pytest passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Read rfcs/plano-execucao/06-fase4-deprecar-mp-expenses.md Etapa 4 for the full SQL including the CASE WHEN EXISTS pattern for status derivation. The view serves as a safety net — if any query escaped the grep cleanup, it still works. After 1 month without errors, the deprecated table can be dropped manually."
+    }
+  ]
+}
