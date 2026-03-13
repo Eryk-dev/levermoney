@@ -60,3 +60,21 @@ Started: Fri Mar 13 16:21:40 -03 2026
   - extrato_coverage_checker.py had two parallel functions (_lookup_expense_ids and _lookup_expense_ids_ledger) — merged into one
   - 520 tests passing (5 tests removed that tested deleted mp_expenses code paths)
 ---
+
+## 2026-03-13 - US-004
+- Created `migrations/009_deprecate_mp_expenses.sql`
+- SQL renames mp_expenses → mp_expenses_deprecated
+- Creates compatibility view mp_expenses reading from payment_events WHERE event_type = 'expense_captured'
+- View maps all metadata JSONB fields to original column names (payment_id, amount, expense_type, etc.)
+- Status derived via CASE WHEN EXISTS subqueries (expense_exported → exported, expense_reviewed → manually_categorized, expense_classified → auto_categorized, else pending_review)
+- Additional columns mapped vs RFC: febraban_code, source, raw_payment
+- Migration applied to Supabase via apply_migration
+- Verification: SELECT COUNT(*) FROM mp_expenses returns 503 (matches mp_expenses_deprecated count)
+- Updated docs/TABELAS.md to reflect the view
+- Files changed: migrations/009_deprecate_mp_expenses.sql (new), docs/TABELAS.md
+- **Learnings for future iterations:**
+  - Use `apply_migration` (not `execute_sql`) for DDL operations in Supabase MCP
+  - The view includes extra columns (febraban_code, source, raw_payment) beyond what the RFC template had — always check the actual table schema in docs/TABELAS.md
+  - reference_id (added in migration 008) is the correct column to map to payment_id, not ml_payment_id
+  - 520 tests passing (no test changes needed — app code has zero mp_expenses references)
+---

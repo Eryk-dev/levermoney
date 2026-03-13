@@ -110,19 +110,18 @@ Password hash do admin (single row, id=1).
 id (1), password_hash (bcrypt)
 ```
 
-### mp_expenses
-Classificacao de pagamentos non-order (boletos, SaaS, cashback, transferencias).
+### mp_expenses (compatibility view)
+Read-only view over `payment_events WHERE event_type = 'expense_captured'`.
+Maps event ledger metadata JSONB fields to the legacy column interface.
+Status is derived from downstream events (expense_exported, expense_reviewed, expense_classified).
+Original table preserved as `mp_expenses_deprecated` for backup (drop after 1 month).
 ```
-id (PK bigserial), seller_slug (FK sellers), payment_id (text; id numerico ou chave composta "id:tipo"),
-expense_type (bill_payment|subscription|darf|cashback|collection|transfer_pix|transfer_intra|deposit|savings_pot|other|difal|faturas_ml|reembolso_disputa|dinheiro_retido|entrada_dinheiro|debito_envio_ml|liberacao_cancelada|reembolso_generico|deposito_avulso|debito_divida_disputa|debito_troca|bonus_envio),
-expense_direction (expense|income|transfer),
-ca_category, auto_categorized (bool),
-amount, description, business_branch, operation_type, payment_method,
-external_reference, febraban_code,
-date_created, date_approved, beneficiary_name, notes, source (payments_api|extrato),
+id, seller_slug, payment_id, amount, expense_type, expense_direction,
+ca_category, auto_categorized, description, business_branch, operation_type,
+payment_method, external_reference, beneficiary_name, notes, febraban_code,
+source, date_approved, date_created, raw_payment,
 status (pending_review|auto_categorized|manually_categorized|exported),
-exported_at, raw_payment (jsonb), created_at, updated_at
-UNIQUE(seller_slug, payment_id)
+created_at, updated_at
 ```
 
 ### release_report_fees

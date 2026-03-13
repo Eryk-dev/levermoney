@@ -67,7 +67,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Read rfcs/plano-execucao/06-fase4-deprecar-mp-expenses.md Etapa 4 for the full SQL including the CASE WHEN EXISTS pattern for status derivation. The view serves as a safety net — if any query escaped the grep cleanup, it still works. After 1 month without errors, the deprecated table can be dropped manually."
     }
   ]
