@@ -1,0 +1,89 @@
+{
+  "project": "LeverMoney",
+  "branchName": "ralph/upload-extrato",
+  "description": "Etapa 1: Upload de extrato CSV do Mercado Pago via admin panel. Criar migration, funcao de ingestao, endpoints API e aba React.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Migration extrato_uploads",
+      "description": "As a developer, I need the extrato_uploads table in Supabase to store upload history.",
+      "acceptanceCriteria": [
+        "File migrations/007_extrato_uploads.sql created with schema: id BIGSERIAL PRIMARY KEY, seller_slug TEXT NOT NULL, filename TEXT, month_ref TEXT, status TEXT DEFAULT 'processing', total_lines INT DEFAULT 0, new_inserted INT DEFAULT 0, duplicates_skipped INT DEFAULT 0, errors INT DEFAULT 0, summary_json JSONB, created_at TIMESTAMPTZ DEFAULT NOW(), completed_at TIMESTAMPTZ",
+        "Migration applied to Supabase via mcp__supabase__apply_migration",
+        "Verification: SELECT * FROM extrato_uploads LIMIT 1 returns no error",
+        "python3 -m pytest passes (152+ tests)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Read rfcs/plano-execucao/01-upload-extrato.md section 3 for full schema. Check existing migrations in migrations/ for naming convention."
+    },
+    {
+      "id": "US-002",
+      "title": "Public ingest_extrato_from_csv function",
+      "description": "As a system, I need a public function in extrato_ingester.py that accepts CSV text directly and runs the existing ingestion pipeline without downloading from ML API.",
+      "acceptanceCriteria": [
+        "Function ingest_extrato_from_csv(seller_slug: str, csv_text: str) -> dict added to app/services/extrato_ingester.py",
+        "Function reuses existing internal functions: _parse_account_statement(), _classify_extrato_line(), _resolve_check_payments(), and the full dedup/upsert logic",
+        "Returns dict with keys: total_lines, new_inserted, duplicates_skipped, errors, summary (dict by expense_type)",
+        "Function is async and follows same patterns as ingest_extrato_for_seller()",
+        "Does NOT modify behavior of existing ingest_extrato_for_seller() function",
+        "python3 -m pytest passes (152+ tests)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Read app/services/extrato_ingester.py fully. The existing ingest_extrato_for_seller() downloads CSV from ML API then processes. The new function skips the download and enters the pipeline at the parse stage. Key internal functions to reuse: _parse_account_statement() (line ~250), _classify_extrato_line() (line ~335), _resolve_check_payments() (line ~370). The CSV format is Account Statement (5 columns: DATE, DESCRIPTION, REFERENCE_ID, TRANSACTION_NET_AMOUNT, BALANCE in Portuguese)."
+    },
+    {
+      "id": "US-003",
+      "title": "Upload endpoint POST /admin/extrato/upload",
+      "description": "As an admin, I want to upload an extrato CSV file via the API so that gap lines are ingested into mp_expenses.",
+      "acceptanceCriteria": [
+        "POST /admin/extrato/upload endpoint added to app/routers/admin/extrato.py",
+        "Accepts multipart form with fields: file (UploadFile CSV) and seller_slug (str)",
+        "Validates seller exists via get_seller_config()",
+        "Validates file is parseable CSV (calls _parse_account_statement, catches errors)",
+        "Calls ingest_extrato_from_csv() and persists result in extrato_uploads table",
+        "Returns JSON: {upload_id, seller_slug, status, total_lines, new_inserted, duplicates_skipped, errors}",
+        "Protected by require_admin dependency",
+        "python3 -m pytest passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Read app/routers/admin/extrato.py for existing extrato endpoints pattern. Read app/routers/admin/_deps.py for require_admin. The endpoint should handle encoding detection (UTF-8 or Latin-1). Use FastAPI UploadFile for file handling."
+    },
+    {
+      "id": "US-004",
+      "title": "History endpoint GET /admin/extrato/uploads/{seller_slug}",
+      "description": "As an admin, I want to see the history of extrato uploads for a seller.",
+      "acceptanceCriteria": [
+        "GET /admin/extrato/uploads/{seller_slug} endpoint added to app/routers/admin/extrato.py",
+        "Returns list of uploads ordered by created_at desc",
+        "Accepts limit (default 20) and offset (default 0) query params",
+        "Protected by require_admin dependency",
+        "Response shape: {seller, count, data: [{id, filename, month_ref, status, total_lines, new_inserted, duplicates_skipped, errors, created_at, completed_at}]}",
+        "python3 -m pytest passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Simple Supabase query on extrato_uploads table. Follow pattern from expenses/crud.py list_expenses endpoint."
+    },
+    {
+      "id": "US-005",
+      "title": "React ExtratoTab component in admin panel",
+      "description": "As an admin, I want an Extratos tab in the admin panel to upload CSVs and see upload history per seller.",
+      "acceptanceCriteria": [
+        "New ExtratoTab component created in dashboard/src/components/admin/",
+        "Tab added to AdminPanel navigation alongside existing tabs",
+        "Upload section: seller dropdown + file input + submit button",
+        "Shows upload result after submission (new_inserted, duplicates_skipped, errors)",
+        "History table: lists previous uploads per seller with status and metrics",
+        "Loading state during upload",
+        "Error handling for invalid files and failed uploads",
+        "cd dashboard && npm run build compiles without errors"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Read dashboard/claude.md for frontend conventions. Read dashboard/src/components/admin/ for existing tab patterns. Use CSS Modules (no Tailwind). The admin panel uses X-Admin-Token header for auth. API base URL from existing config. Sellers list can be fetched from GET /admin/sellers."
+    }
+  ]
+}
