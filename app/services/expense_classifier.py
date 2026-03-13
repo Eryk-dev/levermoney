@@ -1,9 +1,12 @@
 """
 Classifier for non-order ML/MP payments (bill payments, subscriptions, cashback, etc.).
 Saves classified expenses to mp_expenses table for XLSX export.
+Dual-writes expense_captured (+ expense_classified) events to event ledger.
 """
 import logging
 from datetime import datetime
+
+from app.services.event_ledger import EventRecordError, record_expense_event
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +247,93 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
     return "other", "expense", None, False, f"Outro - {description or f'R$ {amount}'}"[:200]
 
 
+def _expense_signed_amount(direction: str, amount: float) -> float:
+    """Return signed amount: positive for income, negative for expense/transfer."""
+    if direction == "income":
+        return abs(amount)
+    return -abs(amount)
+
+
+def _expense_competencia_date(payment: dict) -> str:
+    """Extract competencia date from date_approved or date_created (date-only)."""
+    raw = payment.get("date_approved") or payment.get("date_created") or ""
+    return raw[:10]
+
+
+def _build_expense_metadata(
+    expense_type: str, direction: str, category: str | None,
+    auto_cat: bool, desc: str, payment: dict,
+) -> dict:
+    """Build rich metadata dict for expense_captured event."""
+    return {
+        "expense_type": expense_type,
+        "expense_direction": direction,
+        "ca_category": category,
+        "auto_categorized": auto_cat,
+        "description": desc,
+        "amount": payment.get("transaction_amount", 0),
+        "date_created": payment.get("date_created"),
+        "date_approved": payment.get("date_approved"),
+        "business_branch": _extract_branch(payment) or None,
+        "operation_type": payment.get("operation_type"),
+        "payment_method": payment.get("payment_method_id"),
+        "external_reference": payment.get("external_reference"),
+        "beneficiary_name": (
+            ((payment.get("payer") or {}).get("identification") or {}).get("number")
+        ),
+        "notes": payment.get("description"),
+    }
+
+
+async def _dual_write_expense_events(
+    seller_slug: str, payment_id: str, expense_type: str, direction: str,
+    category: str | None, auto_cat: bool, desc: str, payment: dict,
+) -> None:
+    """Write expense_captured (and expense_classified if auto) to event ledger.
+
+    Failures are logged as warnings but never block the mp_expenses upsert.
+    """
+    amount = payment.get("transaction_amount", 0)
+    signed = _expense_signed_amount(direction, amount)
+    competencia = _expense_competencia_date(payment)
+    metadata = _build_expense_metadata(
+        expense_type, direction, category, auto_cat, desc, payment,
+    )
+
+    try:
+        await record_expense_event(
+            seller_slug=seller_slug,
+            payment_id=payment_id,
+            event_type="expense_captured",
+            signed_amount=signed,
+            competencia_date=competencia,
+            expense_type=expense_type,
+            metadata=metadata,
+        )
+    except EventRecordError:
+        logger.warning(
+            "Dual-write expense_captured failed for %s/%s, continuing",
+            seller_slug, payment_id,
+        )
+
+    if auto_cat:
+        try:
+            await record_expense_event(
+                seller_slug=seller_slug,
+                payment_id=payment_id,
+                event_type="expense_classified",
+                signed_amount=0,
+                competencia_date=competencia,
+                expense_type=expense_type,
+                metadata={"ca_category": category},
+            )
+        except EventRecordError:
+            logger.warning(
+                "Dual-write expense_classified failed for %s/%s, continuing",
+                seller_slug, payment_id,
+            )
+
+
 async def classify_non_order_payment(db, seller_slug: str, payment: dict) -> dict | None:
     """Classify and store a non-order payment in mp_expenses.
 
@@ -298,5 +388,11 @@ async def classify_non_order_payment(db, seller_slug: str, payment: dict) -> dic
         data["created_at"] = datetime.now().isoformat()
         db.table("mp_expenses").insert(data).execute()
         logger.info(f"Payment {payment_id} classified: type={expense_type} dir={direction} cat={category} auto={auto_cat}")
+
+    # ── Dual-write to event ledger ──────────────────────────────────────
+    await _dual_write_expense_events(
+        seller_slug, str(payment_id), expense_type, direction,
+        category, auto_cat, desc, payment,
+    )
 
     return data

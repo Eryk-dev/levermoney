@@ -19,7 +19,7 @@
         "python3 -m pytest passes (161+ tests)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Read rfcs/plano-execucao/04-fase2-dual-write.md for exact function signatures. Read app/services/event_ledger.py for existing patterns. The expense_captured event uses sign 'any' because it can be positive (income) or negative (expense)."
     },
     {
@@ -36,7 +36,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Read app/services/expense_classifier.py fully. The classify_non_order_payment() function upserts to mp_expenses. Add the dual-write AFTER the successful upsert. CRITICAL: the metadata must contain ALL fields listed — without them, Fase 3 (migrate reads) will not have enough data to reconstruct responses."
     },
     {
