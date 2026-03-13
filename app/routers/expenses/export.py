@@ -225,6 +225,27 @@ async def export_expenses(
                 }).in_("id", chunk).execute()
             logger.info(f"Marked {len(ids)} expenses as exported for {seller_slug}")
 
+            # Dual-write expense_exported events to ledger
+            from app.services.event_ledger import record_expense_event as _rec_exp_event
+            for row in rows:
+                pid = str(row.get("payment_id", ""))
+                comp = (row.get("date_approved") or row.get("date_created") or "")[:10]
+                try:
+                    await _rec_exp_event(
+                        seller_slug=seller_slug,
+                        payment_id=pid,
+                        event_type="expense_exported",
+                        signed_amount=0,
+                        competencia_date=comp,
+                        expense_type=row.get("expense_type", "unknown"),
+                        metadata={"batch_id": batch_id},
+                    )
+                except Exception:
+                    logger.warning(
+                        "Dual-write expense_exported failed for %s/%s, continuing",
+                        seller_slug, pid,
+                    )
+
     # Determine gdrive_status for batch persistence
     gdrive_initial_status: str | None = None
     drive_configured = bool((settings.legacy_daily_google_drive_root_folder_id or "").strip())

@@ -16,6 +16,8 @@ Started: Fri Mar 13 15:16:22 -03 2026
 - Router ledger migration: add `if settings.expenses_source == "ledger":` branch at top of each endpoint, import ledger helpers conditionally inside the block
 - Ledger export: `get_pending_exports()` replaces mp_expenses query; `record_expense_event(event_type='expense_exported', signed_amount=0)` replaces status update
 - Ledger rows have string `id` (reference_id); convert to int via `int(payment_id.split(':')[0])` for batch persistence (expense_batch_items.expense_id is bigint)
+- Release report dual-write: `row["date"]` for both date_created/date_approved, `f"release_{desc_type}"` for operation_type, `payout_bank_account` for notes
+- Export.py lazy imports (inside conditional blocks) must be patched at source (`app.services.event_ledger.record_expense_event`), not at module level
 - review_expense ledger mode: query payment_events for reference_id, write expense_reviewed event with review fields as metadata
 
 ---
@@ -115,4 +117,39 @@ Started: Fri Mar 13 15:16:22 -03 2026
   - `get_pending_exports()` already excludes expense_exported, equivalent to mp_expenses `not_.in_("status", ["exported", "imported"])`
   - `record_expense_event` name imported in earlier if-block is available later in same function scope (Python flat function scope), safe since both blocks check same condition
   - 469 tests total passing after changes
+---
+
+## 2026-03-13 - US-003 (Dual-write / prd.json)
+- Added dual-write to `extrato_ingester.py` for both `ingest_extrato_for_seller()` and `ingest_extrato_from_csv()`
+- Helper functions: `_extrato_signed_amount()`, `_build_extrato_expense_metadata()`, `_dual_write_extrato_expense_events()`
+- Uses `upserted` flag pattern: dual-write only after successful insert/update, skipped for exported rows and exceptions
+- Same metadata pattern as expense_classifier (all 14 Fase 3 fields present)
+- Extrato-specific mappings: `date_created`/`date_approved` both use `tx["date"]`, `operation_type` uses `f"extrato_{expense_type}"`, `business_branch`/`payment_method`/`beneficiary_name` are None
+- Added 12 new tests in `testes/test_extrato_ingester_dual_write.py` (4 signed_amount, 2 metadata, 6 dual-write helper)
+- Files changed: `app/services/extrato_ingester.py`, `testes/test_extrato_ingester_dual_write.py`
+- **Learnings for future iterations:**
+  - Extrato transactions have a different data shape from ML payments: `tx["date"]` (ISO date), `tx["amount"]` (signed), `tx["reference_id"]`, `tx["transaction_type"]`
+  - The `ingest_extrato_from_csv()` function has a nearly identical upsert loop to `ingest_extrato_for_seller()` — changes must be applied to BOTH
+  - The `upserted` flag pattern cleanly handles `continue` statements (exported rows) and exception paths
+  - `_build_expense_from_extrato()` provides `row["description"]` which can be passed directly to the metadata builder
+  - 481 tests total passing after changes
+---
+
+## 2026-03-13 - US-004 (Dual-write / prd3.json)
+- Added dual-write to `release_report_sync.py` for both `sync_release_report()` and `backfill_release_report()`
+- Helper functions: `_release_signed_amount()`, `_build_release_expense_metadata()`, `_dual_write_release_expense_events()`
+- After each successful `mp_expenses.insert()`: writes `expense_captured` event (and `expense_classified` if auto-categorized)
+- Release-specific mappings: `date_created`/`date_approved` both use `row["date"]`, `operation_type` uses `f"release_{desc_type}"`, `notes` uses `payout_bank_account`
+- Added dual-write of `expense_exported` events in `export.py` (mp_expenses mode, `else` branch)
+- After batch update marking rows as `exported`, loops through rows writing `expense_exported` events (signed_amount=0, metadata with batch_id)
+- Both dual-writes: failure caught as warning, never blocks main operation
+- Added 14 tests in `testes/test_release_report_dual_write.py` (4 signed_amount, 3 metadata, 7 dual-write helper)
+- Added 5 tests in `testes/test_export_dual_write.py` (exported events written, failure handling, fallback date, signed_amount=0, id conversion)
+- Files changed: `app/services/release_report_sync.py`, `app/routers/expenses/export.py`, `testes/test_release_report_dual_write.py`, `testes/test_export_dual_write.py`, `scripts/ralph/prd3.json`
+- **Learnings for future iterations:**
+  - Release report rows have a different data shape from both ML payments and extrato transactions: `row["date"]` (ISO datetime string from CSV), `row["net_debit"]`/`row["net_credit"]`, `row["source_id"]`
+  - `backfill_release_report()` has a nearly identical insert loop to `sync_release_report()` — dual-write must be applied to BOTH
+  - In export.py, the `record_expense_event` import is lazy (inside `if` block) — can't patch at module level, must patch at source (`app.services.event_ledger.record_expense_event`)
+  - The `_classify_payout()` and `_classify_credit()` functions return the classification tuple BEFORE the insert, so all values (expense_type, direction, ca_category, auto_cat) are available for the dual-write call
+  - 500 tests total passing after changes
 ---
