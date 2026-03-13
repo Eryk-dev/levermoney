@@ -69,7 +69,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "This is a validation story. Compare by running queries with expenses_source=mp_expenses and expenses_source=ledger. Use mcp__supabase__execute_sql for SQL validation. If differences exist, they indicate missing metadata in expense_captured events — fix in the dual-write code from Etapa 3."
     }
   ]
