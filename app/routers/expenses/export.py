@@ -132,23 +132,39 @@ async def export_expenses(
     if not seller:
         return {"error": f"Seller {seller_slug} not found"}
 
-    # Query all rows in requested status/date scope
-    q = db.table("mp_expenses").select("*").eq("seller_slug", seller_slug)
-
-    if status_filter:
-        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
-        q = q.in_("status", statuses)
+    # Fetch rows based on expenses source
+    if settings.expenses_source == "ledger":
+        from app.services.event_ledger import get_pending_exports, record_expense_event
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()] if status_filter else None
+        rows = await get_pending_exports(
+            seller_slug=seller_slug,
+            date_from=date_from,
+            date_to=date_to,
+            status_filter=statuses,
+        )
+        # Convert string ids to int for batch persistence compatibility
+        for r in rows:
+            try:
+                r["id"] = int(str(r.get("payment_id", "0")).split(":")[0])
+            except (ValueError, TypeError):
+                r["id"] = 0
     else:
-        q = q.not_.in_("status", ["exported", "imported"])
+        q = db.table("mp_expenses").select("*").eq("seller_slug", seller_slug)
 
-    if date_from:
-        q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
-    if date_to:
-        q = q.lte("date_created", f"{date_to}T23:59:59.999-03:00")
+        if status_filter:
+            statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+            q = q.in_("status", statuses)
+        else:
+            q = q.not_.in_("status", ["exported", "imported"])
 
-    q = q.order("date_created", desc=False)
-    result = q.execute()
-    rows = result.data or []
+        if date_from:
+            q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
+        if date_to:
+            q = q.lte("date_created", f"{date_to}T23:59:59.999-03:00")
+
+        q = q.order("date_created", desc=False)
+        result = q.execute()
+        rows = result.data or []
 
     batch_id = f"exp_{uuid4().hex[:24]}"
 
@@ -179,17 +195,35 @@ async def export_expenses(
 
     # Mark as exported if requested
     if mark_exported and rows:
-        ids = [r["id"] for r in rows]
-        now = datetime.now().isoformat()
-        # Batch update in chunks of 100
-        for i in range(0, len(ids), 100):
-            chunk = ids[i:i + 100]
-            db.table("mp_expenses").update({
-                "status": "exported",
-                "exported_at": now,
-                "updated_at": now,
-            }).in_("id", chunk).execute()
-        logger.info(f"Marked {len(ids)} expenses as exported for {seller_slug}")
+        if settings.expenses_source == "ledger":
+            for row in rows:
+                pid = str(row.get("payment_id", ""))
+                comp = (row.get("date_approved") or row.get("date_created") or "")[:10]
+                try:
+                    await record_expense_event(
+                        seller_slug=seller_slug,
+                        payment_id=pid,
+                        event_type="expense_exported",
+                        signed_amount=0,
+                        competencia_date=comp,
+                        expense_type=row.get("expense_type", "unknown"),
+                        metadata={"batch_id": batch_id},
+                    )
+                except Exception:
+                    logger.warning("Failed to record expense_exported for %s", pid)
+            logger.info("Recorded %d expense_exported events for %s", len(rows), seller_slug)
+        else:
+            ids = [r["id"] for r in rows]
+            now = datetime.now().isoformat()
+            # Batch update in chunks of 100
+            for i in range(0, len(ids), 100):
+                chunk = ids[i:i + 100]
+                db.table("mp_expenses").update({
+                    "status": "exported",
+                    "exported_at": now,
+                    "updated_at": now,
+                }).in_("id", chunk).execute()
+            logger.info(f"Marked {len(ids)} expenses as exported for {seller_slug}")
 
     # Determine gdrive_status for batch persistence
     gdrive_initial_status: str | None = None

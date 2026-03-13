@@ -1,13 +1,17 @@
 """
 Expenses CRUD endpoints: list, review/patch, pending-summary, and stats.
 """
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 
+from app.config import settings
 from app.db.supabase import get_db
 from app.routers.admin import require_admin
 from ._deps import ExpenseReviewUpdate, _to_brt_iso_date
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -26,6 +30,20 @@ async def list_expenses(
     offset: int = Query(0, ge=0),
 ):
     """List mp_expenses for a seller with optional filters."""
+    if settings.expenses_source == "ledger":
+        from app.services.event_ledger import get_expense_list
+        rows = await get_expense_list(
+            seller_slug=seller_slug,
+            status=status,
+            expense_type=expense_type,
+            direction=direction,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+            offset=offset,
+        )
+        return {"seller": seller_slug, "count": len(rows), "offset": offset, "data": rows}
+
     db = get_db()
     q = db.table("mp_expenses").select(
         "id, payment_id, expense_type, expense_direction, ca_category, "
@@ -65,6 +83,48 @@ async def review_expense(
     req: ExpenseReviewUpdate,
 ):
     """Manually classify an expense and mark it as manually_categorized."""
+    if settings.expenses_source == "ledger":
+        from app.services.event_ledger import record_expense_event
+
+        db = get_db()
+        ref_id = str(expense_id)
+        events = db.table("payment_events").select(
+            "event_type, competencia_date, metadata"
+        ).eq("seller_slug", seller_slug).eq(
+            "reference_id", ref_id
+        ).in_("event_type", [
+            "expense_captured", "expense_exported", "expense_reviewed"
+        ]).execute()
+
+        event_types = {e["event_type"] for e in (events.data or [])}
+        if "expense_captured" not in event_types:
+            raise HTTPException(status_code=404, detail="Expense not found")
+        if "expense_exported" in event_types:
+            raise HTTPException(status_code=409, detail="Expense already exported")
+
+        update_data = req.model_dump(exclude_none=True)
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        captured = next(
+            (e for e in events.data if e["event_type"] == "expense_captured"), {}
+        )
+        competencia = captured.get("competencia_date", "")
+        meta = captured.get("metadata") or {}
+        expense_type_val = meta.get("expense_type", "unknown")
+
+        await record_expense_event(
+            seller_slug=seller_slug,
+            payment_id=ref_id,
+            event_type="expense_reviewed",
+            signed_amount=0,
+            competencia_date=competencia,
+            expense_type=expense_type_val,
+            metadata=update_data,
+        )
+
+        return {"ok": True, "status": "reviewed", **update_data}
+
     db = get_db()
     existing = db.table("mp_expenses").select("*").eq(
         "seller_slug", seller_slug
@@ -98,17 +158,28 @@ async def pending_review_summary(
     date_to: str | None = Query(None, description="YYYY-MM-DD"),
 ):
     """Summary of pending_review rows grouped by day."""
-    db = get_db()
-    q = db.table("mp_expenses").select(
-        "id, payment_id, amount, date_created, date_approved"
-    ).eq("seller_slug", seller_slug).eq("status", "pending_review")
+    if settings.expenses_source == "ledger":
+        from app.services.event_ledger import get_expense_list
+        rows = await get_expense_list(
+            seller_slug=seller_slug,
+            status="pending_review",
+            date_from=date_from,
+            date_to=date_to,
+            limit=100_000,
+            offset=0,
+        )
+    else:
+        db = get_db()
+        q = db.table("mp_expenses").select(
+            "id, payment_id, amount, date_created, date_approved"
+        ).eq("seller_slug", seller_slug).eq("status", "pending_review")
 
-    if date_from:
-        q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
-    if date_to:
-        q = q.lte("date_created", f"{date_to}T23:59:59.999-03:00")
+        if date_from:
+            q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
+        if date_to:
+            q = q.lte("date_created", f"{date_to}T23:59:59.999-03:00")
 
-    rows = q.order("date_created", desc=False).execute().data or []
+        rows = q.order("date_created", desc=False).execute().data or []
 
     by_day: dict[str, dict] = {}
     for row in rows:
@@ -145,6 +216,16 @@ async def expense_stats(
     status_filter: str | None = Query(None, description="Comma-separated statuses, e.g. 'pending_review,auto_categorized'"),
 ):
     """Counters by expense_type, expense_direction, and status."""
+    if settings.expenses_source == "ledger":
+        from app.services.event_ledger import get_expense_stats as ledger_stats
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()] if status_filter else None
+        return await ledger_stats(
+            seller_slug=seller_slug,
+            date_from=date_from,
+            date_to=date_to,
+            status_filter=statuses,
+        )
+
     db = get_db()
     q = db.table("mp_expenses").select("expense_type, expense_direction, status, amount").eq(
         "seller_slug", seller_slug

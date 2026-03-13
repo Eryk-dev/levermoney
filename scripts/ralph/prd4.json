@@ -52,7 +52,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Read app/routers/expenses/crud.py and app/routers/expenses/export.py fully. These files query mp_expenses directly. Add conditional branches based on settings.expenses_source. The response shapes MUST remain identical regardless of source — the frontend should not notice any difference."
     },
     {
