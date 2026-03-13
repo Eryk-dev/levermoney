@@ -12,6 +12,8 @@ from app.services.event_ledger import (
     build_idempotency_key,
     validate_event,
     derive_payment_status,
+    derive_expense_status,
+    record_expense_event,
     EventRecordError,
     EVENT_TYPES,
 )
@@ -178,6 +180,8 @@ class TestEventTypesCoverage:
         "money_released", "mediation_opened",
         "charged_back", "reimbursed",
         "adjustment_fee", "adjustment_shipping",
+        "expense_captured", "expense_classified",
+        "expense_reviewed", "expense_exported",
         "cash_release", "cash_expense", "cash_income",
         "cash_transfer_out", "cash_transfer_in", "cash_internal",
     ]
@@ -213,10 +217,15 @@ class TestEventTypesCoverage:
         assert set(zero) == {
             "ca_sync_completed", "ca_sync_failed",
             "money_released", "mediation_opened",
+            "expense_classified", "expense_reviewed", "expense_exported",
         }
 
+    def test_any_types(self):
+        any_types = [k for k, v in EVENT_TYPES.items() if v == "any"]
+        assert set(any_types) == {"cash_internal", "expense_captured"}
+
     def test_type_count(self):
-        assert len(EVENT_TYPES) == 22
+        assert len(EVENT_TYPES) == 26
 
 
 # ===========================================================================
@@ -349,3 +358,226 @@ class TestEventRecordError:
         err = EventRecordError("DB error recording sale_approved for payment 123: connection refused")
         assert "sale_approved" in str(err)
         assert "123" in str(err)
+
+
+# ===========================================================================
+# derive_expense_status
+# ===========================================================================
+
+class TestDeriveExpenseStatus:
+    """Centralized expense status derivation from event types."""
+
+    def test_exported_wins(self):
+        events = {"expense_captured", "expense_classified", "expense_reviewed", "expense_exported"}
+        assert derive_expense_status(events) == "exported"
+
+    def test_reviewed_beats_classified(self):
+        events = {"expense_captured", "expense_classified", "expense_reviewed"}
+        assert derive_expense_status(events) == "reviewed"
+
+    def test_classified_is_auto_categorized(self):
+        events = {"expense_captured", "expense_classified"}
+        assert derive_expense_status(events) == "auto_categorized"
+
+    def test_captured_is_pending_review(self):
+        events = {"expense_captured"}
+        assert derive_expense_status(events) == "pending_review"
+
+    def test_empty_is_unknown(self):
+        assert derive_expense_status(set()) == "unknown"
+
+    def test_only_exported_still_exported(self):
+        """Edge: only exported flag without captured (shouldn't happen, but safe)."""
+        assert derive_expense_status({"expense_exported"}) == "exported"
+
+    def test_unrelated_events_ignored(self):
+        """Payment events don't affect expense status."""
+        events = {"sale_approved", "fee_charged", "ca_sync_completed"}
+        assert derive_expense_status(events) == "unknown"
+
+
+# ===========================================================================
+# record_expense_event
+# ===========================================================================
+
+class TestRecordExpenseEvent:
+    """Tests for record_expense_event helper."""
+
+    @pytest.mark.asyncio
+    async def test_idempotency_key_format(self):
+        """Key is {seller}:{payment_id}:{event_type} (3 parts)."""
+        captured = {}
+
+        async def fake_record_event(**kwargs):
+            captured.update(kwargs)
+            return {"id": 1}
+
+        from unittest.mock import patch
+        with patch("app.services.event_ledger.record_event", side_effect=fake_record_event):
+            await record_expense_event(
+                seller_slug="141air",
+                payment_id="12345",
+                event_type="expense_captured",
+                signed_amount=-100.0,
+                competencia_date="2026-01-15",
+                expense_type="difal",
+            )
+
+        assert captured["idempotency_key"] == "141air:12345:expense_captured"
+        assert captured["source"] == "expense_lifecycle"
+        assert captured["reference_id"] == "12345"
+
+    @pytest.mark.asyncio
+    async def test_ml_payment_id_extracted_from_plain(self):
+        """Plain payment_id '12345' → ml_payment_id = 12345."""
+        captured = {}
+
+        async def fake_record_event(**kwargs):
+            captured.update(kwargs)
+            return {"id": 1}
+
+        from unittest.mock import patch
+        with patch("app.services.event_ledger.record_event", side_effect=fake_record_event):
+            await record_expense_event(
+                seller_slug="141air",
+                payment_id="12345",
+                event_type="expense_captured",
+                signed_amount=-50.0,
+                competencia_date="2026-01-10",
+                expense_type="subscription",
+            )
+
+        assert captured["ml_payment_id"] == 12345
+
+    @pytest.mark.asyncio
+    async def test_ml_payment_id_extracted_from_composite(self):
+        """Composite payment_id '12345:df' → ml_payment_id = 12345."""
+        captured = {}
+
+        async def fake_record_event(**kwargs):
+            captured.update(kwargs)
+            return {"id": 1}
+
+        from unittest.mock import patch
+        with patch("app.services.event_ledger.record_event", side_effect=fake_record_event):
+            await record_expense_event(
+                seller_slug="141air",
+                payment_id="12345:df",
+                event_type="expense_captured",
+                signed_amount=-30.0,
+                competencia_date="2026-01-10",
+                expense_type="difal",
+            )
+
+        assert captured["ml_payment_id"] == 12345
+        assert captured["idempotency_key"] == "141air:12345:df:expense_captured"
+
+    @pytest.mark.asyncio
+    async def test_ml_payment_id_fallback_zero(self):
+        """Non-numeric payment_id → ml_payment_id = 0."""
+        captured = {}
+
+        async def fake_record_event(**kwargs):
+            captured.update(kwargs)
+            return {"id": 1}
+
+        from unittest.mock import patch
+        with patch("app.services.event_ledger.record_event", side_effect=fake_record_event):
+            await record_expense_event(
+                seller_slug="141air",
+                payment_id="abc",
+                event_type="expense_captured",
+                signed_amount=-10.0,
+                competencia_date="2026-01-10",
+                expense_type="unknown",
+            )
+
+        assert captured["ml_payment_id"] == 0
+
+    @pytest.mark.asyncio
+    async def test_metadata_includes_expense_type(self):
+        """Metadata always includes expense_type key."""
+        captured = {}
+
+        async def fake_record_event(**kwargs):
+            captured.update(kwargs)
+            return {"id": 1}
+
+        from unittest.mock import patch
+        with patch("app.services.event_ledger.record_event", side_effect=fake_record_event):
+            await record_expense_event(
+                seller_slug="141air",
+                payment_id="99999",
+                event_type="expense_classified",
+                signed_amount=0,
+                competencia_date="2026-01-10",
+                expense_type="difal",
+                metadata={"ca_category": "2.1.1 Impostos"},
+            )
+
+        assert captured["metadata"]["expense_type"] == "difal"
+        assert captured["metadata"]["ca_category"] == "2.1.1 Impostos"
+
+    @pytest.mark.asyncio
+    async def test_expense_captured_accepts_positive(self):
+        """expense_captured has 'any' sign — positive (income) is valid."""
+        captured = {}
+
+        async def fake_record_event(**kwargs):
+            captured.update(kwargs)
+            return {"id": 1}
+
+        from unittest.mock import patch
+        with patch("app.services.event_ledger.record_event", side_effect=fake_record_event):
+            await record_expense_event(
+                seller_slug="141air",
+                payment_id="55555",
+                event_type="expense_captured",
+                signed_amount=200.0,
+                competencia_date="2026-01-10",
+                expense_type="cashback",
+            )
+
+        assert captured["signed_amount"] == 200.0
+
+    @pytest.mark.asyncio
+    async def test_expense_captured_accepts_negative(self):
+        """expense_captured has 'any' sign — negative (expense) is valid."""
+        captured = {}
+
+        async def fake_record_event(**kwargs):
+            captured.update(kwargs)
+            return {"id": 1}
+
+        from unittest.mock import patch
+        with patch("app.services.event_ledger.record_event", side_effect=fake_record_event):
+            await record_expense_event(
+                seller_slug="141air",
+                payment_id="55555",
+                event_type="expense_captured",
+                signed_amount=-200.0,
+                competencia_date="2026-01-10",
+                expense_type="difal",
+            )
+
+        assert captured["signed_amount"] == -200.0
+
+    def test_validate_expense_classified_zero(self):
+        """expense_classified must be zero."""
+        validate_event("expense_classified", 0)
+
+    def test_validate_expense_classified_rejects_nonzero(self):
+        with pytest.raises(ValueError, match="zero"):
+            validate_event("expense_classified", 100.0)
+
+    def test_validate_expense_reviewed_zero(self):
+        validate_event("expense_reviewed", 0)
+
+    def test_validate_expense_exported_zero(self):
+        validate_event("expense_exported", 0)
+
+    def test_validate_expense_captured_any_sign(self):
+        """expense_captured accepts positive, negative, and zero."""
+        validate_event("expense_captured", 100.0)
+        validate_event("expense_captured", -100.0)
+        validate_event("expense_captured", 0)

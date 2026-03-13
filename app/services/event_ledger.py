@@ -41,6 +41,11 @@ EVENT_TYPES = {
     # Adjustments (release report validator)
     "adjustment_fee":      "negative",
     "adjustment_shipping": "negative",
+    # Expense lifecycle events (dual-write with mp_expenses)
+    "expense_captured":   "any",    # Despesa/receita identified (signed amount)
+    "expense_classified": "zero",   # Auto-classified (metadata: ca_category)
+    "expense_reviewed":   "zero",   # Reviewed by human (metadata: approved)
+    "expense_exported":   "zero",   # Exported in batch (metadata: batch_id)
     # Cash events — competencia_date = event_date (caixa, NAO competencia real). DRE queries MUST exclude these.
     "cash_release":      "positive",
     "cash_expense":      "negative",
@@ -503,6 +508,67 @@ async def record_cash_event(
         idempotency_key=idem_key,
         reference_id=reference_id,
     )
+
+
+async def record_expense_event(
+    seller_slug: str,
+    payment_id: str,
+    event_type: str,
+    signed_amount: float,
+    competencia_date: str,
+    expense_type: str,
+    metadata: dict | None = None,
+) -> dict | None:
+    """Record an expense lifecycle event.
+
+    Idempotency key: {seller}:{payment_id}:{event_type} (3 parts).
+    payment_id can be plain ("12345") or composite ("12345:df").
+    ml_payment_id is extracted via int(payment_id.split(':')[0]) with fallback 0.
+    """
+    idem_key = f"{seller_slug}:{payment_id}:{event_type}"
+
+    try:
+        ml_pid = int(payment_id.split(":")[0])
+    except (ValueError, TypeError):
+        ml_pid = 0
+
+    full_metadata = {"expense_type": expense_type}
+    if metadata:
+        full_metadata.update(metadata)
+
+    return await record_event(
+        seller_slug=seller_slug,
+        ml_payment_id=ml_pid,
+        event_type=event_type,
+        signed_amount=signed_amount,
+        competencia_date=competencia_date,
+        event_date=competencia_date,
+        source="expense_lifecycle",
+        metadata=full_metadata,
+        idempotency_key=idem_key,
+        reference_id=payment_id,
+    )
+
+
+def derive_expense_status(event_types: set[str]) -> str:
+    """Derive expense status from its event types.
+
+    Priority order (first match wins):
+        expense_exported   → "exported"
+        expense_reviewed   → "reviewed"
+        expense_classified → "auto_categorized"
+        expense_captured   → "pending_review"
+        (none)             → "unknown"
+    """
+    if "expense_exported" in event_types:
+        return "exported"
+    if "expense_reviewed" in event_types:
+        return "reviewed"
+    if "expense_classified" in event_types:
+        return "auto_categorized"
+    if "expense_captured" in event_types:
+        return "pending_review"
+    return "unknown"
 
 
 async def get_cash_summary(
