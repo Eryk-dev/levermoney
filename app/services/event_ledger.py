@@ -399,3 +399,86 @@ async def get_dre_summary(
         page_start += page_limit
 
     return summary
+
+
+async def record_cash_event(
+    seller_slug: str,
+    reference_id: str,
+    event_type: str,
+    signed_amount: float,
+    event_date: str,
+    extrato_type: str,
+    expense_type_abbrev: str = "xx",
+    metadata: dict | None = None,
+) -> dict | None:
+    """Record a cash flow event from an extrato line.
+
+    Idempotency key: {seller}:{ref_id}:{event_type}:{date}:{abbrev}
+    The abbreviation prevents collision when two different transaction types
+    generate the same cash event type for the same ref_id on the same day.
+
+    NOTE: competencia_date is set equal to event_date for cash events.
+    It does NOT represent accrual competencia.
+    """
+    if not event_type.startswith("cash_"):
+        raise ValueError(f"cash_* event type required, got {event_type}")
+
+    idem_key = f"{seller_slug}:{reference_id}:{event_type}:{event_date}:{expense_type_abbrev}"
+
+    try:
+        ml_pid = int(reference_id)
+    except (ValueError, TypeError):
+        ml_pid = 0
+
+    full_metadata = {"extrato_type": extrato_type, "source": "account_statement"}
+    if metadata:
+        full_metadata.update(metadata)
+
+    return await record_event(
+        seller_slug=seller_slug,
+        ml_payment_id=ml_pid,
+        event_type=event_type,
+        signed_amount=signed_amount,
+        competencia_date=event_date,
+        event_date=event_date,
+        source="extrato",
+        metadata=full_metadata,
+        idempotency_key=idem_key,
+        reference_id=reference_id,
+    )
+
+
+async def get_cash_summary(
+    seller_slug: str,
+    date_from: str,
+    date_to: str,
+) -> dict:
+    """Aggregate cash events by type for a date range (event_date).
+
+    Returns dict like: {"cash_release": 12345.67, "cash_expense": -1234.56}
+    Only includes event_type starting with 'cash_'.
+    Paginated to avoid PostgREST row limits.
+    """
+    db = get_db()
+    summary: dict[str, float] = {}
+    page_start = 0
+    page_limit = 1000
+    while True:
+        result = db.table(TABLE).select("event_type, signed_amount").eq(
+            "seller_slug", seller_slug
+        ).gte("event_date", date_from).lte(
+            "event_date", date_to
+        ).range(page_start, page_start + page_limit - 1).execute()
+
+        rows = result.data or []
+        for row in rows:
+            et = row["event_type"]
+            if not et.startswith("cash_"):
+                continue
+            summary[et] = round(summary.get(et, 0) + float(row["signed_amount"]), 2)
+
+        if len(rows) < page_limit:
+            break
+        page_start += page_limit
+
+    return summary
