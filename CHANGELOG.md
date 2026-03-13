@@ -7,6 +7,175 @@ Versionamento segue [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
+# ============================================================================
+#  LEVERMONEY V3 — UNIFIED EVENT LEDGER
+#  Arquitetura completamente nova: mp_expenses deprecada.
+#  Todas as despesas, caixa e lifecycle vivem no event ledger (payment_events).
+# ============================================================================
+
+## [3.0.0] — 2026-03-13
+
+### Resumo
+
+**Major release.** O sistema de despesas (`mp_expenses`) foi completamente migrado para o
+Event Ledger (`payment_events`). A tabela `mp_expenses` foi renomeada para
+`mp_expenses_deprecated` e substituida por uma view de compatibilidade.
+
+Todas as escritas, leituras, dedup e exports agora usam exclusivamente o event ledger.
+520 testes passando. Zero referencias a `mp_expenses` em `app/`.
+
+### O que mudou (visao geral)
+
+O LeverMoney v2 tinha **dois sistemas paralelos**:
+- `payment_events` (event ledger) para pagamentos de vendas
+- `mp_expenses` (tabela mutavel) para despesas/non-order payments
+
+O LeverMoney v3 **unifica tudo** no event ledger:
+- Pagamentos de vendas: 16 event types (inalterado)
+- Despesas (non-order): 4 event types (expense_captured/classified/reviewed/exported)
+- Caixa (extrato): 6 event types (cash_release/expense/income/transfer_out/transfer_in/internal)
+- **Total: 26 event types** em uma unica tabela append-only
+
+### Etapas da migracao (executadas sequencialmente)
+
+| Etapa | Branch | Descricao |
+|-------|--------|-----------|
+| 1 | ralph/upload-extrato | Upload de extrato CSV via admin + dashboard tab |
+| 2 | ralph/cash-events | 6 cash event types + ingestion script + cash reconciliation |
+| 3 | ralph/dual-write | Dual-write: despesas gravadas em mp_expenses E event ledger |
+| 4 | ralph/migrar-leituras | Feature flag + todos consumers leem do ledger |
+| 5 | ralph/deprecar-mp-expenses | Stop dual-write, remove refs, migration 009 |
+
+### Breaking Changes
+
+- **`mp_expenses` e agora uma VIEW**, nao uma tabela. A view le de `payment_events`
+  WHERE `event_type = 'expense_captured'` e mapeia metadata para colunas esperadas.
+  A tabela original foi renomeada para `mp_expenses_deprecated` (backup).
+- **Feature flag `expenses_source` removida** de `app/config.py`. Nao ha mais toggle —
+  ledger e a unica fonte.
+- **Dual-write removido.** `expense_classifier.py`, `extrato_ingester.py`,
+  `release_report_sync.py` e `export.py` agora escrevem APENAS no event ledger
+  via `record_expense_event()`.
+- **Dedup de despesas migrado.** `daily_sync.py` e `onboarding_backfill.py` usam
+  `payment_events WHERE event_type = 'expense_captured'` em vez de `mp_expenses`.
+
+### Migrations novas
+
+| Migration | Descricao |
+|-----------|-----------|
+| `007_extrato_uploads.sql` | Tabela `extrato_uploads` para uploads CSV |
+| `008_unified_ledger.sql` | Coluna `reference_id` + indexes para cash events |
+| `009_deprecate_mp_expenses.sql` | Rename table + create compatibility view |
+
+### Novos event types (10)
+
+| event_type | signed_amount | Origem | Descricao |
+|-----------|---------------|--------|-----------|
+| `expense_captured` | any | expense_classifier, extrato_ingester, release_report_sync | Despesa identificada |
+| `expense_classified` | zero | expense_classifier | Auto-classificada (ca_category) |
+| `expense_reviewed` | zero | expenses/crud.py | Revisada por humano |
+| `expense_exported` | zero | expenses/export.py | Exportada em batch |
+| `cash_release` | positive | extrato ingestion | Liberacao no extrato |
+| `cash_expense` | negative | extrato ingestion | Despesa no extrato |
+| `cash_income` | positive | extrato ingestion | Receita no extrato |
+| `cash_transfer_out` | negative | extrato ingestion | Transferencia saida |
+| `cash_transfer_in` | positive | extrato ingestion | Transferencia entrada |
+| `cash_internal` | any | extrato ingestion | Movimento interno (reserva, saldo) |
+
+### Novas funcoes no event_ledger.py
+
+| Funcao | Descricao |
+|--------|-----------|
+| `record_expense_event()` | Grava expense lifecycle event com idempotency `{seller}:{pid}:{type}` |
+| `record_cash_event()` | Grava cash event com idempotency `{seller}:{ref}:{type}:{date}:{abbrev}` |
+| `derive_expense_status()` | Deriva status de despesa a partir de event_types |
+| `get_pending_exports()` | Despesas com expense_captured sem expense_exported |
+| `get_expense_list()` | Lista despesas com status derivado |
+| `get_expense_stats()` | Estatisticas agregadas de despesas |
+| `get_cash_summary()` | Soma de cash events por tipo e periodo |
+
+### Arquivos modificados (Etapa 5 — deprecacao final)
+
+- **`expense_classifier.py`** — removido upsert a `mp_expenses`. Apenas `record_expense_event()`
+- **`extrato_ingester.py`** — removido insert a `mp_expenses`. Apenas `record_expense_event()`
+- **`release_report_sync.py`** — removido insert a `mp_expenses`. Apenas `record_expense_event()`
+- **`expenses/export.py`** — removido update de status em `mp_expenses`. Apenas `expense_exported` events
+- **`expenses/crud.py`** — leitura via `get_expense_list()`/`get_expense_stats()` (sem feature flag)
+- **`expenses/closing.py`** — leitura via event ledger
+- **`financial_closing.py`** — `_compute_manual_lane()` le do event ledger
+- **`extrato_coverage_checker.py`** — `_lookup_expense_ids()` le do event ledger
+- **`daily_sync.py`** — dedup de despesas via `payment_events`
+- **`onboarding_backfill.py`** — dedup de despesas via `payment_events`
+- **`app/config.py`** — `expenses_source` removido
+
+### Scripts de migracao
+
+- **`testes/migrate_mp_expenses_to_ledger.py`** — migra dados historicos de
+  `mp_expenses_deprecated` para event ledger. Idempotente. Cria expense_captured,
+  expense_classified, expense_exported e expense_reviewed conforme status original.
+
+### Testes
+
+- 520 testes passando (~4.5s, offline)
+- Novos test files: `test_cash_events.py`, `test_expense_classifier_dual_write.py`,
+  `test_extrato_ingester_dual_write.py`, `test_release_report_dual_write.py`,
+  `test_export_dual_write.py`, `test_expense_read_helpers.py`,
+  `test_crud_export_ledger_mode.py`, `test_feature_flag_expenses_source.py`,
+  `test_parity_expenses_source.py`
+
+### Tabela completa de Event Types (v3 — 26 tipos)
+
+| event_type | signed_amount | Origem |
+|-----------|---------------|--------|
+| `sale_approved` | +amount bruto | processor |
+| `fee_charged` | -mp_fee | processor |
+| `shipping_charged` | -shipping | processor |
+| `subsidy_credited` | +subsidio | processor |
+| `refund_created` | -refund | processor |
+| `refund_fee` | +fee estornada | processor |
+| `refund_shipping` | +frete estornado | processor |
+| `partial_refund` | -refund parcial | processor |
+| `ca_sync_completed` | 0 | ca_worker |
+| `ca_sync_failed` | 0 | ca_worker |
+| `money_released` | 0 | release_checker |
+| `mediation_opened` | 0 | processor |
+| `charged_back` | -amount | processor |
+| `reimbursed` | +amount | processor |
+| `adjustment_fee` | -diff fee | release_report_validator |
+| `adjustment_shipping` | -diff shipping | release_report_validator |
+| `expense_captured` | any | expense_classifier, extrato_ingester, release_report_sync |
+| `expense_classified` | zero | expense_classifier |
+| `expense_reviewed` | zero | expenses/crud |
+| `expense_exported` | zero | expenses/export |
+| `cash_release` | positive | extrato ingestion |
+| `cash_expense` | negative | extrato ingestion |
+| `cash_income` | positive | extrato ingestion |
+| `cash_transfer_out` | negative | extrato ingestion |
+| `cash_transfer_in` | positive | extrato ingestion |
+| `cash_internal` | any | extrato ingestion |
+
+### Como rodar a migracao de dados historicos
+
+```bash
+# 1. Aplicar migration 009 (via Supabase MCP ou SQL editor)
+# 2. Rodar script de migracao de dados:
+python3 testes/migrate_mp_expenses_to_ledger.py --seller 141air
+python3 testes/migrate_mp_expenses_to_ledger.py --seller net-air
+python3 testes/migrate_mp_expenses_to_ledger.py --seller netparts-sp
+python3 testes/migrate_mp_expenses_to_ledger.py --seller easypeasy
+
+# 3. Validar contagens:
+# SELECT seller_slug, COUNT(*) FROM mp_expenses GROUP BY seller_slug
+# deve retornar mesmos valores que antes (via view)
+```
+
+---
+
+# ============================================================================
+#  LEVERMONEY V2 — EVENT LEDGER (PAYMENTS)
+#  Historico da v2: event ledger para pagamentos, testes, DRE, validacao.
+# ============================================================================
+
 ## [2.4.0] — 2026-03-12
 
 ### Resumo
@@ -331,7 +500,7 @@ Versao inicial do sistema completo em producao.
 ```bash
 cd "/Volumes/SSD Eryk/LeverMoney"
 
-# Todos os testes (263, ~1.8s)
+# Todos os testes (520, ~4.5s)
 python3 -m pytest
 
 # Com output detalhado
@@ -343,35 +512,12 @@ python3 -m pytest testes/test_dre_reconciliation.py -v
 # Apenas event ledger
 python3 -m pytest testes/test_event_ledger.py -v
 
-# Apenas processor unit
-python3 -m pytest testes/test_processor_unit.py -v
+# Apenas cash events
+python3 -m pytest testes/test_cash_events.py -v
 
-# Apenas extrato classification
-python3 -m pytest testes/test_extrato_classification.py -v
-```
-
----
-
-## Arquitetura de testes
-
-```
-testes/
-├── conftest.py                        # Fixtures pytest + collect_ignore_glob
-├── test_processor_unit.py             # 31 testes — matematica do processor
-├── test_extrato_classification.py     # 73 testes — classificacao extrato
-├── test_dre_reconciliation.py         # 48 testes — DRE jan/2026 com dados reais
-├── test_dre_reconciliation_fev2026.py # 46 testes — DRE fev/2026
-├── test_event_ledger.py               # 40 testes — event ledger pure functions
-├── test_event_ledger_backfill.py      # 25 testes — backfill validation DRE via eventos
-├── data/                              # Dados reais (read-only)
-│   ├── cache_jan2026/                 #   Cache de payments JSON
-│   ├── cache_fev2026/                 #   Cache fevereiro
-│   └── extratos/                      #   Extratos CSV (4 sellers x 2 meses)
-├── standalone/                        # Scripts de teste que NAO sao pytest
-├── simulacoes/                        # Simulacoes offline (7 scripts)
-├── utils/                             # backfill_events.py, rebuild_cache.py
-└── reports/                           # Relatorios gerados
+# Apenas expense dual-write / ledger mode
+python3 -m pytest testes/test_expense_classifier_dual_write.py testes/test_crud_export_ledger_mode.py -v
 ```
 
 Testes usam dados reais (cache JSON + extratos CSV), nao mocks.
-Rodam offline em ~1.8 segundos, sem necessidade de Supabase ou API.
+Rodam offline em ~4.5 segundos, sem necessidade de Supabase ou API.

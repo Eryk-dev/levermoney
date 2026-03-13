@@ -1,0 +1,31 @@
+## Codebase Patterns
+- Expense ledger events: expense_captured has ALL metadata fields in its `metadata` dict, expense_classified merges `ca_category`, expense_reviewed merges review fields
+- `_group_expense_events()` + `_build_expense_row()` are the bridge between raw ledger events and mp_expenses-compatible dicts
+- To simulate dual-write data in tests, build expense_captured with full metadata + expense_classified when auto_categorized=True + expense_exported for exported rows
+- `_signed_amount()` in financial_closing.py uses expense_direction to determine sign: expense→negative, income→positive, transfer→depends on expense_type
+- DRE functions (get_dre_summary, get_cash_summary) filter out expense_* and cash_* events respectively — they won't regress from expense read migration
+- Test pattern: mock `_fetch_expense_events` to avoid DB calls, then test ledger helpers directly
+
+# Ralph Progress Log
+Started: Fri Mar 13 16:10:45 -03 2026
+---
+
+## 2026-03-13 - US-004
+- Implemented parity validation test suite (29 tests) comparing mp_expenses vs event ledger responses
+- Files changed:
+  - `testes/test_parity_expenses_source.py` (NEW) — 529 lines, 29 tests across 6 test classes
+- Test coverage:
+  - **TestListExpensesParity** (7 tests): count, payment_ids, amounts, types, directions, categories, descriptions
+  - **TestExpenseStatsParity** (8 tests): total count/amount, by_type, by_direction, by_status, pending_review/auto_categorized counts, with status_filter
+  - **TestExportParity** (7 tests): pending export count, payment_ids, amounts, directions, categories, status_filter, XLSX field completeness
+  - **TestFinancialClosingManualLaneParity** (4 tests): same day count, rows per day, signed amounts per day, payment_ids per day
+  - **TestDREUnchanged** (2 tests): dre_summary excludes expense_* events, cash_summary only includes cash_* events
+  - **TestZeroDifferences** (1 test): comprehensive cross-check of all dimensions reporting any differences
+- Zero unexplained differences found
+- All 529 tests pass (including 29 new)
+- **Learnings for future iterations:**
+  - Building ledger events from mp_expenses rows is straightforward: capture→classify→export lifecycle
+  - The key fields that must match between sources: amount, expense_type, expense_direction, ca_category, description, auto_categorized, external_reference, dates
+  - financial_closing._signed_amount uses expense_direction NOT signed_amount from events — so direction field parity is critical
+  - get_dre_summary and get_cash_summary already filter expense_* events, so read migration doesn't affect DRE at all
+---

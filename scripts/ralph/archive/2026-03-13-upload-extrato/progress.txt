@@ -1,0 +1,110 @@
+## Codebase Patterns
+- Migrations follow pattern `NNN_description.sql` with `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`
+- Migration comments: descriptive header explaining purpose and idempotency guarantees
+- Supabase project ID: `wrbrbhuhsaaupqsimkqz`
+- Tests: 366 pytest tests, run with `python3 -m pytest`, all offline, ~2.4s
+- Branch naming: `ralph/<feature-name>`
+- `extrato_ingester.py` uses `_CHECK_PAYMENTS` sentinel + `_EXPENSE_TYPE_ABBREV` dict for composite keys
+- New functions in `extrato_ingester.py` should be placed between `ingest_extrato_for_seller()` and `ingest_extrato_all_sellers()`
+- The `ingest_extrato_from_csv()` function signature includes `month: str` (YYYY-MM) — not just seller+csv
+- Supabase upsert: `db.table(...).upsert(row, on_conflict="col1,col2")` — comma-separated string
+- Admin endpoints use `dependencies=[Depends(require_admin)]` at route level, not as function param
+- `ingest_extrato_from_csv` returns `newly_ingested`/`skipped_internal` — map to DB cols `lines_ingested`/`lines_skipped`
+- List endpoints use `{seller, count, data}` envelope pattern (see `expenses/crud.py`, `extrato.py`)
+- `extrato_uploads` table uses `uploaded_at` (not `created_at`) and `month` (not `month_ref`)
+- Dashboard components live flat in `dashboard/src/components/` (not in admin/ subdirectory)
+- AdminPanel tabs use `styles.modeToggle` + `styles.modeBtn` / `styles.modeBtnActive` pattern
+- Admin API auth token: `sessionStorage.getItem('lever-admin-token')` + header `X-Admin-Token`
+- API base URL: `import { API_BASE } from '../lib/supabase'`
+- Dashboard build: `cd dashboard && ./node_modules/.bin/tsc -b && ./node_modules/.bin/vite build` (npx tsc doesn't work)
+- CSS Modules use `data-*` attribute selectors for status-variant badges (e.g. `data-status="completed"`)
+
+# Ralph Progress Log
+Started: Fri Mar 13 14:19:07 -03 2026
+---
+
+## 2026-03-13 - US-001
+- Created `migrations/007_extrato_uploads.sql` with full schema from RFC section 3
+- Applied migration to Supabase via `mcp__supabase__apply_migration`
+- Verified: `SELECT * FROM extrato_uploads LIMIT 1` returns empty array (no error)
+- 366 pytest tests passing
+- Files changed: `migrations/007_extrato_uploads.sql` (new)
+- **Learnings for future iterations:**
+  - RFC at `rfcs/plano-execucao/01-upload-extrato.md` has the authoritative schema (PRD acceptance criteria is a summary)
+  - Schema uses `UNIQUE (seller_slug, month)` for idempotent re-uploads
+  - Column naming: `lines_total`, `lines_ingested`, `lines_skipped`, `lines_already_covered` (not the simplified PRD names)
+  - FK references `sellers(slug)` — seller must exist before upload
+---
+
+## 2026-03-13 - US-002
+- Added `ingest_extrato_from_csv(seller_slug, csv_text, month)` to `app/services/extrato_ingester.py`
+- Function placed between `ingest_extrato_for_seller()` (line 739) and `ingest_extrato_all_sellers()`
+- Reuses all existing internal functions: `_parse_account_statement`, `_classify_extrato_line`, `_resolve_check_payments`, batch lookups, dedup, upsert
+- Added `import calendar` for month→date range derivation
+- Validates INITIAL_BALANCE header presence, raises ValueError if missing
+- Filters transactions by month (begin_date/end_date derived from YYYY-MM)
+- Returns same stats dict format as `ingest_extrato_for_seller()`
+- 366 pytest tests still passing
+- Files changed: `app/services/extrato_ingester.py` (modified)
+- **Learnings for future iterations:**
+  - The pipeline from step 3 onwards (classification → batch lookups → CHECK_PAYMENTS resolution → upsert) is identical between both functions. If this grows, consider extracting a shared `_run_ingestion_pipeline()` helper
+  - `_CHECK_PAYMENTS` is a sentinel string constant used as a marker — must be imported/referenced from the same module
+  - `_EXPENSE_TYPE_ABBREV` maps expense_type → 2-char abbreviation for composite keys (e.g. "df" for difal)
+  - The RFC specifies `month` param (YYYY-MM) not present in the PRD acceptance criteria — always check the RFC
+  - CSV text may arrive already decoded (from endpoint) — no need to decode bytes in this function
+---
+
+## 2026-03-13 - US-003
+- Added `POST /admin/extrato/upload` endpoint to `app/routers/admin/extrato.py`
+- Accepts multipart form: `file` (UploadFile), `seller_slug` (str), `month` (str YYYY-MM)
+- Validates: month format (regex), seller exists (get_seller_config), file size (5MB max), CSV format (INITIAL_BALANCE header), encoding (utf-8-sig → latin-1 fallback)
+- Creates processing record in `extrato_uploads` via upsert (ON CONFLICT seller_slug,month)
+- Calls `ingest_extrato_from_csv()` and updates record with results (completed/failed)
+- Returns: upload_id, seller_slug, month, filename, status, lines_total, lines_ingested, lines_skipped, lines_already_covered, amount_updated, initial_balance, final_balance, gaps_found
+- 366 pytest tests passing
+- Files changed: `app/routers/admin/extrato.py` (modified)
+- **Learnings for future iterations:**
+  - Supabase upsert syntax: `db.table(...).upsert(row, on_conflict="col1,col2")` — comma-separated string, not a list
+  - The `summary` dict from `_parse_account_statement` contains `initial_balance` and `final_balance` — access via `result["summary"]`
+  - FastAPI multipart form uses `File(...)` and `Form(...)` from `fastapi` — cannot mix Pydantic body model with file uploads
+  - The `ingest_extrato_from_csv` return dict uses `newly_ingested` (not `lines_ingested`) and `skipped_internal` (not `lines_skipped`) — map these to the DB column names in the update
+  - The upload endpoint follows the existing admin pattern: `dependencies=[Depends(require_admin)]` at the route level
+---
+
+## 2026-03-13 - US-004
+- Added `GET /admin/extrato/uploads/{seller_slug}` endpoint to `app/routers/admin/extrato.py`
+- Returns paginated list of uploads ordered by `uploaded_at` desc
+- Accepts `limit` (default 20, max 100) and `offset` (default 0) query params
+- Response shape: `{seller, count, data: [{id, filename, month, status, lines_total, lines_ingested, lines_skipped, lines_already_covered, initial_balance, final_balance, error_message, uploaded_at}]}`
+- Protected by `require_admin` dependency
+- 366 pytest tests passing
+- Files changed: `app/routers/admin/extrato.py` (modified)
+- **Learnings for future iterations:**
+  - DB column is `uploaded_at` (not `created_at` from PRD) and `month` (not `month_ref`) — always use actual DB column names
+  - Follow the `expenses/crud.py` list pattern: `{seller, count, data}` envelope
+  - Supabase `.range(offset, offset + limit - 1)` is inclusive on both ends
+  - History endpoint is simple — no need for status/date filters since the table is small per seller
+---
+
+## 2026-03-13 - US-005
+- Created `ExtratoTab.tsx` component in `dashboard/src/components/`
+- Created `ExtratoTab.module.css` with CSS Modules styles
+- Added "Extratos" tab to `AdminPanel.tsx` alongside Sellers and Despesas tabs
+- Upload section: seller dropdown + month picker (`<input type="month">`) + file input + submit button
+- Shows upload result after submission: lines_total, lines_ingested, lines_already_covered, lines_skipped, balances, gaps breakdown
+- History table: lists previous uploads per seller with status badges, metrics, and timestamps
+- Loading state during upload (button text changes, inputs disabled)
+- Error handling: displays error message from API or connection errors
+- Auth: reads `lever-admin-token` from sessionStorage, sends as `X-Admin-Token` header, calls `onLogout` on 401
+- Dashboard build (`tsc -b && vite build`) passes without errors
+- 366 pytest tests passing
+- Files changed: `dashboard/src/components/ExtratoTab.tsx` (new), `dashboard/src/components/ExtratoTab.module.css` (new), `dashboard/src/components/AdminPanel.tsx` (modified)
+- **Learnings for future iterations:**
+  - Components live flat in `dashboard/src/components/` (PRD said `admin/` subdirectory but that doesn't exist)
+  - AdminPanel tab type union must be expanded when adding new tabs (e.g. `'sellers' | 'expenses' | 'extratos'`)
+  - `npx tsc` doesn't work — use `./node_modules/.bin/tsc -b` directly after `npm install`
+  - Node.js 20.15.0 works despite Vite warning about needing 20.19+
+  - `data-status` attribute selectors in CSS Modules avoid needing separate class names per status variant
+  - The upload endpoint is multipart form-data (FormData), not JSON — don't set Content-Type header, let browser set boundary
+  - Admin token key in sessionStorage: `'lever-admin-token'` (hardcoded in useAdmin.ts)
+---

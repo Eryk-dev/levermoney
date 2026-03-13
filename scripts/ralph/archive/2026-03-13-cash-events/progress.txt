@@ -1,0 +1,187 @@
+## Codebase Patterns
+- Migrations follow pattern `NNN_description.sql` with `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`
+- Migration comments: descriptive header explaining purpose and idempotency guarantees
+- Supabase project ID: `wrbrbhuhsaaupqsimkqz`
+- Tests: 366 pytest tests, run with `python3 -m pytest`, all offline, ~2.4s
+- Branch naming: `ralph/<feature-name>`
+- `extrato_ingester.py` uses `_CHECK_PAYMENTS` sentinel + `_EXPENSE_TYPE_ABBREV` dict for composite keys
+- New functions in `extrato_ingester.py` should be placed between `ingest_extrato_for_seller()` and `ingest_extrato_all_sellers()`
+- The `ingest_extrato_from_csv()` function signature includes `month: str` (YYYY-MM) — not just seller+csv
+- Supabase upsert: `db.table(...).upsert(row, on_conflict="col1,col2")` — comma-separated string
+- Admin endpoints use `dependencies=[Depends(require_admin)]` at route level, not as function param
+- `ingest_extrato_from_csv` returns `newly_ingested`/`skipped_internal` — map to DB cols `lines_ingested`/`lines_skipped`
+- List endpoints use `{seller, count, data}` envelope pattern (see `expenses/crud.py`, `extrato.py`)
+- `extrato_uploads` table uses `uploaded_at` (not `created_at`) and `month` (not `month_ref`)
+- Dashboard components live flat in `dashboard/src/components/` (not in admin/ subdirectory)
+- AdminPanel tabs use `styles.modeToggle` + `styles.modeBtn` / `styles.modeBtnActive` pattern
+- Admin API auth token: `sessionStorage.getItem('lever-admin-token')` + header `X-Admin-Token`
+- API base URL: `import { API_BASE } from '../lib/supabase'`
+- Dashboard build: `cd dashboard && ./node_modules/.bin/tsc -b && ./node_modules/.bin/vite build` (npx tsc doesn't work)
+- CSS Modules use `data-*` attribute selectors for status-variant badges (e.g. `data-status="completed"`)
+- Adding new EVENT_TYPES requires updating 4 places in test_event_ledger.py: EXPECTED_TYPES, positive_types, negative_types, type_count
+- CASH_TYPE_MAP, SKIP_TO_CASH_TYPE, SKIP_ABBREV live in `event_ledger.py` — import from there in tests and ingestion scripts
+- Extrato lines can have amounts whose sign contradicts the mapped cash_type direction (e.g. "Pagamento com QR Pix" classified as income but with negative amount). Use `_align_cash_type_to_sign()` to correct.
+- Same ref_id can appear multiple times in extrato with same classification (dispute pairs). Add sequence suffix to abbreviation to prevent idempotency key collisions.
+
+# Ralph Progress Log
+Started: Fri Mar 13 14:19:07 -03 2026
+---
+
+## 2026-03-13 - US-001
+- Created `migrations/007_extrato_uploads.sql` with full schema from RFC section 3
+- Applied migration to Supabase via `mcp__supabase__apply_migration`
+- Verified: `SELECT * FROM extrato_uploads LIMIT 1` returns empty array (no error)
+- 366 pytest tests passing
+- Files changed: `migrations/007_extrato_uploads.sql` (new)
+- **Learnings for future iterations:**
+  - RFC at `rfcs/plano-execucao/01-upload-extrato.md` has the authoritative schema (PRD acceptance criteria is a summary)
+  - Schema uses `UNIQUE (seller_slug, month)` for idempotent re-uploads
+  - Column naming: `lines_total`, `lines_ingested`, `lines_skipped`, `lines_already_covered` (not the simplified PRD names)
+  - FK references `sellers(slug)` — seller must exist before upload
+---
+
+## 2026-03-13 - US-002
+- Added `ingest_extrato_from_csv(seller_slug, csv_text, month)` to `app/services/extrato_ingester.py`
+- Function placed between `ingest_extrato_for_seller()` (line 739) and `ingest_extrato_all_sellers()`
+- Reuses all existing internal functions: `_parse_account_statement`, `_classify_extrato_line`, `_resolve_check_payments`, batch lookups, dedup, upsert
+- Added `import calendar` for month→date range derivation
+- Validates INITIAL_BALANCE header presence, raises ValueError if missing
+- Filters transactions by month (begin_date/end_date derived from YYYY-MM)
+- Returns same stats dict format as `ingest_extrato_for_seller()`
+- 366 pytest tests still passing
+- Files changed: `app/services/extrato_ingester.py` (modified)
+- **Learnings for future iterations:**
+  - The pipeline from step 3 onwards (classification → batch lookups → CHECK_PAYMENTS resolution → upsert) is identical between both functions. If this grows, consider extracting a shared `_run_ingestion_pipeline()` helper
+  - `_CHECK_PAYMENTS` is a sentinel string constant used as a marker — must be imported/referenced from the same module
+  - `_EXPENSE_TYPE_ABBREV` maps expense_type → 2-char abbreviation for composite keys (e.g. "df" for difal)
+  - The RFC specifies `month` param (YYYY-MM) not present in the PRD acceptance criteria — always check the RFC
+  - CSV text may arrive already decoded (from endpoint) — no need to decode bytes in this function
+---
+
+## 2026-03-13 - US-003
+- Added `POST /admin/extrato/upload` endpoint to `app/routers/admin/extrato.py`
+- Accepts multipart form: `file` (UploadFile), `seller_slug` (str), `month` (str YYYY-MM)
+- Validates: month format (regex), seller exists (get_seller_config), file size (5MB max), CSV format (INITIAL_BALANCE header), encoding (utf-8-sig → latin-1 fallback)
+- Creates processing record in `extrato_uploads` via upsert (ON CONFLICT seller_slug,month)
+- Calls `ingest_extrato_from_csv()` and updates record with results (completed/failed)
+- Returns: upload_id, seller_slug, month, filename, status, lines_total, lines_ingested, lines_skipped, lines_already_covered, amount_updated, initial_balance, final_balance, gaps_found
+- 366 pytest tests passing
+- Files changed: `app/routers/admin/extrato.py` (modified)
+- **Learnings for future iterations:**
+  - Supabase upsert syntax: `db.table(...).upsert(row, on_conflict="col1,col2")` — comma-separated string, not a list
+  - The `summary` dict from `_parse_account_statement` contains `initial_balance` and `final_balance` — access via `result["summary"]`
+  - FastAPI multipart form uses `File(...)` and `Form(...)` from `fastapi` — cannot mix Pydantic body model with file uploads
+  - The `ingest_extrato_from_csv` return dict uses `newly_ingested` (not `lines_ingested`) and `skipped_internal` (not `lines_skipped`) — map these to the DB column names in the update
+  - The upload endpoint follows the existing admin pattern: `dependencies=[Depends(require_admin)]` at the route level
+---
+
+## 2026-03-13 - US-004
+- Added `GET /admin/extrato/uploads/{seller_slug}` endpoint to `app/routers/admin/extrato.py`
+- Returns paginated list of uploads ordered by `uploaded_at` desc
+- Accepts `limit` (default 20, max 100) and `offset` (default 0) query params
+- Response shape: `{seller, count, data: [{id, filename, month, status, lines_total, lines_ingested, lines_skipped, lines_already_covered, initial_balance, final_balance, error_message, uploaded_at}]}`
+- Protected by `require_admin` dependency
+- 366 pytest tests passing
+- Files changed: `app/routers/admin/extrato.py` (modified)
+- **Learnings for future iterations:**
+  - DB column is `uploaded_at` (not `created_at` from PRD) and `month` (not `month_ref`) — always use actual DB column names
+  - Follow the `expenses/crud.py` list pattern: `{seller, count, data}` envelope
+  - Supabase `.range(offset, offset + limit - 1)` is inclusive on both ends
+  - History endpoint is simple — no need for status/date filters since the table is small per seller
+---
+
+## 2026-03-13 - US-005
+- Created `ExtratoTab.tsx` component in `dashboard/src/components/`
+- Created `ExtratoTab.module.css` with CSS Modules styles
+- Added "Extratos" tab to `AdminPanel.tsx` alongside Sellers and Despesas tabs
+- Upload section: seller dropdown + month picker (`<input type="month">`) + file input + submit button
+- Shows upload result after submission: lines_total, lines_ingested, lines_already_covered, lines_skipped, balances, gaps breakdown
+- History table: lists previous uploads per seller with status badges, metrics, and timestamps
+- Loading state during upload (button text changes, inputs disabled)
+- Error handling: displays error message from API or connection errors
+- Auth: reads `lever-admin-token` from sessionStorage, sends as `X-Admin-Token` header, calls `onLogout` on 401
+- Dashboard build (`tsc -b && vite build`) passes without errors
+- 366 pytest tests passing
+- Files changed: `dashboard/src/components/ExtratoTab.tsx` (new), `dashboard/src/components/ExtratoTab.module.css` (new), `dashboard/src/components/AdminPanel.tsx` (modified)
+- **Learnings for future iterations:**
+  - Components live flat in `dashboard/src/components/` (PRD said `admin/` subdirectory but that doesn't exist)
+  - AdminPanel tab type union must be expanded when adding new tabs (e.g. `'sellers' | 'expenses' | 'extratos'`)
+  - `npx tsc` doesn't work — use `./node_modules/.bin/tsc -b` directly after `npm install`
+  - Node.js 20.15.0 works despite Vite warning about needing 20.19+
+  - `data-status` attribute selectors in CSS Modules avoid needing separate class names per status variant
+  - The upload endpoint is multipart form-data (FormData), not JSON — don't set Content-Type header, let browser set boundary
+  - Admin token key in sessionStorage: `'lever-admin-token'` (hardcoded in useAdmin.ts)
+---
+
+## 2026-03-13 - US-001 (prd2: cash-events)
+- Created `migrations/008_unified_ledger.sql` with exact SQL from RFC Passo 1
+- Applied migration to Supabase via `mcp__supabase__apply_migration`
+- Verified: reference_id column populated (backfilled from ml_payment_id::text), ml_payment_id default=0, both indexes created
+- 366 pytest tests passing
+- Files changed: `migrations/008_unified_ledger.sql` (new)
+- **Learnings for future iterations:**
+  - Migration 008 adds `reference_id TEXT` to `payment_events` — used by cash events for text-based ref IDs
+  - `ml_payment_id` default changed to 0 — cash events may not have numeric payment IDs
+  - Two partial indexes added: `idx_pe_seller_ref` (WHERE reference_id IS NOT NULL), `idx_pe_cash_events` (WHERE event_type LIKE 'cash_%')
+---
+
+## 2026-03-13 - US-002 (prd2: cash-events)
+- Added 6 cash event types to EVENT_TYPES: cash_release, cash_expense, cash_income, cash_transfer_out, cash_transfer_in, cash_internal
+- Added "any" sign validation support in validate_event() for cash_internal
+- Added reference_id parameter to record_event() — defaults to str(ml_payment_id)
+- Protected get_dre_summary() and get_payment_statuses() from cash_/expense_ contamination
+- Updated test_event_ledger.py: EXPECTED_TYPES, positive/negative sets, type count (16→22)
+- 366 pytest tests passing
+- Files changed: `app/services/event_ledger.py` (modified), `testes/test_event_ledger.py` (modified), `scripts/ralph/prd.json` (modified)
+- **Learnings for future iterations:**
+  - Adding new event types requires updating 4 places in test_event_ledger.py: EXPECTED_TYPES list, positive_types set, negative_types set, type_count assertion
+  - The "any" sign validation is a simple `pass` — no need for complex logic
+  - reference_id defaults to str(ml_payment_id) so existing callers don't break
+  - The cash/expense filter in get_dre_summary and get_payment_statuses uses startswith prefix match on fetched rows (client-side filtering, not DB-level)
+---
+
+## 2026-03-13 - US-003 (prd2: cash-events)
+- Added `record_cash_event()` to `event_ledger.py`: records cash flow events from extrato with 5-part idempotency key ({seller}:{ref_id}:{event_type}:{date}:{abbrev})
+- Added `get_cash_summary()` to `event_ledger.py`: aggregates cash events by type for a date range (event_date), paginated, filters only cash_* types
+- Updated `app/services/CLAUDE.md`: event_ledger public API and event type count (22)
+- 366 pytest tests passing
+- Files changed: `app/services/event_ledger.py` (modified), `app/services/CLAUDE.md` (modified)
+- **Learnings for future iterations:**
+  - `record_cash_event()` delegates to `record_event()` — it's a thin wrapper that handles cash-specific concerns (idem key format, ml_pid fallback, competencia_date=event_date)
+  - The 5-part idempotency key is critical: without the abbreviation, two different expense types with the same ref_id on the same day would collide
+  - `get_cash_summary()` queries by `event_date` (not `competencia_date`) because for cash events they're the same, but event_date is the semantically correct field for cash flow
+  - `int(reference_id)` with fallback to 0 handles text-based ref IDs (e.g. payout IDs) that can't be converted to int
+---
+
+## 2026-03-13 - US-004 (prd2: cash-events)
+- Created `testes/test_cash_events.py` with 9 tests covering cash event types, idempotency, query protection, and mapping correctness
+- Added CASH_TYPE_MAP (17 entries), SKIP_TO_CASH_TYPE (13 entries), SKIP_ABBREV (13 entries) to `event_ledger.py` for importability
+- Tests mock `record_event` for idempotency key verification and mock Supabase for query filtering tests
+- 375 pytest tests passing (366 existing + 9 new)
+- Files changed: `testes/test_cash_events.py` (new), `app/services/event_ledger.py` (modified)
+- **Learnings for future iterations:**
+  - Mock `record_event` (not DB) when testing `record_cash_event` idempotency keys — simpler and avoids complex mock chains
+  - The Supabase mock chain for paginated queries: `chain.eq.return_value.gte.return_value.lte.return_value.range.return_value.execute`
+  - CASH_TYPE_MAP, SKIP_TO_CASH_TYPE, SKIP_ABBREV now live in `event_ledger.py` — the ingestion script (US-005) should import from there
+  - `asyncio: mode=Mode.STRICT` in pyproject.toml means all async tests need explicit `@pytest.mark.asyncio`
+---
+
+## 2026-03-13 - US-005 (prd2: cash-events)
+- Created `testes/ingest_extrato_to_ledger.py`: ingests all extrato CSV lines as cash_* events in payment_events
+- Accepts CLI args: `--seller 141air --month jan2026 [--dry-run]`
+- Maps every extrato line to a cash event type via 3 paths: SKIP_TO_CASH_TYPE (skip rules), CASH_TYPE_MAP (classified lines), cash_release (CHECK_PAYMENTS found in ledger)
+- Sign alignment: `_align_cash_type_to_sign()` corrects cash type when extrato amount sign contradicts expected direction (e.g. QR payments to vendors classified as income but with negative amount)
+- Dedup suffix: appends sequence number to abbreviation when same ref_id/type/date/abbrev appears twice (dispute pairs)
+- Dry-run validates: 690 lines, sum=-3385.83, reconciliation PASS
+- Real run: 690 cash events created in Supabase, COUNT=690, SUM=-3385.83
+- Idempotent re-run: 0 newly ingested, 690 already exist
+- DRE unchanged: same 6 event types with same values (cash_* excluded by get_dre_summary filter)
+- 375 pytest tests passing
+- Files changed: `testes/ingest_extrato_to_ledger.py` (new), `scripts/ralph/prd.json` (modified)
+- **Learnings for future iterations:**
+  - Extrato amounts are the truth — some lines classified as "income" have negative amounts (e.g. "Pagamento com QR Pix RECEITA FEDERAL" is an outgoing payment). Always align cash_type to actual sign.
+  - Same ref_id can appear twice in extrato with identical classification (dispute refund + held money). The 5-part idempotency key collides without a sequence suffix on the abbreviation.
+  - The `_batch_lookup_payment_ids` function requires a `db` parameter (from `get_db()`) — it's not a method on the db object.
+  - Pattern for extrato ingestion scripts: parse → classify → batch lookup → map to events → validate sum → record. Always validate reconciliation (sum == final - initial) before writing.
+  - The script imports and reuses all existing functions from `extrato_ingester.py` (`_parse_account_statement`, `_classify_extrato_line`, `_resolve_check_payments`, `_normalize_text`, `_batch_lookup_payment_ids`) — no reimplementation needed.
+---
