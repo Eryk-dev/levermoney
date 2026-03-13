@@ -50,6 +50,63 @@ EVENT_TYPES = {
     "cash_internal":     "any",
 }
 
+# Extrato line → cash event type mapping (for classified lines with expense_type)
+CASH_TYPE_MAP: dict[str, str] = {
+    "liberacao_cancelada":      "cash_expense",
+    "reembolso_disputa":        "cash_income",
+    "reembolso_generico":       "cash_income",
+    "entrada_dinheiro":         "cash_income",
+    "dinheiro_retido":          "cash_expense",
+    "difal":                    "cash_expense",
+    "faturas_ml":               "cash_expense",
+    "debito_envio_ml":          "cash_expense",
+    "debito_divida_disputa":    "cash_expense",
+    "debito_troca":             "cash_expense",
+    "bonus_envio":              "cash_income",
+    "subscription":             "cash_expense",
+    "pagamento_cartao_credito": "cash_expense",
+    "emprestimo_mp":            "cash_income",
+    "liberacao_nao_sync":       "cash_release",
+    "qr_pix_nao_sync":          "cash_income",
+    "dinheiro_recebido":        "cash_income",
+    "pix_nao_sync":             "cash_transfer_in",
+}
+
+# Skip rules: extrato lines with expense_type=None → per-rule cash event mapping
+# Keys are normalized transaction type substrings (lowercase)
+SKIP_TO_CASH_TYPE: dict[str, str] = {
+    "transferencia pix":         "cash_transfer_out",
+    "pix enviado":               "cash_transfer_out",
+    "pagamento de conta":        "cash_transfer_out",
+    "compra mercado libre":      "cash_expense",
+    "compra mercado livre":      "cash_expense",
+    "transferencia enviada":     "cash_transfer_out",
+    "transferência enviada":     "cash_transfer_out",
+    "compra de ":                "cash_expense",
+    "transferencia de saldo":    "cash_internal",
+    "transferência de saldo":    "cash_internal",
+    "dinheiro reservado renda":  "cash_internal",
+    "dinheiro retirado renda":   "cash_internal",
+    "dinheiro reservado":        "cash_internal",
+}
+
+# Abbreviation for skip rules (used in idempotency key)
+SKIP_ABBREV: dict[str, str] = {
+    "transferencia pix":         "tp",
+    "pix enviado":               "pe",
+    "pagamento de conta":        "pg",
+    "compra mercado libre":      "cm",
+    "compra mercado livre":      "cm",
+    "transferencia enviada":     "te",
+    "transferência enviada":     "te",
+    "compra de ":                "cd",
+    "transferencia de saldo":    "ts",
+    "transferência de saldo":    "ts",
+    "dinheiro reservado renda":  "rr",
+    "dinheiro retirado renda":   "xr",
+    "dinheiro reservado":        "rv",
+}
+
 
 def build_idempotency_key(
     seller_slug: str,
