@@ -76,8 +76,8 @@ async def trigger_extrato_ingest(
 ):
     """Manually trigger account_statement ingestion for a specific seller.
 
-    Ingests extrato lines not already covered by the payments or mp_expenses
-    tables and inserts them as mp_expenses rows.
+    Ingests extrato lines not already covered by payments or expense events
+    and records them as expense_captured events in the event ledger.
     """
     try:
         result = await ingest_extrato_for_seller(seller_slug, begin_date, end_date)
@@ -128,10 +128,10 @@ async def upload_extrato(
     seller_slug: str = Form(...),
     month: str = Form(...),
 ):
-    """Upload an account_statement CSV and ingest gap lines into mp_expenses.
+    """Upload an account_statement CSV and ingest gap lines as expense events.
 
     Re-upload of the same (seller_slug, month) is safe: the extrato_uploads
-    record is upserted and mp_expenses dedup prevents duplicate entries.
+    record is upserted and event ledger dedup prevents duplicate entries.
     """
     # --- Validate month format ---
     if not _MONTH_RE.match(month):

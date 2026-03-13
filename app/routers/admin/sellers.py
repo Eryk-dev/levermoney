@@ -87,7 +87,7 @@ async def update_seller(seller_id: str, req: SellerUpdate):
 async def delete_seller(slug: str):
     """Soft-delete a seller: deactivates, clears ML tokens, sets status to suspended.
 
-    Does NOT delete the database row (FK constraints on payments, mp_expenses, etc.).
+    Does NOT delete the database row (FK constraints on payment_events, etc.).
     The seller can re-authenticate later via the install link or reconnect link.
     """
     db = get_db()
@@ -373,7 +373,7 @@ async def seller_backfill_retry(slug: str):
     """Re-trigger a failed onboarding backfill for a seller.
 
     The backfill is idempotent -- it resumes from where it left off by skipping
-    payments already present in the payments and mp_expenses tables.
+    payments already present in the payment_events table.
     """
     try:
         await retry_backfill(slug)

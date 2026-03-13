@@ -41,7 +41,7 @@ EVENT_TYPES = {
     # Adjustments (release report validator)
     "adjustment_fee":      "negative",
     "adjustment_shipping": "negative",
-    # Expense lifecycle events (dual-write with mp_expenses)
+    # Expense lifecycle events (source of truth for non-order payments)
     "expense_captured":   "any",    # Despesa/receita identified (signed amount)
     "expense_classified": "zero",   # Auto-classified (metadata: ca_category)
     "expense_reviewed":   "zero",   # Reviewed by human (metadata: approved)
@@ -607,7 +607,7 @@ async def get_cash_summary(
     return summary
 
 
-# ── Expense read helpers (Fase 3: migrate reads from mp_expenses) ──────
+# ── Expense read helpers ──────────────────────────────────────────────
 
 
 async def _fetch_expense_events(
@@ -685,7 +685,7 @@ def _group_expense_events(
 
 
 def _build_expense_row(ref_id: str, group: dict) -> dict:
-    """Build an mp_expenses-compatible dict from grouped expense events."""
+    """Build an expense dict from grouped expense events."""
     meta = group["captured"]
     status = derive_expense_status(group["event_types"])
     return {
@@ -725,7 +725,7 @@ async def get_expense_list(
     """List expenses from ledger with filters.
 
     Derives status via derive_expense_status() for each unique reference_id.
-    Returns same response shape as mp_expenses rows for backward compatibility.
+    Returns expense rows derived from the event ledger.
     """
     raw = await _fetch_expense_events(seller_slug, date_from, date_to)
     grouped = _group_expense_events(raw)
@@ -819,7 +819,7 @@ async def get_pending_exports(
     - Enrich with metadata from expense_classified (ca_category, etc.)
     - Optionally filter by status_filter (e.g. ['pending_review', 'auto_categorized'])
 
-    Returns list of dicts with same fields as mp_expenses rows.
+    Returns list of expense dicts derived from the event ledger.
     """
     raw = await _fetch_expense_events(seller_slug, date_from, date_to)
     grouped = _group_expense_events(raw)

@@ -42,7 +42,6 @@ class Settings(BaseSettings):
     admin_password: str = ""
 
     # Feature flags
-    expenses_source: str = "mp_expenses"  # 'mp_expenses' or 'ledger'
     expenses_api_enabled: bool = True
     nightly_pipeline_enabled: bool = False
     nightly_pipeline_hour_brt: int = 0

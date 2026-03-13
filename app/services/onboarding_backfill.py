@@ -58,8 +58,8 @@ async def run_onboarding_backfill(seller_slug: str) -> None:
       3. Fetch ALL payments via search_payments(range_field="money_release_date",
          begin_date=ca_start_date, end_date=yesterday), paginating through all
          results with limit=50.
-      4. Build a set of already-done payment IDs from payments + mp_expenses
-         tables to skip (idempotent resume on retry).
+      4. Build a set of already-done payment IDs from payment_events
+         to skip (idempotent resume on retry).
       5. For each unseen payment:
          - With order_id  → process_payment_webhook(seller_slug, pid, payment_data)
          - Without order_id → classify_non_order_payment(db, seller_slug, payment)
@@ -178,7 +178,7 @@ async def retry_backfill(seller_slug: str) -> None:
 
     Resets the status to "pending" then immediately delegates to
     run_onboarding_backfill.  Because processing is idempotent
-    (payments / mp_expenses upsert on conflict), this safely continues from
+    (payment_events idempotency on conflict), this safely continues from
     where the previous run left off without duplicating any CA events.
     """
     db = get_db()
@@ -421,7 +421,7 @@ async def _execute_backfill(
     # --- 6. Backfill release report (payouts, cashback, shipping credits) ------
     # These transactions are invisible to the Payments API and only appear in
     # the release report CSV.  We backfill the same period (ca_start_date →
-    # yesterday) so the mp_expenses table has full coverage before baixas run.
+    # yesterday) so the event ledger has full coverage before baixas run.
     try:
         from app.services.release_report_sync import backfill_release_report
 
@@ -540,10 +540,9 @@ async def _fetch_all_payments(
 async def _load_already_done(db, seller_slug: str) -> set[int]:
     """Load all payment IDs that have already been processed for this seller.
 
-    Reads from both the payment_events table (order payments with sale_approved
-    event) and the mp_expenses table (non-order payments).  This is the
-    resumability mechanism: on a retry the backfill simply skips everything
-    already in Supabase.
+    Reads from payment_events table: order payments (sale_approved) and
+    non-order payments (expense_captured).  This is the resumability mechanism:
+    on a retry the backfill simply skips everything already in Supabase.
 
     Payments without events (e.g. previously pending_ca) are NOT in this set,
     so they will be re-evaluated by the backfill.
@@ -553,20 +552,21 @@ async def _load_already_done(db, seller_slug: str) -> set[int]:
     # From payment_events (order payments that have been processed)
     done = await event_ledger.get_processed_payment_ids(seller_slug)
 
-    # From mp_expenses table (non-order payments already classified)
+    # From payment_events (non-order payments already classified as expenses)
     page_start = 0
     page_limit = 1000
     while True:
         rows = (
-            db.table("mp_expenses")
-            .select("payment_id")
+            db.table("payment_events")
+            .select("ml_payment_id")
             .eq("seller_slug", seller_slug)
+            .eq("event_type", "expense_captured")
             .range(page_start, page_start + page_limit - 1)
             .execute()
         )
         batch = rows.data or []
         for row in batch:
-            pid_raw = row.get("payment_id")
+            pid_raw = row.get("ml_payment_id")
             if pid_raw is not None:
                 try:
                     done.add(int(pid_raw))

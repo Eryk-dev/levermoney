@@ -1,12 +1,12 @@
 """
-Tests for expenses_source='ledger' mode in crud.py and export.py.
+Tests for crud.py and export.py expense endpoints (event ledger mode).
 
 Verifies that:
-- crud.py list_expenses calls get_expense_list when expenses_source='ledger'
-- crud.py expense_stats calls get_expense_stats when expenses_source='ledger'
-- crud.py review_expense writes expense_reviewed event when expenses_source='ledger'
-- crud.py pending_review_summary uses ledger when expenses_source='ledger'
-- export.py export_expenses uses get_pending_exports and record_expense_event (always ledger)
+- crud.py list_expenses calls get_expense_list
+- crud.py expense_stats calls get_expense_stats
+- crud.py review_expense writes expense_reviewed event
+- crud.py pending_review_summary uses ledger
+- export.py export_expenses uses get_pending_exports and record_expense_event
 
 Run: python3 -m pytest testes/test_crud_export_ledger_mode.py -v
 """
@@ -86,13 +86,10 @@ def _ledger_stats():
 
 @pytest.mark.asyncio
 async def test_list_expenses_ledger_mode():
-    """Ledger mode calls get_expense_list instead of mp_expenses."""
+    """list_expenses calls get_expense_list."""
     rows = _ledger_rows()
 
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.services.event_ledger.get_expense_list", new_callable=AsyncMock, return_value=rows):
-        mock_settings.expenses_source = "ledger"
-
+    with patch("app.services.event_ledger.get_expense_list", new_callable=AsyncMock, return_value=rows):
         from app.routers.expenses.crud import list_expenses
         result = await list_expenses(
             seller_slug="test-seller",
@@ -107,13 +104,10 @@ async def test_list_expenses_ledger_mode():
 
 @pytest.mark.asyncio
 async def test_list_expenses_ledger_with_filters():
-    """Ledger mode passes filters through to get_expense_list."""
+    """list_expenses passes filters through to get_expense_list."""
     filtered = [_ledger_rows()[1]]  # only pending_review
 
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.services.event_ledger.get_expense_list", new_callable=AsyncMock, return_value=filtered) as mock_gel:
-        mock_settings.expenses_source = "ledger"
-
+    with patch("app.services.event_ledger.get_expense_list", new_callable=AsyncMock, return_value=filtered) as mock_gel:
         from app.routers.expenses.crud import list_expenses
         await list_expenses(
             seller_slug="test-seller",
@@ -134,40 +128,15 @@ async def test_list_expenses_ledger_with_filters():
     )
 
 
-@pytest.mark.asyncio
-async def test_list_expenses_mp_expenses_default():
-    """Default mode queries mp_expenses table, NOT the ledger."""
-    mock_db = MagicMock()
-    chain = mock_db.table.return_value.select.return_value.eq.return_value
-    chain.order.return_value.range.return_value.execute.return_value.data = []
-
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.routers.expenses.crud.get_db", return_value=mock_db):
-        mock_settings.expenses_source = "mp_expenses"
-
-        from app.routers.expenses.crud import list_expenses
-        result = await list_expenses(
-            seller_slug="test-seller",
-            status=None, expense_type=None, direction=None,
-            date_from=None, date_to=None, limit=100, offset=0,
-        )
-
-    mock_db.table.assert_called_with("mp_expenses")
-    assert result["count"] == 0
-
-
 # ── crud.py: expense_stats ─────────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_expense_stats_ledger_mode():
-    """Ledger mode calls get_expense_stats."""
+    """expense_stats calls get_expense_stats."""
     stats = _ledger_stats()
 
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.services.event_ledger.get_expense_stats", new_callable=AsyncMock, return_value=stats) as mock_ges:
-        mock_settings.expenses_source = "ledger"
-
+    with patch("app.services.event_ledger.get_expense_stats", new_callable=AsyncMock, return_value=stats) as mock_ges:
         from app.routers.expenses.crud import expense_stats
         result = await expense_stats(
             seller_slug="test-seller",
@@ -187,13 +156,10 @@ async def test_expense_stats_ledger_mode():
 
 @pytest.mark.asyncio
 async def test_expense_stats_ledger_no_filter():
-    """Ledger mode passes None when no status_filter."""
+    """expense_stats passes None when no status_filter."""
     stats = _ledger_stats()
 
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.services.event_ledger.get_expense_stats", new_callable=AsyncMock, return_value=stats) as mock_ges:
-        mock_settings.expenses_source = "ledger"
-
+    with patch("app.services.event_ledger.get_expense_stats", new_callable=AsyncMock, return_value=stats) as mock_ges:
         from app.routers.expenses.crud import expense_stats
         await expense_stats(
             seller_slug="test-seller",
@@ -214,7 +180,7 @@ async def test_expense_stats_ledger_no_filter():
 
 @pytest.mark.asyncio
 async def test_review_expense_ledger_mode():
-    """Ledger mode writes expense_reviewed event."""
+    """review_expense writes expense_reviewed event."""
     mock_db = MagicMock()
     mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value.data = [
         {
@@ -224,11 +190,8 @@ async def test_review_expense_ledger_mode():
         },
     ]
 
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.routers.expenses.crud.get_db", return_value=mock_db), \
+    with patch("app.routers.expenses.crud.get_db", return_value=mock_db), \
          patch("app.services.event_ledger.record_expense_event", new_callable=AsyncMock) as mock_rec:
-        mock_settings.expenses_source = "ledger"
-
         from app.routers.expenses.crud import review_expense, ExpenseReviewUpdate
         req = ExpenseReviewUpdate(ca_category="2.1.1 DIFAL", description="Updated desc")
         result = await review_expense(
@@ -251,14 +214,11 @@ async def test_review_expense_ledger_mode():
 
 @pytest.mark.asyncio
 async def test_review_expense_ledger_not_found():
-    """Ledger mode returns 404 when expense_captured not found."""
+    """review_expense returns 404 when expense_captured not found."""
     mock_db = MagicMock()
     mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value.data = []
 
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.routers.expenses.crud.get_db", return_value=mock_db):
-        mock_settings.expenses_source = "ledger"
-
+    with patch("app.routers.expenses.crud.get_db", return_value=mock_db):
         from fastapi import HTTPException
         from app.routers.expenses.crud import review_expense, ExpenseReviewUpdate
         req = ExpenseReviewUpdate(ca_category="2.1.1 DIFAL")
@@ -270,17 +230,14 @@ async def test_review_expense_ledger_not_found():
 
 @pytest.mark.asyncio
 async def test_review_expense_ledger_already_exported():
-    """Ledger mode returns 409 when expense is already exported."""
+    """review_expense returns 409 when expense is already exported."""
     mock_db = MagicMock()
     mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value.data = [
         {"event_type": "expense_captured", "competencia_date": "2026-01-15", "metadata": {}},
         {"event_type": "expense_exported", "competencia_date": "2026-01-15", "metadata": {}},
     ]
 
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.routers.expenses.crud.get_db", return_value=mock_db):
-        mock_settings.expenses_source = "ledger"
-
+    with patch("app.routers.expenses.crud.get_db", return_value=mock_db):
         from fastapi import HTTPException
         from app.routers.expenses.crud import review_expense, ExpenseReviewUpdate
         req = ExpenseReviewUpdate(ca_category="2.1.1 DIFAL")
@@ -292,16 +249,13 @@ async def test_review_expense_ledger_already_exported():
 
 @pytest.mark.asyncio
 async def test_review_expense_ledger_no_fields():
-    """Ledger mode returns 400 when no fields to update."""
+    """review_expense returns 400 when no fields to update."""
     mock_db = MagicMock()
     mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value.in_.return_value.execute.return_value.data = [
         {"event_type": "expense_captured", "competencia_date": "2026-01-15", "metadata": {}},
     ]
 
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.routers.expenses.crud.get_db", return_value=mock_db):
-        mock_settings.expenses_source = "ledger"
-
+    with patch("app.routers.expenses.crud.get_db", return_value=mock_db):
         from fastapi import HTTPException
         from app.routers.expenses.crud import review_expense, ExpenseReviewUpdate
         req = ExpenseReviewUpdate()  # all None
@@ -316,13 +270,10 @@ async def test_review_expense_ledger_no_fields():
 
 @pytest.mark.asyncio
 async def test_pending_review_summary_ledger_mode():
-    """Ledger mode calls get_expense_list with status=pending_review."""
+    """pending_review_summary calls get_expense_list with status=pending_review."""
     pending = [_ledger_rows()[1]]  # only the pending_review row
 
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.services.event_ledger.get_expense_list", new_callable=AsyncMock, return_value=pending) as mock_gel:
-        mock_settings.expenses_source = "ledger"
-
+    with patch("app.services.event_ledger.get_expense_list", new_callable=AsyncMock, return_value=pending) as mock_gel:
         from app.routers.expenses.crud import pending_review_summary
         result = await pending_review_summary(
             seller_slug="test-seller", date_from=None, date_to=None,
@@ -342,32 +293,12 @@ async def test_pending_review_summary_ledger_mode():
     assert result["by_day"][0]["amount_total"] == 30.0
 
 
-@pytest.mark.asyncio
-async def test_pending_review_summary_mp_expenses_default():
-    """Default mode queries mp_expenses, NOT ledger."""
-    mock_db = MagicMock()
-    chain = mock_db.table.return_value.select.return_value.eq.return_value.eq.return_value
-    chain.order.return_value.execute.return_value.data = []
-
-    with patch("app.routers.expenses.crud.settings") as mock_settings, \
-         patch("app.routers.expenses.crud.get_db", return_value=mock_db):
-        mock_settings.expenses_source = "mp_expenses"
-
-        from app.routers.expenses.crud import pending_review_summary
-        result = await pending_review_summary(
-            seller_slug="test-seller", date_from=None, date_to=None,
-        )
-
-    mock_db.table.assert_called_with("mp_expenses")
-    assert result["total_pending"] == 0
-
-
 # ── export.py: export_expenses ─────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_export_ledger_fetches_from_ledger():
-    """Ledger mode calls get_pending_exports instead of mp_expenses."""
+    """export_expenses calls get_pending_exports."""
     rows = _ledger_rows()
     seller = {"slug": "test-seller", "dashboard_empresa": "TEST", "ml_user_id": 123}
 
@@ -376,7 +307,6 @@ async def test_export_ledger_fetches_from_ledger():
          patch("app.routers.expenses.export.get_db") as mock_get_db, \
          patch("app.routers.expenses.export.get_seller_config", return_value=seller), \
          patch("app.routers.expenses.export._batch_tables_available", return_value=False):
-        mock_settings.expenses_source = "ledger"
         mock_settings.legacy_daily_google_drive_root_folder_id = ""
 
         from app.routers.expenses.export import export_expenses
@@ -400,7 +330,7 @@ async def test_export_ledger_fetches_from_ledger():
 
 @pytest.mark.asyncio
 async def test_export_ledger_marks_exported_via_events():
-    """Ledger mode writes expense_exported events when mark_exported=True."""
+    """export_expenses writes expense_exported events when mark_exported=True."""
     rows = _ledger_rows()
     seller = {"slug": "test-seller", "dashboard_empresa": "TEST", "ml_user_id": 123}
 
@@ -410,7 +340,6 @@ async def test_export_ledger_marks_exported_via_events():
          patch("app.routers.expenses.export.get_db") as mock_get_db, \
          patch("app.routers.expenses.export.get_seller_config", return_value=seller), \
          patch("app.routers.expenses.export._batch_tables_available", return_value=False):
-        mock_settings.expenses_source = "ledger"
         mock_settings.legacy_daily_google_drive_root_folder_id = ""
 
         from app.routers.expenses.export import export_expenses
@@ -433,7 +362,7 @@ async def test_export_ledger_marks_exported_via_events():
 
 @pytest.mark.asyncio
 async def test_export_ledger_no_mark_exported():
-    """Ledger mode without mark_exported does NOT write events."""
+    """export_expenses without mark_exported does NOT write events."""
     rows = _ledger_rows()
     seller = {"slug": "test-seller", "dashboard_empresa": "TEST", "ml_user_id": 123}
 
@@ -443,7 +372,6 @@ async def test_export_ledger_no_mark_exported():
          patch("app.routers.expenses.export.get_db") as mock_get_db, \
          patch("app.routers.expenses.export.get_seller_config", return_value=seller), \
          patch("app.routers.expenses.export._batch_tables_available", return_value=False):
-        mock_settings.expenses_source = "ledger"
         mock_settings.legacy_daily_google_drive_root_folder_id = ""
 
         from app.routers.expenses.export import export_expenses
@@ -459,7 +387,7 @@ async def test_export_ledger_no_mark_exported():
 
 @pytest.mark.asyncio
 async def test_export_ledger_converts_ids_to_int():
-    """Ledger mode converts string ids to int for batch persistence."""
+    """export_expenses converts string ids to int for batch persistence."""
     rows = _ledger_rows()
     seller = {"slug": "test-seller", "dashboard_empresa": "TEST", "ml_user_id": 123}
 
@@ -468,7 +396,6 @@ async def test_export_ledger_converts_ids_to_int():
          patch("app.routers.expenses.export.get_db") as mock_get_db, \
          patch("app.routers.expenses.export.get_seller_config", return_value=seller), \
          patch("app.routers.expenses.export._batch_tables_available", return_value=False):
-        mock_settings.expenses_source = "ledger"
         mock_settings.legacy_daily_google_drive_root_folder_id = ""
 
         from app.routers.expenses.export import export_expenses
@@ -486,7 +413,7 @@ async def test_export_ledger_converts_ids_to_int():
 
 @pytest.mark.asyncio
 async def test_export_ledger_event_failure_logged_not_raised():
-    """Ledger mode catches event write failures as warnings."""
+    """export_expenses catches event write failures as warnings."""
     rows = _ledger_rows()
     seller = {"slug": "test-seller", "dashboard_empresa": "TEST", "ml_user_id": 123}
 
@@ -496,7 +423,6 @@ async def test_export_ledger_event_failure_logged_not_raised():
          patch("app.routers.expenses.export.get_db") as mock_get_db, \
          patch("app.routers.expenses.export.get_seller_config", return_value=seller), \
          patch("app.routers.expenses.export._batch_tables_available", return_value=False):
-        mock_settings.expenses_source = "ledger"
         mock_settings.legacy_daily_google_drive_root_folder_id = ""
 
         from app.routers.expenses.export import export_expenses

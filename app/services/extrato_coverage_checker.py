@@ -1,6 +1,6 @@
 """
 Extrato Coverage Checker — verifies that ALL release report lines are covered
-by API payments, mp_expenses, or legacy export.
+by API payments, expenses (event ledger), or legacy export.
 
 Runs as part of the nightly pipeline after legacy export and before financial closing.
 """
@@ -8,7 +8,6 @@ import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from app.config import settings
 from app.db.supabase import get_db
 from app.models.sellers import get_all_active_sellers, get_seller_config
 from app.services.release_report_validator import (
@@ -32,7 +31,7 @@ API_PAYMENT_DESCRIPTIONS = {"payment"}
 # Descriptions that are always covered by refund logic
 API_REFUND_DESCRIPTIONS = {"refund"}
 
-# Descriptions typically covered by mp_expenses (non-order classifier or release_report_sync)
+# Descriptions typically covered by expense events (non-order classifier or release_report_sync)
 EXPENSE_DESCRIPTIONS = {
     "payout", "money_transfer", "cashback", "shipping",
     "reserve_for_bpp_shipping_return", "reserve_for_bpp_shipping_retur",
@@ -53,21 +52,6 @@ async def _lookup_payment_ids(db, seller_slug: str, source_ids: list[int]) -> se
 
 
 def _lookup_expense_ids(db, seller_slug: str, source_ids: list[int]) -> set[int]:
-    """Look up which source IDs exist in mp_expenses (or payment_events when ledger)."""
-    if settings.expenses_source == "ledger":
-        return _lookup_expense_ids_ledger(db, seller_slug, source_ids)
-    found: set[int] = set()
-    for i in range(0, len(source_ids), 100):
-        chunk = source_ids[i:i + 100]
-        result = db.table("mp_expenses").select("payment_id").eq(
-            "seller_slug", seller_slug
-        ).in_("payment_id", chunk).execute()
-        for r in (result.data or []):
-            found.add(int(r["payment_id"]))
-    return found
-
-
-def _lookup_expense_ids_ledger(db, seller_slug: str, source_ids: list[int]) -> set[int]:
     """Look up which source IDs have expense_captured events in payment_events."""
     found: set[int] = set()
     for i in range(0, len(source_ids), 100):
@@ -87,7 +71,7 @@ async def check_extrato_coverage(
     begin_date: str,
     end_date: str,
 ) -> dict:
-    """Check that ALL release report lines are covered by payments, mp_expenses, or legacy.
+    """Check that ALL release report lines are covered by payments, expenses, or legacy.
 
     Returns coverage stats and uncovered lines.
     """
@@ -168,7 +152,7 @@ async def check_extrato_coverage(
             stats["uncovered"] += 1
             continue
 
-        # 3. Expense descriptions → check mp_expenses
+        # 3. Expense descriptions → check expense events
         if description in EXPENSE_DESCRIPTIONS:
             if sid_int and sid_int in expense_ids:
                 stats["covered_by_expenses"] += 1

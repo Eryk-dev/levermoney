@@ -28,7 +28,7 @@ class ReleaseReportSyncRequest(BaseModel):
 
 @router.post("/release-report/sync", dependencies=[Depends(require_admin)])
 async def sync_release_report(req: ReleaseReportSyncRequest):
-    """Sync release report for a seller: fetch CSV, parse, and insert new mp_expenses."""
+    """Sync release report for a seller: fetch CSV, parse, and insert new expense events."""
     from app.services.release_report_sync import sync_release_report as do_sync
     try:
         result = await do_sync(req.seller, req.begin_date, req.end_date)

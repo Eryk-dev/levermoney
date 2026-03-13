@@ -3,13 +3,12 @@ Financial closing service.
 
 Combines:
 - Automatic lane (order payments -> Conta Azul via ca_jobs/payments)
-- Manual lane (non-order payments -> XLSX export/import via mp_expenses + expense_batches)
+- Manual lane (non-order payments -> XLSX export/import via expense_batches)
 """
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-from app.config import settings
 from app.db.supabase import get_db
 from app.models.sellers import get_all_active_sellers, get_seller_config
 from app.services.event_ledger import derive_payment_status, get_payment_statuses
@@ -89,21 +88,10 @@ async def _compute_manual_lane(
     date_to: str | None,
 ) -> tuple[list[dict], set[int], str]:
     """Return (days, missing_import_ids, import_source)."""
-    if settings.expenses_source == "ledger":
-        from app.services.event_ledger import get_expense_list
-        rows = await get_expense_list(
-            seller_slug, date_from=date_from, date_to=date_to, limit=1_000_000,
-        )
-    else:
-        q = db.table("mp_expenses").select(
-            "payment_id, amount, expense_direction, status, date_created, date_approved"
-        ).eq("seller_slug", seller_slug)
-        if date_from:
-            q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
-        if date_to:
-            q = q.lte("date_created", f"{date_to}T23:59:59.999-03:00")
-
-        rows = q.order("date_created", desc=False).execute().data or []
+    from app.services.event_ledger import get_expense_list
+    rows = await get_expense_list(
+        seller_slug, date_from=date_from, date_to=date_to, limit=1_000_000,
+    )
     by_day: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         by_day[_to_brt_day(row.get("date_approved") or row.get("date_created"))].append(row)

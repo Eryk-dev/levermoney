@@ -25,22 +25,21 @@ async def closing_status(
     date_to: str | None = Query(None, description="YYYY-MM-DD"),
     include_payment_ids: bool = Query(False, description="Include full payment_id lists"),
 ):
-    """Daily closing status by company/day based on mp_expenses import status."""
+    """Daily closing status by company/day based on expense import status."""
+    from app.services.event_ledger import get_expense_list
+
     db = get_db()
     seller = get_seller_config(db, seller_slug)
     if not seller:
         return {"error": f"Seller {seller_slug} not found"}
 
-    q = db.table("mp_expenses").select(
-        "payment_id, amount, expense_direction, status, date_created, date_approved"
-    ).eq("seller_slug", seller_slug)
+    rows = await get_expense_list(
+        seller_slug=seller_slug,
+        date_from=date_from,
+        date_to=date_to,
+        limit=1_000_000,
+    )
 
-    if date_from:
-        q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
-    if date_to:
-        q = q.lte("date_created", f"{date_to}T23:59:59.999-03:00")
-
-    rows = q.order("date_created", desc=False).execute().data or []
     by_day = _group_rows_by_day(rows)
     company = seller.get("dashboard_empresa") or seller_slug
 
