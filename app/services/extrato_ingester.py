@@ -37,6 +37,7 @@ from typing import Optional
 
 from app.db.supabase import get_db
 from app.models.sellers import CA_CATEGORIES, get_all_active_sellers, get_seller_config
+from app.services.event_ledger import EventRecordError, record_expense_event
 from app.services.release_report_sync import _get_or_create_report
 
 logger = logging.getLogger(__name__)
@@ -466,6 +467,100 @@ def _build_expense_from_extrato(
         },
         "updated_at":       datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Dual-write helpers (event ledger)
+# ---------------------------------------------------------------------------
+
+
+def _extrato_signed_amount(direction: str, amount: float) -> float:
+    """Return signed amount: positive for income, negative for expense/transfer."""
+    if direction == "income":
+        return abs(amount)
+    return -abs(amount)
+
+
+def _build_extrato_expense_metadata(
+    tx: dict,
+    expense_type: str,
+    direction: str,
+    ca_category_uuid: Optional[str],
+    description: str,
+) -> dict:
+    """Build rich metadata dict for expense_captured event from extrato tx."""
+    auto_cat = ca_category_uuid is not None
+    return {
+        "expense_type": expense_type,
+        "expense_direction": direction,
+        "ca_category": ca_category_uuid,
+        "auto_categorized": auto_cat,
+        "description": description,
+        "amount": abs(tx["amount"]),
+        "date_created": tx["date"],
+        "date_approved": tx["date"],
+        "business_branch": None,
+        "operation_type": f"extrato_{expense_type}",
+        "payment_method": None,
+        "external_reference": tx["reference_id"],
+        "beneficiary_name": None,
+        "notes": tx["transaction_type"],
+    }
+
+
+async def _dual_write_extrato_expense_events(
+    seller_slug: str,
+    payment_id_key: str,
+    expense_type: str,
+    direction: str,
+    ca_category_uuid: Optional[str],
+    tx: dict,
+    description: str,
+) -> None:
+    """Write expense_captured (and expense_classified if auto) to event ledger.
+
+    Failures are logged as warnings but never block the mp_expenses upsert.
+    """
+    amount = abs(tx["amount"])
+    signed = _extrato_signed_amount(direction, amount)
+    competencia = tx["date"][:10]
+    auto_cat = ca_category_uuid is not None
+    metadata = _build_extrato_expense_metadata(
+        tx, expense_type, direction, ca_category_uuid, description,
+    )
+
+    try:
+        await record_expense_event(
+            seller_slug=seller_slug,
+            payment_id=payment_id_key,
+            event_type="expense_captured",
+            signed_amount=signed,
+            competencia_date=competencia,
+            expense_type=expense_type,
+            metadata=metadata,
+        )
+    except EventRecordError:
+        logger.warning(
+            "Dual-write expense_captured failed for %s/%s, continuing",
+            seller_slug, payment_id_key,
+        )
+
+    if auto_cat:
+        try:
+            await record_expense_event(
+                seller_slug=seller_slug,
+                payment_id=payment_id_key,
+                event_type="expense_classified",
+                signed_amount=0,
+                competencia_date=competencia,
+                expense_type=expense_type,
+                metadata={"ca_category": ca_category_uuid},
+            )
+        except EventRecordError:
+            logger.warning(
+                "Dual-write expense_classified failed for %s/%s, continuing",
+                seller_slug, payment_id_key,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1029,6 +1124,7 @@ async def ingest_extrato_for_seller(
             .execute()
         )
 
+        upserted = False
         try:
             if existing_check.data:
                 existing_row = existing_check.data[0]
@@ -1046,6 +1142,7 @@ async def ingest_extrato_for_seller(
                 db.table("mp_expenses").update(row).eq(
                     "id", existing_row["id"]
                 ).execute()
+                upserted = True
                 stats["already_covered"] += 1
                 logger.debug(
                     "extrato_ingester %s: updated existing %s type=%s",
@@ -1056,6 +1153,7 @@ async def ingest_extrato_for_seller(
             else:
                 row["created_at"] = datetime.now(timezone.utc).isoformat()
                 db.table("mp_expenses").insert(row).execute()
+                upserted = True
                 stats["newly_ingested"] += 1
                 by_type[expense_type] += 1
                 logger.info(
@@ -1085,6 +1183,13 @@ async def ingest_extrato_for_seller(
                     exc,
                     exc_info=True,
                 )
+
+        # ── Dual-write to event ledger ──────────────────────────────────
+        if upserted:
+            await _dual_write_extrato_expense_events(
+                seller_slug, payment_id_key, expense_type, direction,
+                ca_category_uuid, tx, row["description"],
+            )
 
     total_lines = len(transactions) + stats["skipped_internal"]
     result = {
@@ -1356,6 +1461,7 @@ async def ingest_extrato_from_csv(
             .execute()
         )
 
+        upserted = False
         try:
             if existing_check.data:
                 existing_row = existing_check.data[0]
@@ -1371,6 +1477,7 @@ async def ingest_extrato_from_csv(
                 db.table("mp_expenses").update(row).eq(
                     "id", existing_row["id"]
                 ).execute()
+                upserted = True
                 stats["already_covered"] += 1
                 logger.debug(
                     "extrato_ingester %s: updated existing %s type=%s",
@@ -1381,6 +1488,7 @@ async def ingest_extrato_from_csv(
             else:
                 row["created_at"] = datetime.now(timezone.utc).isoformat()
                 db.table("mp_expenses").insert(row).execute()
+                upserted = True
                 stats["newly_ingested"] += 1
                 by_type[expense_type] += 1
                 logger.info(
@@ -1410,6 +1518,13 @@ async def ingest_extrato_from_csv(
                     exc,
                     exc_info=True,
                 )
+
+        # ── Dual-write to event ledger ──────────────────────────────────
+        if upserted:
+            await _dual_write_extrato_expense_events(
+                seller_slug, payment_id_key, expense_type, direction,
+                ca_category_uuid, tx, row["description"],
+            )
 
     total_lines = len(transactions) + stats["skipped_internal"]
     result = {
