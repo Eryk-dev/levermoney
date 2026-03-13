@@ -1,0 +1,278 @@
+/* ── Layout ───────────────────────────────────────────── */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.section {
+  background: var(--paper);
+  border: 1px solid var(--border, rgba(0,0,0,0.1));
+  border-radius: var(--space-2);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+/* ── Form ─────────────────────────────────────────────── */
+
+.formRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.formLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  flex: 1;
+  min-width: 160px;
+}
+
+.formSelect {
+  padding: var(--space-2);
+  border: 1px solid var(--border, rgba(0,0,0,0.12));
+  border-radius: var(--space-1);
+  font-size: var(--text-sm);
+  background: var(--paper);
+  color: var(--ink);
+  width: 100%;
+}
+
+.formInput {
+  padding: var(--space-2);
+  border: 1px solid var(--border, rgba(0,0,0,0.12));
+  border-radius: var(--space-1);
+  font-size: var(--text-sm);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.formInput:disabled,
+.formSelect:disabled {
+  background: var(--surface);
+  color: var(--ink-muted);
+}
+
+.fileInfo {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+/* ── Buttons ──────────────────────────────────────────── */
+
+.uploadBtn {
+  align-self: flex-start;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  border: none;
+  border-radius: var(--space-1);
+  background: var(--ink);
+  color: var(--paper, #fff);
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.uploadBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.uploadBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.refreshBtn {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  border: 1px solid var(--border, rgba(0,0,0,0.12));
+  border-radius: var(--space-1);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  align-self: flex-end;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.refreshBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Result box ───────────────────────────────────────── */
+
+.resultBox {
+  background: var(--surface);
+  border: 1px solid var(--border, rgba(0,0,0,0.08));
+  border-radius: var(--space-2);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.resultHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.resultFilename {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  font-family: monospace;
+}
+
+.resultMonth {
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.resultStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.statLabel {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+
+.statValue {
+  font-size: var(--text-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.statValueHighlight {
+  color: #065f46;
+}
+
+.balanceRow {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.gapsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.gapChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* ── Error box ────────────────────────────────────────── */
+
+.errorBox {
+  background: #fee2e2;
+  color: #991b1b;
+  padding: var(--space-3);
+  border-radius: var(--space-1);
+  font-size: var(--text-sm);
+}
+
+/* ── Status badge ─────────────────────────────────────── */
+
+.statusBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.statusBadge[data-status="completed"] {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.statusBadge[data-status="processing"] {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.statusBadge[data-status="failed"],
+.statusBadge[data-status="error"] {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ── History table ────────────────────────────────────── */
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.historyTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.historyTable th,
+.historyTable td {
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+}
+
+.historyTable th {
+  font-weight: 600;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.08));
+}
+
+.historyTable tr:not(:last-child) td {
+  border-bottom: 1px solid var(--border, rgba(0,0,0,0.04));
+}
+
+.filenameCell {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: monospace;
+  font-size: var(--text-xs);
+}
+
+/* ── Loading ──────────────────────────────────────────── */
+
+.loading {
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  padding: var(--space-3);
+}

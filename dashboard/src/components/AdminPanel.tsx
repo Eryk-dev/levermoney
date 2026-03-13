@@ -4,6 +4,7 @@ import { LogOut, RefreshCw, Check, X, Zap, Settings, Copy, ArrowUpCircle, Rotate
 import type { CaAccount, CaCostCenter, ActivateSellerConfig, UpgradeToCAConfig, BackfillStatus } from '../hooks/useAdmin';
 import type { RevenueLine } from '../types';
 import { ExpensesExportTab } from './ExpensesExportTab';
+import { ExtratoTab } from './ExtratoTab';
 import styles from './AdminPanel.module.css';
 
 interface Seller {
@@ -220,7 +221,7 @@ export function AdminPanel({
   retryBackfill,
   loadSellers,
 }: AdminPanelProps) {
-  const [adminTab, setAdminTab] = useState<'sellers' | 'expenses'>('sellers');
+  const [adminTab, setAdminTab] = useState<'sellers' | 'expenses' | 'extratos'>('sellers');
   const [syncing, setSyncing] = useState(false);
   const [configForm, setConfigForm] = useState<ConfigForm | null>(null);
 
@@ -545,10 +546,24 @@ export function AdminPanel({
         >
           Despesas
         </button>
+        <button
+          type="button"
+          className={`${styles.modeBtn} ${adminTab === 'extratos' ? styles.modeBtnActive : ''}`}
+          onClick={() => setAdminTab('extratos')}
+        >
+          Extratos
+        </button>
       </div>
 
       {adminTab === 'expenses' && (
         <ExpensesExportTab
+          sellers={sellers.filter(s => s.active)}
+          onLogout={onLogout}
+        />
+      )}
+
+      {adminTab === 'extratos' && (
+        <ExtratoTab
           sellers={sellers.filter(s => s.active)}
           onLogout={onLogout}
         />
