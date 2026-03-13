@@ -240,3 +240,33 @@ async def upload_extrato(
         "final_balance": summary.get("final_balance"),
         "gaps_found": result.get("by_type", {}),
     }
+
+
+# ── Extrato Upload History ─────────────────────────────────────
+
+
+@router.get("/extrato/uploads/{seller_slug}", dependencies=[Depends(require_admin)])
+async def list_extrato_uploads(
+    seller_slug: str,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """List extrato upload history for a seller, ordered by most recent first."""
+    db = get_db()
+    result = (
+        db.table("extrato_uploads")
+        .select(
+            "id, filename, month, status, lines_total, lines_ingested, "
+            "lines_skipped, lines_already_covered, initial_balance, "
+            "final_balance, error_message, uploaded_at"
+        )
+        .eq("seller_slug", seller_slug)
+        .order("uploaded_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute()
+    )
+    return {
+        "seller": seller_slug,
+        "count": len(result.data or []),
+        "data": result.data or [],
+    }
