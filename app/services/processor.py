@@ -1,6 +1,10 @@
 """
 Processador de eventos ML/MP → Conta Azul.
 Implementa o mapeamento definido em PLANO.md Seção 13.
+
+Source of truth: payment_events (event ledger). The payments table is no longer
+written to by processor — events are the authoritative record. Consumers that
+need payment data should query payment_events via event_ledger helpers.
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -12,7 +16,8 @@ from app.models.sellers import (
     get_missing_ca_launch_fields,
     get_seller_config,
 )
-from app.services import ml_api, ca_queue
+from app.services import ml_api, ca_queue, event_ledger
+from app.services.event_ledger import EventRecordError
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +115,9 @@ def _extract_processor_charges(payment: dict) -> tuple[float, float, str | None,
             if charge_name == "financing_fee":
                 continue
             mp_fee += charge_amount
+        elif charge_type == "coupon":
+            # coupon_fee: ML charges the seller for buyer coupons (from=collector, to=ml)
+            mp_fee += charge_amount
 
     shipping_amount_buyer = _to_float(payment.get("shipping_amount"))
     shipping_cost_seller = round(max(0.0, shipping_charges_collector - shipping_amount_buyer), 2)
@@ -185,17 +193,18 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
     Processa webhook de payment.
     Fluxo: GET payment → classifica → lança no CA.
     payment_data: if provided, skips the API fetch (used by daily_sync for efficiency).
+
+    Idempotency is ensured via event_ledger (ON CONFLICT DO NOTHING on idempotency_key)
+    and ca_queue (idempotency_key on ca_jobs).
     """
-    db = get_db()
-    seller = get_seller_config(db, seller_slug)
+    seller = get_seller_config(get_db(), seller_slug)
     if not seller:
         logger.error(f"Seller {seller_slug} not found")
         return
 
-    # Idempotência: verifica se já processou
-    existing = db.table("payments").select("id, status").eq(
-        "ml_payment_id", payment_id
-    ).eq("seller_slug", seller_slug).execute()
+    # Check existing events for this payment (replaces old payments table read)
+    existing_events = await event_ledger.get_events(seller_slug, payment_id)
+    existing_event_types = {e["event_type"] for e in existing_events}
 
     payment = payment_data or await ml_api.get_payment(seller_slug, payment_id)
     status = payment["status"]
@@ -204,98 +213,69 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
     order_id = (payment.get("order") or {}).get("id")
     if not order_id:
         logger.info(f"Payment {payment_id} has no order_id, skipping (non-sale)")
-        _upsert_payment(db, seller_slug, payment, "skipped_non_sale")
         return
 
     # Skip marketplace_shipment (buyer-paid shipping as separate payment, not a product sale)
     if payment.get("description") == "marketplace_shipment":
         logger.info(f"Payment {payment_id} is marketplace_shipment, skipping")
-        _upsert_payment(db, seller_slug, payment, "skipped_non_sale")
         return
 
     # Skip purchases: when collector_id is set, the seller is the BUYER, not the seller.
-    # Normal sales have collector=null; purchases have collector=another seller's ID.
     collector_id = (payment.get("collector") or {}).get("id")
     if collector_id is not None:
         logger.info(f"Payment {payment_id} has collector_id={collector_id}, skipping (purchase, not sale)")
-        _upsert_payment(db, seller_slug, payment, "skipped_non_sale")
         return
 
     # Only sellers with full CA launch config can create CA entries/jobs.
-    # Sellers without config get pending_ca so onboarding backfill can reprocess them later.
+    # Without config, skip — onboarding_backfill will re-fetch from ML API later.
     if status in ("approved", "in_mediation", "refunded", "charged_back"):
         missing_ca_fields = get_missing_ca_launch_fields(seller)
         if missing_ca_fields:
             reason = f"missing_ca_config:{','.join(missing_ca_fields)}"
             logger.warning(
-                "Payment %s seller %s pending_ca: %s",
+                "Payment %s seller %s skipped (pending CA config): %s",
                 payment_id,
                 seller_slug,
                 reason,
             )
-            mp_fee, shipping_cost_seller, _, _, _ = _extract_processor_charges(payment)
-            _upsert_payment(
-                db, seller_slug, payment, "pending_ca",
-                error=reason,
-                processor_fee=mp_fee,
-                processor_shipping=shipping_cost_seller,
-            )
             return
 
     if status in ("approved", "in_mediation"):
-        await _process_approved(db, seller, payment, existing.data)
+        await _process_approved(seller, payment, existing_event_types)
     elif status == "charged_back" and payment.get("status_detail") == "reimbursed":
         # Chargeback coberto pela proteção ML: seller recebeu o dinheiro.
         # Tratar como venda normal (receita + despesas, sem estorno).
         logger.info(f"Payment {payment_id} charged_back+reimbursed, treating as approved (no estorno)")
-        await _process_approved(db, seller, payment, existing.data)
+        await _process_approved(seller, payment, existing_event_types)
     elif status == "refunded" and payment.get("status_detail") == "by_admin":
         # Kit split: ML cancelled original and created new payments for each package.
-        # If already synced (webhook flow), we need the estorno. Otherwise skip.
-        already_synced = existing.data and any(
-            e.get("status") in ("synced", "queued") for e in existing.data
-        )
-        if already_synced:
-            logger.info(f"Payment {payment_id} by_admin but already synced, processing refund")
-            await _process_refunded(db, seller, payment, existing.data)
+        # If already has sale event (was processed), we need the estorno. Otherwise skip.
+        if "sale_approved" in existing_event_types:
+            logger.info(f"Payment {payment_id} by_admin but already processed, processing refund")
+            await _process_refunded(seller, payment, existing_event_types)
         else:
             logger.info(f"Payment {payment_id} refunded/by_admin (kit split), skipping")
-            _upsert_payment(db, seller_slug, payment, "skipped_non_sale")
     elif status in ("refunded", "charged_back"):
-        await _process_refunded(db, seller, payment, existing.data)
+        await _process_refunded(seller, payment, existing_event_types)
     elif status in ("cancelled", "rejected"):
         logger.info(f"Payment {payment_id} status={status}, skipping")
-        _upsert_payment(db, seller_slug, payment, "skipped")
     else:
-        logger.info(f"Payment {payment_id} status={status}, saving for later")
-        _upsert_payment(db, seller_slug, payment, "pending")
+        logger.info(f"Payment {payment_id} status={status}, no action needed")
 
 
-async def _process_approved(db, seller: dict, payment: dict, existing: list):
+async def _process_approved(seller: dict, payment: dict, existing_event_types: set[str]):
     """EVENTO 1: Venda Aprovada → Receita + Despesas no CA."""
     payment_id = payment["id"]
     seller_slug = seller["slug"]
 
-    # Se já sincronizou ou está na fila, verificar refund parcial
-    if existing and any(e.get("status") in ("synced", "queued") for e in existing):
+    # If sale_approved already exists, check for partial refund only
+    if "sale_approved" in existing_event_types:
         if payment.get("status_detail") == "partially_refunded":
-            await _process_partial_refund(db, seller, payment)
+            await _process_partial_refund(seller, payment, existing_event_types)
         else:
-            current_status = next((e.get("status") for e in existing if e.get("status")), "queued")
-            mp_fee, shipping_cost_seller, _, _, _ = _extract_processor_charges(payment)
-            _upsert_payment(
-                db,
-                seller_slug,
-                payment,
-                current_status,
-                processor_fee=mp_fee,
-                processor_shipping=shipping_cost_seller,
-            )
             logger.info(
-                "Payment %s already synced/queued, refreshed processor charges: fee=%.2f shipping=%.2f",
+                "Payment %s already has sale_approved event, skipping _process_approved",
                 payment_id,
-                mp_fee,
-                shipping_cost_seller,
             )
         return
 
@@ -316,8 +296,6 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     net = payment.get("transaction_details", {}).get("net_received_amount", 0)
 
     # 3. Extrair taxas direto do ML charges_details (source of truth)
-    # Não usar fallback por shipment_costs para evitar duplicidade/desbalanceamento
-    # em pagamentos split do mesmo pedido.
     mp_fee, shipping_cost_seller, shipping_id, reconciled_net, net_diff = _extract_processor_charges(payment)
     if abs(net_diff) >= 0.01:
         logger.warning(
@@ -332,7 +310,9 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     item_title = ""
     if order and order.get("order_items"):
         item_title = order["order_items"][0].get("item", {}).get("title", "")
-    desc_receita = f"Venda ML #{order_id or ''} - {item_title}"[:200]
+    order_type = (payment.get("order") or {}).get("type", "mercadolibre")
+    venda_label = "Venda MP" if order_type == "mercadopago" else "Venda ML"
+    desc_receita = f"{venda_label} #{order_id or ''} - {item_title}"[:200]
     obs = f"Payment: {payment_id} | Liberação: {money_release_date}"
 
     contato = seller.get("ca_contato_ml") or CA_CONTATO_ML
@@ -342,12 +322,29 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     # === ENQUEUE JOBS FOR CONTA AZUL ===
 
     # A) RECEITA (contas-a-receber)
+    cat_receita = CA_CATEGORIES["venda_ecommerce"] if order_type == "mercadopago" else CA_CATEGORIES["venda_ml"]
     parcela_receita = _build_parcela(desc_receita, money_release_date, conta, amount)
     receita_payload = _build_evento(
         competencia, amount, desc_receita, obs, contato, conta,
-        CA_CATEGORIES["venda_ml"], cc, parcela_receita,
+        cat_receita, cc, parcela_receita,
     )
     await ca_queue.enqueue_receita(seller_slug, payment_id, receita_payload)
+    try:
+        await event_ledger.record_event(
+            seller_slug=seller_slug, ml_payment_id=payment_id,
+            event_type="sale_approved", signed_amount=amount,
+            competencia_date=competencia, event_date=competencia,
+            ml_order_id=order_id, source="processor",
+            metadata={
+                "order_type": order_type,
+                "item_title": item_title[:100],
+                "ml_status": payment.get("status"),
+                "status_detail": payment.get("status_detail"),
+                "money_release_date": money_release_date,
+            },
+        )
+    except EventRecordError as e:
+        logger.error("Event ledger sale_approved failed for %s: %s", payment_id, e)
 
     # B) DESPESA - Comissão ML (se > 0)
     if mp_fee > 0:
@@ -359,6 +356,15 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
             f"Comissão ML #{payment_id}",
         )
         await ca_queue.enqueue_comissao(seller_slug, payment_id, comissao_payload)
+        try:
+            await event_ledger.record_event(
+                seller_slug=seller_slug, ml_payment_id=payment_id,
+                event_type="fee_charged", signed_amount=-mp_fee,
+                competencia_date=competencia, event_date=competencia,
+                ml_order_id=order_id, source="processor",
+            )
+        except EventRecordError as e:
+            logger.error("Event ledger fee_charged failed for %s: %s", payment_id, e)
 
     # C) DESPESA - Frete (se > 0)
     if shipping_cost_seller > 0:
@@ -370,6 +376,15 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
             f"Frete ML #{payment_id}",
         )
         await ca_queue.enqueue_frete(seller_slug, payment_id, frete_payload)
+        try:
+            await event_ledger.record_event(
+                seller_slug=seller_slug, ml_payment_id=payment_id,
+                event_type="shipping_charged", signed_amount=-shipping_cost_seller,
+                competencia_date=competencia, event_date=competencia,
+                ml_order_id=order_id, source="processor",
+            )
+        except EventRecordError as e:
+            logger.error("Event ledger shipping_charged failed for %s: %s", payment_id, e)
 
     # NOTA: financing_fee NÃO gera despesa (net-neutral).
 
@@ -385,10 +400,15 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
         )
         await ca_queue.enqueue_receita(seller_slug, f"{payment_id}_subsidy", subsidy_payload)
         logger.info("Payment %s: ML subsidy detected R$%.2f, enqueued receita 1.3.7", payment_id, subsidy)
-
-    # Salva no Supabase como queued (worker updates to synced when group completes)
-    _upsert_payment(db, seller_slug, payment, "queued",
-                    processor_fee=mp_fee, processor_shipping=shipping_cost_seller)
+        try:
+            await event_ledger.record_event(
+                seller_slug=seller_slug, ml_payment_id=payment_id,
+                event_type="subsidy_credited", signed_amount=subsidy,
+                competencia_date=competencia, event_date=competencia,
+                ml_order_id=order_id, source="processor",
+            )
+        except EventRecordError as e:
+            logger.error("Event ledger subsidy_credited failed for %s: %s", payment_id, e)
 
     logger.info(
         f"Payment {payment_id} queued: receita={amount}, comissão={mp_fee}, "
@@ -396,7 +416,7 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
     )
 
 
-async def _process_partial_refund(db, seller: dict, payment: dict):
+async def _process_partial_refund(seller: dict, payment: dict, existing_event_types: set[str]):
     """Refund parcial: status permanece 'approved', status_detail='partially_refunded'.
     Cria estornos proporcionais para cada refund não processado."""
     payment_id = payment["id"]
@@ -407,11 +427,9 @@ async def _process_partial_refund(db, seller: dict, payment: dict):
         logger.info(f"Payment {payment_id}: partially_refunded but no refunds array")
         return
 
-    # Buscar refunds já processados no Supabase
-    existing_refunds = db.table("payments").select("id").eq(
-        "seller_slug", seller_slug
-    ).like("ca_evento_id", f"partial_refund_{payment_id}_%").execute()
-    processed_count = len(existing_refunds.data) if existing_refunds.data else 0
+    # Count already-processed partial refunds from event ledger
+    existing_events = await event_ledger.get_events(seller_slug, payment_id)
+    processed_count = sum(1 for e in existing_events if e["event_type"] == "partial_refund")
 
     contato = seller.get("ca_contato_ml") or CA_CONTATO_ML
     conta = seller["ca_conta_bancaria"]
@@ -443,12 +461,23 @@ async def _process_partial_refund(db, seller: dict, payment: dict):
 
         await ca_queue.enqueue_partial_refund(seller_slug, payment_id, i, estorno_payload)
         logger.info(f"Enqueued partial refund: payment {payment_id}, refund {refund_id}, R${refund_amount}")
+        try:
+            competencia_pr = _to_brt_date(payment.get("date_approved") or payment.get("date_created", ""))
+            await event_ledger.record_event(
+                seller_slug=seller_slug, ml_payment_id=payment_id,
+                event_type="partial_refund", signed_amount=-refund_amount,
+                competencia_date=competencia_pr, event_date=date_refund,
+                ml_order_id=(payment.get("order") or {}).get("id"),
+                source="processor",
+                idempotency_key=event_ledger.build_idempotency_key(
+                    seller_slug, payment_id, "partial_refund", suffix=str(i),
+                ),
+            )
+        except EventRecordError as e:
+            logger.error("Event ledger partial_refund failed for %s: %s", payment_id, e)
 
-    # Atualizar status no Supabase
-    _upsert_payment(db, seller_slug, payment, "synced")
 
-
-async def _process_refunded(db, seller: dict, payment: dict, existing: list):
+async def _process_refunded(seller: dict, payment: dict, existing_event_types: set[str]):
     """EVENTO 4: Cancelamento/Devolução → Receita original + Estornos no CA.
 
     Se a receita nunca foi criada (backfill direto como refunded), cria primeiro
@@ -458,15 +487,14 @@ async def _process_refunded(db, seller: dict, payment: dict, existing: list):
     payment_id = payment["id"]
     seller_slug = seller["slug"]
 
-    # Idempotência: se já processou como refunded, skip
-    if existing and any(e.get("status") == "refunded" for e in existing):
-        logger.info(f"Payment {payment_id} already refunded, skipping")
+    # Idempotência: se já processou refund, skip
+    if "refund_created" in existing_event_types:
+        logger.info(f"Payment {payment_id} already has refund_created event, skipping")
         return
 
-    # Se receita nunca foi criada (não tem status synced/queued), cria primeiro
-    already_synced = existing and any(e.get("status") in ("synced", "queued") for e in existing)
-    if not already_synced:
-        await _process_approved(db, seller, payment, existing)
+    # Se receita nunca foi criada, cria primeiro
+    if "sale_approved" not in existing_event_types:
+        await _process_approved(seller, payment, existing_event_types)
 
     date_refunded = datetime.now().strftime("%Y-%m-%d")
     amount = payment["transaction_amount"]
@@ -479,7 +507,6 @@ async def _process_refunded(db, seller: dict, payment: dict, existing: list):
         total_refunded_raw = payment.get("transaction_amount_refunded") or amount
 
     # Estorno da receita não pode exceder transaction_amount.
-    # refund.amount pode incluir frete devolvido ao comprador, que não faz parte da receita.
     estorno_receita = min(total_refunded_raw, amount)
 
     contato = seller.get("ca_contato_ml") or CA_CONTATO_ML
@@ -496,56 +523,88 @@ async def _process_refunded(db, seller: dict, payment: dict, existing: list):
     )
     await ca_queue.enqueue_estorno(seller_slug, payment_id, estorno_payload)
 
-    # B) Estorno de comissão (ML devolve comissão → receita)
-    net = payment.get("transaction_details", {}).get("net_received_amount", 0)
-    total_fees = round(amount - net, 2) if net > 0 else 0
+    # Event ledger: refund_created
+    competencia_refund = _to_brt_date(payment.get("date_approved") or payment.get("date_created", ""))
+    order_id_refund = (payment.get("order") or {}).get("id")
+    try:
+        await event_ledger.record_event(
+            seller_slug=seller_slug, ml_payment_id=payment_id,
+            event_type="refund_created", signed_amount=-estorno_receita,
+            competencia_date=competencia_refund, event_date=date_refunded,
+            ml_order_id=order_id_refund, source="processor",
+        )
+    except EventRecordError as e:
+        logger.error("Event ledger refund_created failed for %s: %s", payment_id, e)
 
-    if total_fees > 0 and estorno_receita >= amount:
-        parcela_est = _build_parcela(f"Estorno taxa ML #{payment_id}", date_refunded, conta, total_fees)
+    # B) Estorno de taxas: use charges_details to determine ACTUAL refunded amounts
+    refunded_fee = 0.0
+    refunded_shipping = 0.0
+    charges = payment.get("charges_details") or []
+    has_charges_detail = False
+
+    for charge in charges:
+        accounts = charge.get("accounts") or {}
+        if accounts.get("from") != "collector":
+            continue
+
+        charge_type = str(charge.get("type") or "").lower()
+        charge_name = str(charge.get("name") or "").strip().lower()
+
+        # financing_fee is net-neutral, skip it
+        if charge_name == "financing_fee":
+            continue
+
+        refunded_val = _to_float((charge.get("amounts") or {}).get("refunded"))
+        if charge_type == "fee":
+            refunded_fee += refunded_val
+            has_charges_detail = True
+        elif charge_type == "shipping":
+            refunded_shipping += refunded_val
+            has_charges_detail = True
+
+    if not has_charges_detail:
+        # Fallback for old payments without charges_details: use blanket calculation
+        net = _to_float((payment.get("transaction_details") or {}).get("net_received_amount"))
+        total_fees = round(amount - net, 2) if net > 0 else 0
+        refunded_fee = total_fees  # assume all fees refunded (legacy behavior)
+
+    refunded_fee = round(refunded_fee, 2)
+    refunded_shipping = round(refunded_shipping, 2)
+
+    if refunded_fee > 0 and estorno_receita >= amount:
+        parcela_est = _build_parcela(f"Estorno taxa ML #{payment_id}", date_refunded, conta, refunded_fee)
         estorno_taxa_payload = _build_evento(
-            date_refunded, total_fees,
+            date_refunded, refunded_fee,
             f"Estorno taxas ML - Payment {payment_id}",
-            f"Estorno comissão+frete por devolução total",
+            f"Estorno comissão por devolução (fee_refunded={refunded_fee})",
             contato, conta, CA_CATEGORIES["estorno_taxa"], cc, parcela_est,
         )
         await ca_queue.enqueue_estorno_taxa(seller_slug, payment_id, estorno_taxa_payload)
+        try:
+            await event_ledger.record_event(
+                seller_slug=seller_slug, ml_payment_id=payment_id,
+                event_type="refund_fee", signed_amount=refunded_fee,
+                competencia_date=competencia_refund, event_date=date_refunded,
+                ml_order_id=order_id_refund, source="processor",
+            )
+        except EventRecordError as e:
+            logger.error("Event ledger refund_fee failed for %s: %s", payment_id, e)
 
-    _upsert_payment(db, seller_slug, payment, "queued")
-
-
-def _upsert_payment(db, seller_slug: str, payment: dict, status: str, error: str = None,
-                    ca_evento_id: str = None, processor_fee: float = None,
-                    processor_shipping: float = None):
-    """Insere ou atualiza payment no Supabase."""
-    payment_id = payment["id"]
-    effective_net = _compute_effective_net_amount(payment)
-    data = {
-        "seller_slug": seller_slug,
-        "ml_payment_id": payment_id,
-        "ml_status": payment.get("status"),
-        "amount": payment.get("transaction_amount"),
-        "net_amount": effective_net,
-        "money_release_date": (payment.get("money_release_date") or "")[:10] or None,
-        "ml_order_id": (payment.get("order") or {}).get("id"),
-        "status": status,
-        "raw_payment": payment,
-        "updated_at": datetime.now().isoformat(),
-    }
-    if error:
-        data["error"] = error
-    if ca_evento_id:
-        data["ca_evento_id"] = ca_evento_id
-    if processor_fee is not None:
-        data["processor_fee"] = processor_fee
-    if processor_shipping is not None:
-        data["processor_shipping"] = processor_shipping
-
-    existing = db.table("payments").select("id").eq(
-        "ml_payment_id", payment_id
-    ).eq("seller_slug", seller_slug).execute()
-
-    if existing.data:
-        db.table("payments").update(data).eq("id", existing.data[0]["id"]).execute()
-    else:
-        data["created_at"] = datetime.now().isoformat()
-        db.table("payments").insert(data).execute()
+    if refunded_shipping > 0 and estorno_receita >= amount:
+        parcela_frete = _build_parcela(f"Estorno frete ML #{payment_id}", date_refunded, conta, refunded_shipping)
+        estorno_frete_payload = _build_evento(
+            date_refunded, refunded_shipping,
+            f"Estorno frete ML - Payment {payment_id}",
+            f"Estorno frete por devolução (shipping_refunded={refunded_shipping})",
+            contato, conta, CA_CATEGORIES["estorno_frete"], cc, parcela_frete,
+        )
+        await ca_queue.enqueue_estorno_frete(seller_slug, payment_id, estorno_frete_payload)
+        try:
+            await event_ledger.record_event(
+                seller_slug=seller_slug, ml_payment_id=payment_id,
+                event_type="refund_shipping", signed_amount=refunded_shipping,
+                competencia_date=competencia_refund, event_date=date_refunded,
+                ml_order_id=order_id_refund, source="processor",
+            )
+        except EventRecordError as e:
+            logger.error("Event ledger refund_shipping failed for %s: %s", payment_id, e)

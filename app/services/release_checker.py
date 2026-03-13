@@ -12,7 +12,8 @@ import re
 from datetime import datetime
 
 from app.db.supabase import get_db
-from app.services import ml_api
+from app.services import ml_api, event_ledger
+from app.services.event_ledger import EventRecordError
 
 logger = logging.getLogger(__name__)
 
@@ -135,48 +136,103 @@ class ReleaseChecker:
         return result
 
     async def _preload(self, payment_ids: set[int], order_ids: set[int]):
-        """Bulk-load release status from Supabase payments table."""
-        if payment_ids:
+        """Bulk-load release status from payment_events table."""
+        all_ids_to_check = list(payment_ids)
+
+        # 1. Check for money_released events (definitively released)
+        if all_ids_to_check:
             try:
-                rows = self.db.table("payments").select(
-                    "ml_payment_id, raw_payment->money_release_status, money_release_date"
-                ).eq("seller_slug", self.seller_slug).in_(
-                    "ml_payment_id", list(payment_ids)
-                ).execute()
-
-                for r in rows.data or []:
-                    pid = r["ml_payment_id"]
-                    self._cache[pid] = {
-                        "status": r.get("money_release_status") or "unknown",
-                        "money_release_date": r.get("money_release_date"),
-                    }
+                for i in range(0, len(all_ids_to_check), 100):
+                    chunk = all_ids_to_check[i:i + 100]
+                    rows = self.db.table("payment_events").select(
+                        "ml_payment_id, event_date"
+                    ).eq("seller_slug", self.seller_slug).eq(
+                        "event_type", "money_released"
+                    ).in_("ml_payment_id", chunk).execute()
+                    for r in (rows.data or []):
+                        pid = int(r["ml_payment_id"])
+                        self._cache[pid] = {
+                            "status": "released",
+                            "money_release_date": r.get("event_date"),
+                        }
             except Exception as e:
-                logger.warning(f"Preload by payment_id failed: {e}")
+                logger.warning(f"Preload money_released by payment_id failed: {e}")
 
+        # 2. For remaining, check sale_approved metadata for money_release_date/status
+        remaining = [pid for pid in all_ids_to_check if pid not in self._cache]
+        if remaining:
+            try:
+                for i in range(0, len(remaining), 100):
+                    chunk = remaining[i:i + 100]
+                    rows = self.db.table("payment_events").select(
+                        "ml_payment_id, metadata"
+                    ).eq("seller_slug", self.seller_slug).eq(
+                        "event_type", "sale_approved"
+                    ).in_("ml_payment_id", chunk).execute()
+                    for r in (rows.data or []):
+                        pid = int(r["ml_payment_id"])
+                        if pid not in self._cache:
+                            meta = r.get("metadata") or {}
+                            self._cache[pid] = {
+                                "status": meta.get("money_release_status", "pending"),
+                                "money_release_date": meta.get("money_release_date"),
+                            }
+            except Exception as e:
+                logger.warning(f"Preload sale_approved by payment_id failed: {e}")
+
+        # 3. Handle order_ids (parcelas referenced by order, not payment)
         if order_ids:
+            order_list = list(order_ids)
             try:
-                rows = self.db.table("payments").select(
-                    "ml_payment_id, ml_order_id, raw_payment->money_release_status, money_release_date"
-                ).eq("seller_slug", self.seller_slug).in_(
-                    "ml_order_id", list(order_ids)
-                ).execute()
-
-                for r in rows.data or []:
-                    pid = r["ml_payment_id"]
-                    oid = r.get("ml_order_id")
-                    info = {
-                        "status": r.get("money_release_status") or "unknown",
-                        "money_release_date": r.get("money_release_date"),
-                    }
-                    self._cache[pid] = info
-                    # Also index by order_id so parcelas with order ref can find it
-                    if oid:
-                        self._cache[oid] = info
+                for i in range(0, len(order_list), 100):
+                    chunk = order_list[i:i + 100]
+                    # Check money_released events
+                    rows = self.db.table("payment_events").select(
+                        "ml_payment_id, ml_order_id, event_date"
+                    ).eq("seller_slug", self.seller_slug).eq(
+                        "event_type", "money_released"
+                    ).in_("ml_order_id", chunk).execute()
+                    for r in (rows.data or []):
+                        pid = int(r["ml_payment_id"])
+                        oid = r.get("ml_order_id")
+                        info = {
+                            "status": "released",
+                            "money_release_date": r.get("event_date"),
+                        }
+                        self._cache[pid] = info
+                        if oid:
+                            self._cache[int(oid)] = info
             except Exception as e:
-                logger.warning(f"Preload by order_id failed: {e}")
+                logger.warning(f"Preload money_released by order_id failed: {e}")
+
+            # Check sale_approved for remaining order_ids
+            remaining_oids = [oid for oid in order_list if oid not in self._cache]
+            if remaining_oids:
+                try:
+                    for i in range(0, len(remaining_oids), 100):
+                        chunk = remaining_oids[i:i + 100]
+                        rows = self.db.table("payment_events").select(
+                            "ml_payment_id, ml_order_id, metadata"
+                        ).eq("seller_slug", self.seller_slug).eq(
+                            "event_type", "sale_approved"
+                        ).in_("ml_order_id", chunk).execute()
+                        for r in (rows.data or []):
+                            pid = int(r["ml_payment_id"])
+                            oid = r.get("ml_order_id")
+                            if pid not in self._cache:
+                                meta = r.get("metadata") or {}
+                                info = {
+                                    "status": meta.get("money_release_status", "pending"),
+                                    "money_release_date": meta.get("money_release_date"),
+                                }
+                                self._cache[pid] = info
+                                if oid:
+                                    self._cache[int(oid)] = info
+                except Exception as e:
+                    logger.warning(f"Preload sale_approved by order_id failed: {e}")
 
     async def _recheck_ml_api(self, payment_ids: set[int]) -> dict[int, str]:
-        """Re-fetch payment from ML API and update Supabase if released."""
+        """Re-fetch payment from ML API and record money_released event if released."""
         results: dict[int, str] = {}
 
         for pid in payment_ids:
@@ -186,17 +242,18 @@ class ReleaseChecker:
                 results[pid] = status
 
                 if status == "released":
-                    # Update raw_payment in Supabase so next run uses cache
-                    try:
-                        self.db.table("payments").update({
-                            "raw_payment": payment,
-                            "updated_at": datetime.now().isoformat(),
-                        }).eq("ml_payment_id", pid).eq(
-                            "seller_slug", self.seller_slug
-                        ).execute()
-                        logger.info(f"Payment {pid} now released, updated Supabase")
-                    except Exception as e:
-                        logger.warning(f"Failed to update payment {pid} in Supabase: {e}")
+                    mrd = (payment.get("money_release_date") or "")[:10]
+                    if mrd:
+                        try:
+                            await event_ledger.record_event(
+                                seller_slug=self.seller_slug, ml_payment_id=pid,
+                                event_type="money_released", signed_amount=0,
+                                competencia_date=mrd, event_date=mrd,
+                                source="release_checker",
+                            )
+                            logger.info(f"Payment {pid} now released, recorded money_released event")
+                        except EventRecordError as ev_err:
+                            logger.error("Event ledger money_released failed for %s: %s", pid, ev_err)
                 else:
                     logger.info(f"Payment {pid} still {status}, skipping baixa")
 

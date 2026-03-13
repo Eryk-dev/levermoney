@@ -154,32 +154,28 @@ def _classify_credit(row: dict) -> tuple[str, str, str, str | None]:
     return "other", "income", f"Credito ML (release) - {desc_type} R$ {amount}", None
 
 
-def _lookup_existing_ids(db, seller_slug: str, source_ids: list[str]) -> tuple[set, set]:
-    """Check which SOURCE_IDs already exist in payments or mp_expenses.
+async def _lookup_existing_ids(db, seller_slug: str, source_ids: list[str]) -> tuple[set, set]:
+    """Check which SOURCE_IDs already exist in payment_events or mp_expenses.
 
     Returns (payment_ids_set, expense_ids_set).
     """
     if not source_ids:
         return set(), set()
 
-    payment_ids = set()
+    from app.services import event_ledger
+
     expense_ids = set()
 
-    # Check payments table (ml_payment_id)
-    for i in range(0, len(source_ids), 100):
-        chunk = source_ids[i:i + 100]
-        int_ids = []
-        for sid in chunk:
-            try:
-                int_ids.append(int(sid))
-            except (ValueError, TypeError):
-                continue
-        if int_ids:
-            result = db.table("payments").select("ml_payment_id").eq(
-                "seller_slug", seller_slug
-            ).in_("ml_payment_id", int_ids).execute()
-            for r in (result.data or []):
-                payment_ids.add(str(r["ml_payment_id"]))
+    # Check payment_events table via event_ledger
+    int_ids = []
+    for sid in source_ids:
+        try:
+            int_ids.append(int(sid))
+        except (ValueError, TypeError):
+            continue
+
+    found_ints = await event_ledger.get_processed_payment_ids_in(seller_slug, int_ids)
+    payment_ids = {str(pid) for pid in found_ints}
 
     # Check mp_expenses table (payment_id)
     for i in range(0, len(source_ids), 100):
@@ -271,7 +267,7 @@ async def sync_release_report(
     source_ids = [r["source_id"] for r in rows if r["source_id"]]
 
     # 4. Look up which ones already exist
-    payment_ids, expense_ids = _lookup_existing_ids(db, seller_slug, source_ids)
+    payment_ids, expense_ids = await _lookup_existing_ids(db, seller_slug, source_ids)
     logger.info(
         "Release report cross-ref: %d in payments, %d in mp_expenses",
         len(payment_ids), len(expense_ids),
@@ -302,7 +298,7 @@ async def sync_release_report(
                 stats["skipped_bpp_reserve"] += 1
                 continue
 
-        # Already tracked in payments table (order)
+        # Already tracked in payment_events (order)
         if source_id in payment_ids:
             stats["already_in_payments"] += 1
             continue
@@ -543,7 +539,7 @@ async def backfill_release_report(
             continue
 
         source_ids = [row["source_id"] for row in rows if row["source_id"]]
-        payment_ids, expense_ids = _lookup_existing_ids(db, seller_slug, source_ids)
+        payment_ids, expense_ids = await _lookup_existing_ids(db, seller_slug, source_ids)
 
         payout_rows = [row for row in rows if row["description"] == "payout"]
 

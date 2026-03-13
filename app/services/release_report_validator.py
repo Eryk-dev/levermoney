@@ -18,8 +18,9 @@ from app.models.sellers import (
     get_missing_ca_launch_fields,
     get_seller_config,
 )
-from app.services import ca_queue, ml_api
+from app.services import ca_queue, ml_api, event_ledger
 from app.services.ca_api import CA_API
+from app.services.event_ledger import EventRecordError
 from app.services.processor import _build_despesa_payload
 
 logger = logging.getLogger(__name__)
@@ -149,7 +150,7 @@ async def validate_release_fees_for_seller(
 
     1. Download/create release report
     2. Parse fee columns
-    3. Compare with processor_fee/processor_shipping in payments table
+    3. Compare with processor_fee/processor_shipping in payment_events
     4. Create CA adjustment jobs for differences
     5. Save data in release_report_fees table
 
@@ -204,7 +205,7 @@ async def validate_release_fees_for_seller(
             "already_adjusted": 0,
         }
 
-    # Batch-load processor fees from payments table
+    # Batch-load processor fees from event_ledger
     source_ids = [r["source_id"] for r in payment_rows if r["source_id"]]
     int_ids = []
     for sid in source_ids:
@@ -213,16 +214,34 @@ async def validate_release_fees_for_seller(
         except (ValueError, TypeError):
             continue
 
-    # Load in chunks of 100
-    payments_by_id: dict[int, dict] = {}
+    # Load fees from events (fee_charged, shipping_charged)
+    fees_from_events = await event_ledger.get_payment_fees_from_events(seller_slug, int_ids)
+
+    # Load already-adjusted payments from release_report_fees table
+    adjusted_pids: set[int] = set()
     for i in range(0, len(int_ids), 100):
         chunk = int_ids[i:i + 100]
-        result = db.table("payments").select(
-            "ml_payment_id, processor_fee, processor_shipping, fee_adjusted, amount, "
-            "money_release_date, seller_slug"
-        ).eq("seller_slug", seller_slug).in_("ml_payment_id", chunk).execute()
-        for p in (result.data or []):
-            payments_by_id[int(p["ml_payment_id"])] = p
+        adj_result = db.table("release_report_fees").select("source_id").eq(
+            "seller_slug", seller_slug
+        ).eq("fee_adjusted", True).in_(
+            "source_id", [str(c) for c in chunk]
+        ).execute()
+        for r in (adj_result.data or []):
+            try:
+                adjusted_pids.add(int(r["source_id"]))
+            except (ValueError, TypeError):
+                continue
+
+    # Build compatible dict for downstream code
+    payments_by_id: dict[int, dict] = {}
+    for pid in int_ids:
+        fee_data = fees_from_events.get(pid, {"fee": 0.0, "shipping": 0.0})
+        payments_by_id[pid] = {
+            "ml_payment_id": pid,
+            "processor_fee": fee_data["fee"],
+            "processor_shipping": fee_data["shipping"],
+            "fee_adjusted": pid in adjusted_pids,
+        }
 
     stats = Counter()
 
@@ -284,6 +303,16 @@ async def validate_release_fees_for_seller(
                 group_id=f"{seller_slug}:{pid}:ajustes",
                 priority=25,
             )
+            try:
+                await event_ledger.record_event(
+                    seller_slug=seller_slug, ml_payment_id=pid,
+                    event_type="adjustment_fee", signed_amount=-fee_diff,
+                    competencia_date=competencia, event_date=release_date,
+                    source="release_report_validator",
+                    metadata={"processor_fee": processor_fee, "release_fee": release_fee},
+                )
+            except EventRecordError as e:
+                logger.error("Event ledger adjustment_fee failed for %s: %s", pid, e)
             adjustments_made += 1
             stats["fee_adjustments"] += 1
             logger.info(
@@ -313,6 +342,16 @@ async def validate_release_fees_for_seller(
                 group_id=f"{seller_slug}:{pid}:ajustes",
                 priority=25,
             )
+            try:
+                await event_ledger.record_event(
+                    seller_slug=seller_slug, ml_payment_id=pid,
+                    event_type="adjustment_shipping", signed_amount=-shipping_diff,
+                    competencia_date=competencia, event_date=release_date,
+                    source="release_report_validator",
+                    metadata={"processor_shipping": processor_shipping, "release_shipping": release_shipping},
+                )
+            except EventRecordError as e:
+                logger.error("Event ledger adjustment_shipping failed for %s: %s", pid, e)
             adjustments_made += 1
             stats["shipping_adjustments"] += 1
             logger.info(
@@ -331,12 +370,15 @@ async def validate_release_fees_for_seller(
         if shipping_diff <= -0.01:
             stats["shipping_overcharged"] += 1
 
-        # Mark payment as fee_adjusted if any adjustment was made
+        # Mark payment as fee_adjusted in release_report_fees
         if adjustments_made > 0:
-            db.table("payments").update({
-                "fee_adjusted": True,
-                "updated_at": datetime.now().isoformat(),
-            }).eq("ml_payment_id", pid).eq("seller_slug", seller_slug).execute()
+            try:
+                db.table("release_report_fees").update({
+                    "fee_adjusted": True,
+                    "updated_at": datetime.now().isoformat(),
+                }).eq("source_id", str(pid)).eq("seller_slug", seller_slug).execute()
+            except Exception as adj_err:
+                logger.warning("Could not mark fee_adjusted for %s: %s", pid, adj_err)
             stats["payments_adjusted"] += 1
         else:
             stats["no_diff"] += 1

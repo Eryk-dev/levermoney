@@ -9,7 +9,8 @@ Routers call services; services never import routers.
 
 | File | Responsibility |
 |------|---------------|
-| `processor.py` | **CORE.** Maps ML payments to CA financial events (receita, comissao, frete, estorno). Entry point: `process_payment_webhook()`. Sellers without CA config (`ca_conta_bancaria`/`ca_centro_custo_variavel`) get `status='pending_ca'` instead of being skipped. |
+| `processor.py` | **CORE.** Maps ML payments to CA financial events (receita, comissao, frete, estorno). Entry point: `process_payment_webhook()`. Uses `event_ledger` as sole write path — no longer writes to `payments` table. Sellers without CA config get skipped (no events recorded). |
+| `event_ledger.py` | **Event Ledger.** Append-only financial event log. Each payment lifecycle event is an immutable record with signed_amount. **Source of truth** for all payment state. Public API: `record_event()`, `get_events()`, `get_balance()`, `get_dre_summary()`, `get_processed_payment_ids()`, `get_processed_payment_ids_in()`, `get_payment_fees_from_events()`, `get_payment_statuses()`, `derive_payment_status()`, `EventRecordError`. 16 event types including adjustment_fee/adjustment_shipping. |
 | `ca_api.py` | HTTP client for Conta Azul API v2. Token cache + OAuth2 refresh with asyncio.Lock. All requests go through `rate_limiter`. |
 | `ml_api.py` | HTTP client for ML/MP APIs. Per-seller token management with auto-refresh. Raises `MLAuthError` on revoked tokens. |
 | `ca_queue.py` | Persistent job queue backed by Supabase `ca_jobs`. `CaWorker` polls and executes jobs with retry/backoff/dead-letter. |
@@ -49,25 +50,30 @@ Legacy reconciliation logic ported from V1, organized as a Python subpackage.
                       processor.py
                      /      |      \
               ml_api.py  ca_queue.py  models/sellers.py
-                            |
-                       ca_api.py
-                            |
-                      rate_limiter.py
+                  |         |
+            event_ledger.py |    (event_ledger is sole write path for payment state)
+                  ^         |
+                  |    ca_api.py
+                  |         |
+                  |    rate_limiter.py
+                  |
+     (all consumers read from event_ledger)
 
-daily_sync.py -----> processor.py + expense_classifier.py
-onboarding_backfill.py --> processor.py + expense_classifier.py + ml_api.py + release_report_sync.py
+daily_sync.py -----> processor.py + expense_classifier.py + event_ledger (status detection)
+onboarding_backfill.py --> processor.py + expense_classifier.py + ml_api.py + event_ledger + release_report_sync.py
 
-release_report_validator.py --> ca_queue.py + ml_api.py + processor._build_despesa_payload
-release_report_sync.py ------> ml_api.py (report download)
-extrato_ingester.py ---------> release_report_sync._get_or_create_report
-extrato_coverage_checker.py -> release_report_validator._get_or_create_report
+release_report_validator.py --> ca_queue.py + ml_api.py + event_ledger (fees) + processor._build_despesa_payload
+release_report_sync.py ------> ml_api.py (report download) + event_ledger (already-done check)
+extrato_ingester.py ---------> release_report_sync._get_or_create_report + event_ledger (payment/refund lookups)
+extrato_coverage_checker.py -> release_report_validator._get_or_create_report + event_ledger (payment lookups)
+release_checker.py ----------> ml_api.py + event_ledger (release status cache)
+financial_closing.py --------> event_ledger (payment status derivation) + ca_jobs
 
 legacy/daily_export.py --> legacy/bridge.py --> legacy/engine.py
 legacy/daily_export.py --> ml_api.py (report download)
 gdrive_client.py ------> legacy/daily_export.py (_build_gdrive_client, _gdrive_ensure_folder, _gdrive_upload_bytes)
 
 faturamento_sync.py --> ml_api.py (fetch_paid_orders)
-release_checker.py ---> ml_api.py (re-check release status)
 ca_categories_sync.py -> ca_api.py (listar_categorias)
 ```
 
@@ -108,11 +114,13 @@ ca_categories_sync.py -> ca_api.py (listar_categorias)
 
 3. **Job queue for CA writes.** Never POST to CA API directly. Always enqueue via `ca_queue.enqueue_*()`. The `CaWorker` handles retry, backoff (30s/120s/480s), and dead-letter.
 
-4. **Idempotency.** `ca_jobs.idempotency_key` pattern: `{seller}:{payment_id}:{tipo}`. Payments upserted by `(seller_slug, ml_payment_id)`.
+4. **Event Ledger is source of truth.** The `payments` table is no longer written to. All payment state comes from `payment_events` via `event_ledger.py`. Status is derived via `derive_payment_status()` (centralized, never re-implement locally). Priority: `ca_sync_failed` → error, `refund_created`/`charged_back` → refunded, `ca_sync_completed` → synced, `sale_approved` → queued. DB write errors raise `EventRecordError`.
 
-5. **Token management.** CA tokens use asyncio.Lock to prevent concurrent refresh races. ML tokens are per-seller with auto-refresh.
+5. **Idempotency.** `ca_jobs.idempotency_key` pattern: `{seller}:{payment_id}:{tipo}`. Event ledger uses `{seller}:{payment_id}:{event_type}` with ON CONFLICT DO NOTHING.
 
-6. **In-memory result caches.** Several services store `_last_*_result` dicts for status endpoints (financial_closing, release_report_validator, extrato_coverage_checker, extrato_ingester).
+6. **Token management.** CA tokens use asyncio.Lock to prevent concurrent refresh races. ML tokens are per-seller with auto-refresh.
+
+7. **In-memory result caches.** Several services store `_last_*_result` dicts for status endpoints (financial_closing, release_report_validator, extrato_coverage_checker, extrato_ingester).
 
 ---
 

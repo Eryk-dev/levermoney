@@ -301,7 +301,7 @@ async def _execute_backfill(
     )
 
     # --- 4. Build already-done set (resumability) --------------------------------
-    already_done_ids = _load_already_done(db, seller_slug)
+    already_done_ids = await _load_already_done(db, seller_slug)
     logger.info(
         "OnboardingBackfill %s: %d payments already processed (will skip)",
         seller_slug,
@@ -537,46 +537,25 @@ async def _fetch_all_payments(
     )
 
 
-def _load_already_done(db, seller_slug: str) -> set[int]:
+async def _load_already_done(db, seller_slug: str) -> set[int]:
     """Load all payment IDs that have already been processed for this seller.
 
-    Reads from both the payments table (order payments) and the mp_expenses
-    table (non-order payments).  This is the resumability mechanism: on a retry
-    the backfill simply skips everything already in Supabase.
+    Reads from both the payment_events table (order payments with sale_approved
+    event) and the mp_expenses table (non-order payments).  This is the
+    resumability mechanism: on a retry the backfill simply skips everything
+    already in Supabase.
 
-    Only statuses that represent completed processing are considered done.
-    Payments with status "pending" or "pending_ca" are NOT in this set,
-    so they will be re-evaluated by the backfill (pending_ca payments get
-    reprocessed once the seller has CA config).
+    Payments without events (e.g. previously pending_ca) are NOT in this set,
+    so they will be re-evaluated by the backfill.
     """
-    done: set[int] = set()
+    from app.services import event_ledger
 
-    # From payments table (order payments already sent to CA queue)
-    page_start = 0
-    page_limit = 1000
-    while True:
-        rows = (
-            db.table("payments")
-            .select("ml_payment_id, status")
-            .eq("seller_slug", seller_slug)
-            .in_("status", ["synced", "queued", "refunded", "skipped", "skipped_non_sale"])
-            .range(page_start, page_start + page_limit - 1)
-            .execute()
-        )
-        batch = rows.data or []
-        for row in batch:
-            pid_raw = row.get("ml_payment_id")
-            if pid_raw is not None:
-                try:
-                    done.add(int(pid_raw))
-                except (TypeError, ValueError):
-                    pass
-        if len(batch) < page_limit:
-            break
-        page_start += page_limit
+    # From payment_events (order payments that have been processed)
+    done = await event_ledger.get_processed_payment_ids(seller_slug)
 
     # From mp_expenses table (non-order payments already classified)
     page_start = 0
+    page_limit = 1000
     while True:
         rows = (
             db.table("mp_expenses")

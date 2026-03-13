@@ -11,10 +11,11 @@ from datetime import datetime, timedelta, timezone
 
 from app.db.supabase import get_db
 from app.models.sellers import get_all_active_sellers, get_seller_config
+from app.services.event_ledger import derive_payment_status, get_payment_statuses
 
 logger = logging.getLogger(__name__)
 
-FINAL_PAYMENT_STATUSES = {"synced", "refunded", "skipped", "skipped_non_sale"}
+FINAL_EVENT_STATUSES = {"synced", "refunded"}
 MANUAL_EXPORTED_STATUSES = {"exported"}
 
 _last_closing_result: dict = {
@@ -190,39 +191,26 @@ def _compute_manual_lane(
     return days, missing_import_ids, import_source
 
 
-def _compute_auto_lane(
+async def _compute_auto_lane(
     db,
     seller_slug: str,
     date_from: str | None,
     date_to: str | None,
 ) -> dict:
-    q = db.table("payments").select(
-        "ml_payment_id, status, error, updated_at"
-    ).eq("seller_slug", seller_slug)
-    if date_from:
-        q = q.gte("updated_at", f"{date_from}T00:00:00.000-03:00")
-    if date_to:
-        q = q.lte("updated_at", f"{date_to}T23:59:59.999-03:00")
-    payments = _paginate(q.order("updated_at", desc=False))
+    # Derive payment statuses via event_ledger helper
+    payment_statuses = await get_payment_statuses(seller_slug, date_from, date_to)
 
     status_counts: dict[str, int] = {}
     open_ids: set[int] = set()
     err_ids: set[int] = set()
-    for p in payments:
-        st = p.get("status") or "unknown"
+    for pid, st in payment_statuses.items():
+        if st == "error":
+            err_ids.add(pid)
+        elif st in ("queued", "unknown"):
+            open_ids.add(pid)
         status_counts[st] = status_counts.get(st, 0) + 1
-        pid = p.get("ml_payment_id")
-        if pid is None:
-            continue
-        try:
-            pid_int = int(pid)
-        except (TypeError, ValueError):
-            continue
-        if st not in FINAL_PAYMENT_STATUSES:
-            open_ids.add(pid_int)
-        if p.get("error"):
-            err_ids.add(pid_int)
 
+    # Also check ca_jobs for dead/pending status
     jq = db.table("ca_jobs").select("group_id,status,created_at").eq("seller_slug", seller_slug)
     if date_from:
         jq = jq.gte("created_at", f"{date_from}T00:00:00.000-03:00")
@@ -244,7 +232,7 @@ def _compute_auto_lane(
 
     unresolved = sorted(open_ids | err_ids | dead_ids | pending_ids)
     return {
-        "payments_total": len(payments),
+        "payments_total": sum(status_counts.values()),
         "payments_by_status": status_counts,
         "open_payment_ids_count": len(open_ids),
         "open_payment_ids_sample": sorted(open_ids)[:200],
@@ -270,7 +258,7 @@ async def compute_seller_financial_closing(
     if not seller:
         return {"seller": seller_slug, "error": "seller_not_found"}
 
-    auto = _compute_auto_lane(db, seller_slug, date_from, date_to)
+    auto = await _compute_auto_lane(db, seller_slug, date_from, date_to)
     manual_days, manual_missing_ids, import_source = _compute_manual_lane(
         db, seller_slug, date_from, date_to
     )

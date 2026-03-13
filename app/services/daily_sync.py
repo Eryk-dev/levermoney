@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from app.config import settings
 from app.db.supabase import get_db
 from app.models.sellers import get_all_active_sellers
-from app.services import ml_api
+from app.services import ml_api, event_ledger
 from app.services.processor import process_payment_webhook
 from app.services.expense_classifier import classify_non_order_payment
 
@@ -292,30 +292,38 @@ async def sync_seller_payments(seller_slug: str, begin_date: str, end_date: str)
         f"({begin_date} to {end_date})"
     )
 
-    # 2. Load existing order payments (for status change detection)
+    # 2. Load existing events (for already-done + status change detection)
     existing_orders: dict[int, dict] = {}
     page_start = 0
     page_limit = 1000
     while True:
-        done_result = db.table("payments").select(
-            "ml_payment_id, ml_status, status, raw_payment"
-        ).eq(
-            "seller_slug", seller_slug
+        done_result = db.table("payment_events").select(
+            "ml_payment_id, event_type, metadata"
+        ).eq("seller_slug", seller_slug).in_(
+            "event_type", [
+                "sale_approved", "ca_sync_completed", "ca_sync_failed",
+                "refund_created", "charged_back",
+            ]
         ).range(page_start, page_start + page_limit - 1).execute()
         batch = done_result.data or []
         for row in batch:
-            ml_payment_id = row.get("ml_payment_id")
-            if ml_payment_id is None:
-                continue
-            raw = row.get("raw_payment") or {}
-            existing_orders[int(ml_payment_id)] = {
-                "ml_status": row.get("ml_status"),
-                "processor_status": row.get("status"),
-                "status_detail": raw.get("status_detail"),
-            }
+            pid = int(row["ml_payment_id"])
+            et = row["event_type"]
+            if pid not in existing_orders:
+                existing_orders[pid] = {"event_types": set()}
+            existing_orders[pid]["event_types"].add(et)
+            if et == "sale_approved":
+                meta = row.get("metadata") or {}
+                existing_orders[pid]["ml_status"] = meta.get("ml_status")
+                existing_orders[pid]["status_detail"] = meta.get("status_detail")
         if len(batch) < page_limit:
             break
         page_start += page_limit
+
+    # Derive processor_status from events
+    for pid, info in existing_orders.items():
+        event_types = info.get("event_types", set())
+        info["processor_status"] = event_ledger.derive_payment_status(event_types)
 
     orders_processed = 0
     expenses_classified = 0
@@ -346,9 +354,10 @@ async def sync_seller_payments(seller_slug: str, begin_date: str, end_date: str)
                     should_reprocess = True
                 elif existing.get("status_detail") != status_detail:
                     should_reprocess = True
-                elif existing.get("processor_status") in ("pending", "queued", "pending_ca"):
+                elif existing.get("processor_status") in ("unknown", "queued", "error"):
                     # Keep pushing unresolved items until processor settles them.
-                    # pending_ca: seller lacked CA config; reprocess in case they upgraded.
+                    # Payments without events (pending_ca) are not in existing_orders
+                    # and will be naturally processed as new.
                     should_reprocess = True
 
             if existing and not should_reprocess:

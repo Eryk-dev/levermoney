@@ -45,17 +45,10 @@ INTERNAL_DESCRIPTIONS = {
 }
 
 
-def _lookup_payment_ids(db, seller_slug: str, source_ids: list[int]) -> set[int]:
-    """Look up which source IDs exist in the payments table."""
-    found: set[int] = set()
-    for i in range(0, len(source_ids), 100):
-        chunk = source_ids[i:i + 100]
-        result = db.table("payments").select("ml_payment_id").eq(
-            "seller_slug", seller_slug
-        ).in_("ml_payment_id", chunk).execute()
-        for r in (result.data or []):
-            found.add(int(r["ml_payment_id"]))
-    return found
+async def _lookup_payment_ids(db, seller_slug: str, source_ids: list[int]) -> set[int]:
+    """Look up which source IDs exist in payment_events (have been processed)."""
+    from app.services import event_ledger
+    return await event_ledger.get_processed_payment_ids_in(seller_slug, source_ids)
 
 
 def _lookup_expense_ids(db, seller_slug: str, source_ids: list[int]) -> set[int]:
@@ -116,7 +109,7 @@ async def check_extrato_coverage(
             continue
 
     # Batch lookup
-    payment_ids = _lookup_payment_ids(db, seller_slug, all_source_ids)
+    payment_ids = await _lookup_payment_ids(db, seller_slug, all_source_ids)
     expense_ids = _lookup_expense_ids(db, seller_slug, all_source_ids)
 
     stats = Counter()
@@ -131,7 +124,7 @@ async def check_extrato_coverage(
         except (ValueError, TypeError):
             sid_int = None
 
-        # 1. Payment descriptions → check payments table
+        # 1. Payment descriptions → check payment_events
         if description in API_PAYMENT_DESCRIPTIONS:
             if sid_int and sid_int in payment_ids:
                 stats["covered_by_api"] += 1
@@ -145,7 +138,7 @@ async def check_extrato_coverage(
             stats["uncovered"] += 1
             continue
 
-        # 2. Refund descriptions → check payments table (refunded payments)
+        # 2. Refund descriptions → check payment_events (refunded payments)
         if description in API_REFUND_DESCRIPTIONS:
             if sid_int and sid_int in payment_ids:
                 stats["covered_by_api"] += 1

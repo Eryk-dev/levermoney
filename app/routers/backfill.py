@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 
 from app.db.supabase import get_db
 from app.models.sellers import get_seller_config
-from app.services import ml_api
+from app.services import ml_api, event_ledger
 from app.services.processor import process_payment_webhook
 
 logger = logging.getLogger(__name__)
@@ -71,31 +71,18 @@ async def backfill_payments(
 
     total_amount = sum(p.get("transaction_amount", 0) for p in all_payments)
 
-    # Check which are already processed in Supabase (terminal statuses)
-    # Paginate to avoid Supabase's default 1000-row limit
-    already_done = set()
+    # Check which are already processed via event_ledger (have sale_approved event)
+    already_done = await event_ledger.get_processed_payment_ids(seller_slug)
+
+    # Check which processed payments are missing fee events
     done_missing_fees = set()
-    page_start = 0
-    page_limit = 1000
-    while True:
-        done_result = db.table("payments").select(
-            "ml_payment_id, processor_fee, processor_shipping"
-        ).eq(
-            "seller_slug", seller_slug
-        ).in_(
-            "status", ["synced", "queued", "refunded", "skipped", "skipped_non_sale"]
-        ).range(page_start, page_start + page_limit - 1).execute()
-        batch = done_result.data or []
-        for row in batch:
-            pid = row.get("ml_payment_id")
-            if pid is None:
-                continue
-            already_done.add(pid)
-            if row.get("processor_fee") is None or row.get("processor_shipping") is None:
+    if reprocess_missing_fees and already_done:
+        fees_data = await event_ledger.get_payment_fees_from_events(
+            seller_slug, list(already_done)
+        )
+        for pid in already_done:
+            if pid not in fees_data:
                 done_missing_fees.add(pid)
-        if len(batch) < page_limit:
-            break
-        page_start += page_limit
 
     processable = [
         p for p in all_payments

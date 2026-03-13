@@ -7,12 +7,10 @@ from datetime import datetime, timezone
 from fastapi import APIRouter
 
 from app.db.supabase import get_db
+from app.services.event_ledger import derive_payment_status, get_payment_statuses
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/queue", tags=["queue"])
-
-
-FINAL_PAYMENT_STATUSES = {"synced", "refunded", "skipped", "skipped_non_sale"}
 
 
 def _extract_payment_id_from_group(group_id: str | None) -> int | None:
@@ -102,43 +100,24 @@ async def queue_reconciliation(
     db = get_db()
     sample_limit = max(1, min(sample_limit, 1000))
 
-    # Load payments for seller (paginated)
-    payments = []
-    page_start = 0
-    page_limit = 1000
-    while True:
-        q = db.table("payments").select(
-            "ml_payment_id, status, ml_status, amount, updated_at, error"
-        ).eq("seller_slug", seller_slug)
-        if date_from:
-            q = q.gte("updated_at", f"{date_from}T00:00:00.000-03:00")
-        if date_to:
-            q = q.lte("updated_at", f"{date_to}T23:59:59.999-03:00")
-
-        batch = q.range(page_start, page_start + page_limit - 1).execute().data or []
-        payments.extend(batch)
-        if len(batch) < page_limit:
-            break
-        page_start += page_limit
+    # Derive payment statuses via event_ledger helper
+    payment_statuses = await get_payment_statuses(seller_slug, date_from, date_to)
 
     status_counts: dict[str, int] = {}
     open_payment_ids = []
     error_payment_ids = []
 
-    for p in payments:
-        st = p.get("status") or "unknown"
+    for pid, st in payment_statuses.items():
+        if st == "error":
+            error_payment_ids.append(pid)
+        elif st in ("queued", "unknown"):
+            open_payment_ids.append(pid)
         status_counts[st] = status_counts.get(st, 0) + 1
-        pid = p.get("ml_payment_id")
-        if pid is None:
-            continue
-        if st not in FINAL_PAYMENT_STATUSES:
-            open_payment_ids.append(int(pid))
-        if p.get("error"):
-            error_payment_ids.append(int(pid))
 
     # Load all jobs for seller (paginated)
     jobs = []
     page_start = 0
+    page_limit = 1000
     while True:
         batch = db.table("ca_jobs").select("group_id, status").eq(
             "seller_slug", seller_slug
@@ -169,7 +148,7 @@ async def queue_reconciliation(
         "seller": seller_slug,
         "date_from": date_from,
         "date_to": date_to,
-        "payments_total": len(payments),
+        "payments_total": len(payment_statuses),
         "payments_by_status": status_counts,
         "payments_open_count": len(set(open_payment_ids)),
         "payments_open_sample": sorted(set(open_payment_ids))[:sample_limit],

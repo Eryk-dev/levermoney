@@ -7,6 +7,7 @@ from app.config import settings
 # Categorias CA compartilhadas (iguais para todos os sellers)
 CA_CATEGORIES = {
     "venda_ml": "78f42170-23f7-41dc-80cd-7886c78fc397",           # 1.1.1 MercadoLibre
+    "venda_ecommerce": "00c0bd64-e37b-4def-a69d-acf01353f0d3",    # 1.1.2 Loja Própria (E-commerce)
     "comissao_ml": "699d6072-031a-47bf-9aeb-563d1c2e8a41",        # 2.8.2 Comissões de Marketplace
     "frete_mercadoenvios": "6ccbf8ed-e174-4da0-ac8d-0ed1b387cb32", # 2.9.4 MercadoEnvios
     "frete_full": "27c8de66-cbb2-4778-94a5-b0de4405ae68",         # 2.9.10 Frete Full

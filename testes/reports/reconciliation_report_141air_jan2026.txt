@@ -1,0 +1,346 @@
+================================================================================
+RECONCILIATION REPORT: 141air January 2026
+Generated: 2026-03-05 07:25:20
+================================================================================
+
+EXTRATO SUMMARY:
+  File: extrato janeiro 141Air.csv
+  Total lines: 690
+  Unique reference_ids: 503
+  Initial balance: R$ 4,476.23
+  Credits: R$ 207,185.69
+  Debits: -R$ 210,571.52
+  Final balance: R$ 1,090.40
+  Computed net (credits+debits): -R$ 3,385.83
+
+SYSTEM DATA:
+  Payments in DB: 991
+  MP Expenses in DB: 173 records (173 unique payment_ids)
+  CA Jobs in DB: 3009 jobs (991 unique payment_ids)
+
+--------------------------------------------------------------------------------
+COVERAGE:
+--------------------------------------------------------------------------------
+  Matched by payments/ca_jobs: 333 ref_ids (R$ 102,535.22)
+  Matched by mp_expenses:      67 ref_ids (-R$ 110,864.54)
+  Net-zero cycles:             54 ref_ids (R$ 0.00)
+  MISMATCH:                    23 ref_ids (R$ 5,683.16 difference)
+  MISSING:                     26 ref_ids (-R$ 79.74)
+
+  Coverage: 454/503 ref_ids (90.3%)
+
+--------------------------------------------------------------------------------
+MISMATCH DETAILS:
+--------------------------------------------------------------------------------
+ref_id               date         extrato        system         diff           cause
+----------------------------------------------------------------------------------------------------
+142959458860         2026-01-26   R$ 2,517.30    R$ 0.00        R$ 2,517.30    timing_refund: released in Jan, refunded later (ml_status=refunded, ca_jobs net=0)
+  -> 2026-01-26  R$ 2,517.30  Liberação de dinheiro                                         [SKIP]
+
+140395321666         2026-01-25   R$ 1,369.76    R$ 0.00        R$ 1,369.76    timing_refund: released in Jan, refunded later (ml_status=refunded, ca_jobs net=0)
+  -> 2026-01-25  R$ 1,369.76  Liberação de dinheiro                                         [SKIP]
+
+141747614296         2026-01-24   R$ 719.20      R$ 0.00        R$ 719.20      timing_refund: released in Jan, refunded later (ml_status=refunded, ca_jobs net=0)
+  -> 2026-01-24    R$ 719.20  Pagamento com Código QR Pix Geovane Rodrigues Da Silva 01083  [SKIP]
+
+141427378366         2026-01-25   R$ 634.52      R$ 0.00        R$ 634.52      timing_refund: released in Jan, refunded later (ml_status=refunded, ca_jobs net=0)
+  -> 2026-01-25    R$ 634.52  Liberação de dinheiro                                         [SKIP]
+
+140668502871         2026-01-23   R$ 349.60      R$ 0.00        R$ 349.60      timing_refund: released in Jan, refunded later (ml_status=refunded, ca_jobs net=0)
+  -> 2026-01-23    R$ 349.60  Liberação de dinheiro                                         [SKIP]
+
+140240998217         2026-01-20   R$ 272.42      R$ 0.00        R$ 272.42      dinheiro_retido(-R$ 541.69) + debito_divida_disputa(-R$ 458.65) + reembolso_disputa(R$ 189.38) + reembolso_disputa(R$ 541.69)
+  -> 2026-01-20    R$ 541.69  Liberação de dinheiro                                         [SKIP]
+  -> 2026-01-20   -R$ 541.69  Dinheiro retido Reclamações e devoluções                      [dinheiro_retido]
+  -> 2026-01-21   -R$ 458.65  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-21    R$ 189.38  Reembolso Envío cancelado a Manoel Jackson Dias Da Silva      [reembolso_disputa]
+  -> 2026-01-21    R$ 541.69  Reembolso Reclamações e devoluções                            [reembolso_disputa]
+
+142181590693         2026-01-26   R$ 230.87      R$ 0.00        R$ 230.87      timing_refund: released in Jan, refunded later (ml_status=refunded, ca_jobs net=0)
+  -> 2026-01-26    R$ 230.87  Liberação de dinheiro                                         [SKIP]
+
+141085645218         2026-01-17   R$ 97.47       R$ 0.00        R$ 97.47       timing_refund: released in Jan, refunded later (ml_status=refunded, ca_jobs net=0)
+  -> 2026-01-17     R$ 97.47  Liberação de dinheiro                                         [SKIP]
+
+140806214821         2026-01-22   R$ 93.95       R$ 0.00        R$ 93.95       timing_refund: released in Jan, refunded later (ml_status=refunded, ca_jobs net=0)
+  -> 2026-01-22     R$ 93.95  Liberação de dinheiro                                         [SKIP]
+
+141612723343         2026-01-25   R$ 91.92       R$ 180.86      -R$ 88.94      dinheiro_retido(-R$ 180.86) + dinheiro_retido(-R$ 120.90) + reembolso_generico(R$ 31.96) + reembolso_disputa(R$ 180.86)
+  -> 2026-01-25    R$ 180.86  Liberação de dinheiro                                         [SKIP]
+  -> 2026-01-25   -R$ 180.86  Dinheiro retido Reclamações e devoluções                      [dinheiro_retido]
+  -> 2026-01-27   -R$ 120.90  Débito por dívida/dinheiro retido                             [dinheiro_retido]
+  -> 2026-01-27     R$ 31.96  Reembolso Reembolso parcial de tarifas                        [reembolso_generico]
+  -> 2026-01-27    R$ 180.86  Reembolso Reclamações e devoluções                            [reembolso_disputa]
+
+137614895655         2026-01-21   -R$ 75.04      R$ 0.00        -R$ 75.04      dinheiro_retido(-R$ 297.06) + debito_envio_ml(-R$ 46.90) + debito_divida_disputa(-R$ 437.45) + reembolso_generico(R$ 112.25) + reembolso_disputa(R$ 297.06)
+  -> 2026-01-21    R$ 297.06  Liberação de dinheiro                                         [SKIP]
+  -> 2026-01-24   -R$ 297.06  Dinheiro retido Reclamações e devoluções                      [dinheiro_retido]
+  -> 2026-01-28    -R$ 46.90  Débito por dívida Envio do Mercado Livre                      [debito_envio_ml]
+  -> 2026-01-28   -R$ 437.45  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-28    R$ 112.25  Reembolso Reembolso de tarifas                                [reembolso_generico]
+  -> 2026-01-28    R$ 297.06  Reembolso Reclamações e devoluções                            [reembolso_disputa]
+
+141527595509         2026-01-29   -R$ 70.35      R$ 0.00        -R$ 70.35      debito_envio_ml(-R$ 46.90) + debito_divida_disputa(-R$ 273.90) + deposito_avulso(R$ 203.89) + entrada_dinheiro(R$ 46.56)
+  -> 2026-01-29    -R$ 46.90  Débito por dívida Envio do Mercado Livre                      [debito_envio_ml]
+  -> 2026-01-29   -R$ 273.90  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-29    R$ 203.89  Dinheiro recebido                                             [deposito_avulso]
+  -> 2026-01-29     R$ 46.56  Entrada de dinheiro                                           [entrada_dinheiro]
+
+140778735616         2026-01-17   -R$ 67.35      R$ 0.00        -R$ 67.35      dinheiro_retido(-R$ 151.57) + debito_divida_disputa(-R$ 209.66) + entrada_dinheiro(R$ 35.64) + reembolso_disputa(R$ 151.57) + debito_envio_ml(-R$ 44.90)
+  -> 2026-01-17    R$ 151.57  Liberação de dinheiro                                         [SKIP]
+  -> 2026-01-19   -R$ 151.57  Dinheiro retido Reclamações e devoluções                      [dinheiro_retido]
+  -> 2026-01-23   -R$ 209.66  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-23     R$ 35.64  Entrada de dinheiro                                           [entrada_dinheiro]
+  -> 2026-01-23    R$ 151.57  Reembolso Reclamações e devoluções                            [reembolso_disputa]
+  -> 2026-01-24    -R$ 44.90  Débito por dívida Envio do Mercado Livre                      [debito_envio_ml]
+
+141508375497         2026-01-27   -R$ 65.66      R$ 0.00        -R$ 65.66      dinheiro_retido(-R$ 89.39) + debito_envio_ml(-R$ 46.90) + debito_divida_disputa(-R$ 122.90) + entrada_dinheiro(R$ 14.75) + reembolso_disputa(R$ 89.39)
+  -> 2026-01-27     R$ 89.39  Liberação de dinheiro                                         [SKIP]
+  -> 2026-01-27    -R$ 89.39  Dinheiro retido Reclamações e devoluções                      [dinheiro_retido]
+  -> 2026-01-30    -R$ 46.90  Débito por dívida Envio do Mercado Livre                      [debito_envio_ml]
+  -> 2026-01-30   -R$ 122.90  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-30     R$ 14.75  Entrada de dinheiro                                           [entrada_dinheiro]
+  -> 2026-01-30     R$ 89.39  Reembolso Reclamações e devoluções                            [reembolso_disputa]
+
+142038148246         2026-01-22   -R$ 60.06      R$ 0.00        -R$ 60.06      debito_divida_disputa(-R$ 136.90) + entrada_dinheiro(R$ 16.43) + debito_envio_ml(-R$ 42.90)
+  -> 2026-01-22   -R$ 136.90  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-22     R$ 16.43  Entrada de dinheiro                                           [entrada_dinheiro]
+  -> 2026-01-22    R$ 103.31  Pagamento com Código QR Pix GELOMEC AR CONDICIONADO AUTOMOTI  [SKIP]
+  -> 2026-01-24    -R$ 42.90  Débito por dívida Envio do Mercado Livre                      [debito_envio_ml]
+
+140241282353         2026-01-16   -R$ 53.86      R$ 0.00        -R$ 53.86      dinheiro_retido(-R$ 82.62) + debito_divida_disputa(-R$ 111.40) + entrada_dinheiro(R$ 14.82) + reembolso_disputa(R$ 82.62) + debito_envio_ml(-R$ 39.90)
+  -> 2026-01-16     R$ 82.62  Pagamento com Código QR Pix CLEBER ANTONIO SILVA SANTOS       [SKIP]
+  -> 2026-01-19    -R$ 82.62  Dinheiro retido Reclamações e devoluções                      [dinheiro_retido]
+  -> 2026-01-26   -R$ 111.40  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-26     R$ 14.82  Entrada de dinheiro                                           [entrada_dinheiro]
+  -> 2026-01-26     R$ 82.62  Reembolso Reclamações e devoluções                            [reembolso_disputa]
+  -> 2026-01-27    -R$ 39.90  Débito por dívida Envio do Mercado Livre                      [debito_envio_ml]
+
+141693604662         2026-01-23   -R$ 39.90      R$ 0.00        -R$ 39.90      dinheiro_retido(-R$ 77.26) + debito_envio_ml(-R$ 39.90)
+  -> 2026-01-23     R$ 77.26  Liberação de dinheiro                                         [SKIP]
+  -> 2026-01-23    -R$ 77.26  Dinheiro retido Reclamações e devoluções                      [dinheiro_retido]
+  -> 2026-01-26    -R$ 39.90  Débito por dívida Envio do Mercado Livre                      [debito_envio_ml]
+
+142651949400         2026-01-22   -R$ 28.40      R$ 0.00        -R$ 28.40      debito_divida_disputa(-R$ 39.99) + deposito_avulso(R$ 26.69) + entrada_dinheiro(R$ 13.30) + debito_envio_ml(-R$ 28.40)
+  -> 2026-01-22    -R$ 39.99  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-22     R$ 26.69  Dinheiro recebido                                             [deposito_avulso]
+  -> 2026-01-22     R$ 13.30  Entrada de dinheiro                                           [entrada_dinheiro]
+  -> 2026-01-22    -R$ 28.40  Débito por dívida Envio do Mercado Livre                      [debito_envio_ml]
+
+141215405790         2026-01-08   -R$ 569.25     -R$ 550.00     -R$ 19.25      mp_expenses diff (IOF or amount mismatch)
+  -> 2026-01-08   -R$ 569.25  Pagamento Claude.ai subscription                              [subscription]
+
+139562683028         2026-01-02   -R$ 13.96      R$ 0.00        -R$ 13.96      debito_divida_disputa(-R$ 109.90) + entrada_dinheiro(R$ 13.19)
+  -> 2026-01-02   -R$ 109.90  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-02     R$ 82.75  Pagamento com Código QR Pix MAYCON DOUGLAS MAMEDE DOS SANTOS  [SKIP]
+  -> 2026-01-02     R$ 13.19  Entrada de dinheiro                                           [entrada_dinheiro]
+
+143324328284         2026-01-27   -R$ 8.98       R$ 0.00        -R$ 8.98       debito_divida_disputa(-R$ 566.53) + entrada_dinheiro(R$ 82.91) + debito_envio_ml(-R$ 88.90)
+  -> 2026-01-27   -R$ 566.53  Débito por dívida Reclamações no Mercado Livre                [debito_divida_disputa]
+  -> 2026-01-27    R$ 563.54  Liberação de dinheiro                                         [SKIP]
+  -> 2026-01-27     R$ 82.91  Entrada de dinheiro                                           [entrada_dinheiro]
+  -> 2026-01-28    -R$ 88.90  Débito por dívida Envio do Mercado Livre                      [debito_envio_ml]
+
+140496724089         2026-01-08   -R$ 169.03     -R$ 163.31     -R$ 5.72       mp_expenses diff (IOF or amount mismatch)
+  -> 2026-01-08   -R$ 169.03  Pagamento Supabase                                            [subscription]
+
+143199074090         2026-01-23   -R$ 131.94     -R$ 127.48     -R$ 4.46       mp_expenses diff (IOF or amount mismatch)
+  -> 2026-01-23   -R$ 131.94  Pagamento Notion labs, inc.                                   [subscription]
+
+
+--------------------------------------------------------------------------------
+MISSING DETAILS:
+--------------------------------------------------------------------------------
+
+  === Lines that extrato_ingester WOULD capture ===
+  ref_id               date         amount         would_classify_as
+  ------------------------------------------------------------------------------------------
+  141963223933         2026-01-19   -R$ 3,010.62   pagamento_cartao_credito(-R$ 3,010.62)
+    -> 2026-01-19 -R$ 3,010.62  Pagamento Cartão de crédito                              [pagamento_cartao_credito]
+  2775723042           2026-01-22   -R$ 612.97     faturas_ml(-R$ 612.97)
+    -> 2026-01-22   -R$ 612.97  Débito por dívida Faturas vencidas do Mercado Livre      [faturas_ml]
+  137820920749         2026-01-08   R$ 209.04      reembolso_disputa(R$ 209.04)
+    -> 2026-01-08    R$ 209.04  Reembolso Reclamações e devoluções                       [reembolso_disputa]
+  143610282146         2026-01-26   -R$ 102.75     dinheiro_retido(-R$ 102.75)
+    -> 2026-01-26   -R$ 102.75  Débito por dívida/dinheiro retido                        [dinheiro_retido]
+  142935080179         2026-01-26   -R$ 101.04     dinheiro_retido(-R$ 101.04)
+    -> 2026-01-26   -R$ 101.04  Débito por dívida/dinheiro retido                        [dinheiro_retido]
+  138209751237         2026-01-08   -R$ 91.87      dinheiro_retido(-R$ 77.91), debito_divida_disputa(-R$ 104.40), entrada_dinheiro(R$ 12.53), reembolso_disputa(R$ 77.91)
+    -> 2026-01-08    -R$ 77.91  Dinheiro retido Reclamações e devoluções                 [dinheiro_retido]
+    -> 2026-01-14   -R$ 104.40  Débito por dívida Reclamações no Mercado Livre           [debito_divida_disputa]
+    -> 2026-01-14     R$ 12.53  Entrada de dinheiro                                      [entrada_dinheiro]
+    -> 2026-01-14     R$ 77.91  Reembolso Reclamações e devoluções                       [reembolso_disputa]
+  138913863776         2026-01-02   -R$ 88.57      dinheiro_retido(-R$ 88.57), debito_divida_disputa(-R$ 117.70), reembolso_generico(R$ 29.13), reembolso_disputa(R$ 88.57)
+    -> 2026-01-02    -R$ 88.57  Dinheiro retido Reclamações e devoluções                 [dinheiro_retido]
+    -> 2026-01-16   -R$ 117.70  Débito por dívida Reclamações no Mercado Livre           [debito_divida_disputa]
+    -> 2026-01-16     R$ 29.13  Reembolso                                                [reembolso_generico]
+    -> 2026-01-16     R$ 88.57  Reembolso Reclamações e devoluções                       [reembolso_disputa]
+  142933941713         2026-01-26   -R$ 70.79      dinheiro_retido(-R$ 70.79)
+    -> 2026-01-26    -R$ 70.79  Débito por dívida/dinheiro retido                        [dinheiro_retido]
+  2778152634           2026-01-22   -R$ 46.24      difal(-R$ 46.24)
+    -> 2026-01-22    -R$ 46.24  Débito por dívida Diferença da aliquota (DIFAL)          [difal]
+  137617703230         2026-01-10   -R$ 28.14      debito_divida_disputa(-R$ 631.65), entrada_dinheiro(R$ 75.80), reembolso_disputa(R$ 527.71)
+    -> 2026-01-10   -R$ 631.65  Débito por dívida Reclamações no Mercado Livre           [debito_divida_disputa]
+    -> 2026-01-10     R$ 75.80  Entrada de dinheiro                                      [entrada_dinheiro]
+    -> 2026-01-10    R$ 527.71  Reembolso Reclamações e devoluções                       [reembolso_disputa]
+  2728587235           2026-01-14   -R$ 20.36      difal(-R$ 20.36)
+    -> 2026-01-14    -R$ 20.36  Débito por dívida Diferença da aliquota (DIFAL)          [difal]
+  2775052514           2026-01-21   -R$ 11.04      difal(-R$ 11.04)
+    -> 2026-01-21    -R$ 11.04  Débito por dívida Diferença da aliquota (DIFAL)          [difal]
+
+  Ingester would capture: -R$ 3,975.35
+
+  === Lines classified as SKIP but not in system ===
+  ref_id               date         amount         tx_type
+  ------------------------------------------------------------------------------------------
+  141183074293         2026-01-26   R$ 861.77      Liberação de dinheiro
+    -> 2026-01-26    R$ 861.77  Liberação de dinheiro
+  142339588114         2026-01-26   R$ 781.00      Pagamento com Código QR Pix PEDRO DUARTE
+    -> 2026-01-26    R$ 781.00  Pagamento com Código QR Pix PEDRO DUARTE CAMARGO BARROS
+  141043812466         2026-01-26   R$ 734.76      Liberação de dinheiro
+    -> 2026-01-26    R$ 734.76  Liberação de dinheiro
+  141385949804         2026-01-26   R$ 405.92      Liberação de dinheiro
+    -> 2026-01-26    R$ 405.92  Liberação de dinheiro
+  141996119325         2026-01-26   R$ 383.81      Liberação de dinheiro
+    -> 2026-01-26    R$ 383.81  Liberação de dinheiro
+  142110483725         2026-01-26   R$ 203.89      Pagamento com Código QR Pix NEXT CAR VEI
+    -> 2026-01-26    R$ 203.89  Pagamento com Código QR Pix NEXT CAR VEICULOS LTDA
+  141470360279         2026-01-26   R$ 102.75      Liberação de dinheiro
+    -> 2026-01-26    R$ 102.75  Liberação de dinheiro
+  142292552528         2026-01-26   R$ 88.74       Liberação de dinheiro
+    -> 2026-01-26     R$ 88.74  Liberação de dinheiro
+  142406081170         2026-01-26   R$ 75.94       Pagamento com Código QR Pix FRANCLIN FER
+    -> 2026-01-26     R$ 75.94  Pagamento com Código QR Pix FRANCLIN FERREIRA
+  143608784484         2026-01-26   R$ 70.79       Pagamento com Código QR Pix EDUARDO HENR
+    -> 2026-01-26     R$ 70.79  Pagamento com Código QR Pix EDUARDO HENRIQUE ARAUJO DE GUSMA
+  141251658525         2026-01-26   R$ 63.68       Liberação de dinheiro
+    -> 2026-01-26     R$ 63.68  Liberação de dinheiro
+  141587118535         2026-01-26   R$ 63.68       Pagamento com Código QR Pix Ivandair Sch
+    -> 2026-01-26     R$ 63.68  Pagamento com Código QR Pix Ivandair Schweitzer
+  141359034751         2026-01-26   R$ 38.92       Liberação de dinheiro
+    -> 2026-01-26     R$ 38.92  Liberação de dinheiro
+  141922182246         2026-01-26   R$ 19.96       Liberação de dinheiro
+    -> 2026-01-26     R$ 19.96  Liberação de dinheiro
+
+  Skip-missing total: R$ 3,895.61
+  (These are lines the ingester skips because they SHOULD be in payments/expenses)
+  (They represent an ML API gap — the daily sync did not capture these payments)
+
+--------------------------------------------------------------------------------
+NET-ZERO CYCLES: 54 ref_ids (all balanced)
+--------------------------------------------------------------------------------
+  136565909343:
+        R$ 20.76 Liberação de dinheiro
+       -R$ 20.76 Dinheiro retido Reclamações e devoluções
+       -R$ 37.80 Débito por dívida Reclamações no Mercado Livre
+        R$ 17.04 Entrada de dinheiro
+        R$ 20.76 Reembolso Reclamações e devoluções
+  137943496999:
+      -R$ 797.70 Débito por dívida Reclamações no Mercado Livre
+       R$ 627.12 Liberação de dinheiro
+       R$ 170.58 Reembolso
+  138151129880:
+      -R$ 267.80 Débito por dívida Reclamações no Mercado Livre
+        R$ 57.88 Reembolso Envío cancelado a Tania Aparecida De Car
+       R$ 209.92 Reembolso Reclamações e devoluções
+  138801389025:
+        R$ 91.56 Liberação de dinheiro
+       -R$ 91.56 Dinheiro retido Reclamações e devoluções
+      -R$ 131.95 Débito por dívida Reclamações no Mercado Livre
+        R$ 40.39 Reembolso
+        R$ 91.56 Reembolso Reclamações e devoluções
+  139348906355:
+        R$ 87.87 Pagamento com Código QR Pix DELCIO ELY CRUZ VIANNA
+       -R$ 87.87 Dinheiro retido Reclamações e devoluções
+      -R$ 117.70 Débito por dívida Reclamações no Mercado Livre
+        R$ 29.83 Reembolso Envío cancelado a DELCIO ELY CRUZ VIANNA
+        R$ 87.87 Reembolso Reclamações e devoluções
+  139380061139:
+       R$ 219.49 Liberação de dinheiro
+      -R$ 219.49 Dinheiro retido Reclamações e devoluções
+  139749344683:
+    -R$ 4,850.00 Débito por dívida Reclamações no Mercado Livre
+     R$ 4,318.05 Liberação de dinheiro
+       R$ 531.95 Reembolso Envío cancelado a Lilian Barbosa Oliveir
+  139809851929:
+        R$ 41.45 Pagamento com Código QR Pix RENATO SOARES DOS SANT
+       -R$ 41.45 Dinheiro retido Reclamações e devoluções
+       -R$ 54.77 Débito por dívida Reclamações no Mercado Livre
+        R$ 13.32 Entrada de dinheiro
+        R$ 41.45 Reembolso Reclamações e devoluções
+  139930660133:
+      -R$ 454.47 Débito por dívida Reclamações no Mercado Livre
+       R$ 101.95 Reembolso Envío cancelado a Thiago Guimaraes Miran
+       R$ 352.52 Liberação de dinheiro
+  140087737157:
+      -R$ 333.86 Débito por dívida Reclamações no Mercado Livre
+       R$ 270.35 Liberação de dinheiro
+        R$ 63.51 Reembolso Envío cancelado a Valdemir Francisco Da 
+  ... and 44 more
+
+================================================================================
+TOTALS:
+================================================================================
+  Extrato net:                         -R$ 3,385.83
+  System matched (payments/ca_jobs):    R$ 102,535.22
+  System matched (mp_expenses):         -R$ 110,864.54
+  System matched (net-zero cycles):     R$ 0.00
+  Mismatch system-side total:           -R$ 659.93
+  ---
+  TOTAL GAP:                            R$ 5,603.42
+    = missing (-R$ 79.74) + mismatch diff (R$ 5,683.16)
+
+  GAP DECOMPOSITION:
+    [A] Missing (ingester can fix):       -R$ 3,975.35
+    [B] Mismatch (ingester can fix):      -R$ 300.08
+    [C] ML API gap (skip-missing):        R$ 3,895.61
+    [D] Timing: refund in system,
+        release-only in Jan extrato:      R$ 6,012.67
+    [E] IOF diff (subscriptions):         -R$ 29.43
+    [F] Cashback/subsidio diffs:          R$ 0.00
+    [G] Remaining small diffs:            R$ 0.00
+    ---
+    Sum of components:                    R$ 5,603.42
+    Gap:                                  R$ 5,603.42
+    Unexplained:                          R$ 0.00
+    Check (sum == gap?):                  YES
+
+  EXPLANATION OF EACH COMPONENT:
+    [A] Lines the extrato_ingester WILL create as mp_expenses
+        (DIFAL, faturas ML, cartao credito, dispute holds, etc.)
+    [B] Dispute/refund lines on existing payments that ingester
+        will capture (debito envio, dispute debits, reimbursements)
+    [C] Payments in extrato but NOT in ML API search results
+        (ML API bug — ingester smart-skip handles these via
+         liberacao_nao_sync / qr_pix_nao_sync)
+    [D] Payments released in January but refunded AFTER Jan 31.
+        System correctly has estorno (net=0) but extrato only
+        shows the release. Dispute/debit lines appear in Feb+.
+    [E] International subscription IOF (3.5%) not in API amount
+    [F] Minor cashback/rounding differences (<R$15 each)
+
+  AFTER ALL FIXES:
+    Fixable total:                        R$ 5,603.42
+    Gap after all fixes:                  R$ 0.00
+    Remaining = cashback diffs (R$ 0.00) + small diffs (R$ 0.00)
+
+RESULT: [NEAR-PASS] Gap of R$ 5,603.42 reduces to R$ 0.00 after fixes
+  Remaining items are rounding diffs and minor discrepancies
+
+--------------------------------------------------------------------------------
+GAP BREAKDOWN BY CATEGORY:
+--------------------------------------------------------------------------------
+  mismatch_timing_refund: released in Jan, refunded later (ml_status=refunded, ca_jobs net=0)   8 items     R$ 6,012.67  [140395321666, 140668502871, 140806214821, 141085645218, 141427378366 +3 more]
+  ml_api_gap                           14 items     R$ 3,895.61  [141043812466, 141183074293, 141251658525, 141359034751, 141385949804 +9 more]
+  pagamento_cartao_credito              1 items    -R$ 3,010.62  [141963223933]
+  faturas_ml                            1 items      -R$ 612.97  [2775723042]
+  dinheiro_retido                       5 items      -R$ 455.02  [138209751237, 138913863776, 142933941713, 142935080179, 143610282146]
+  mismatch_dispute_cycle               12 items      -R$ 300.08  [137614895655, 139562683028, 140240998217, 140241282353, 140778735616 +7 more]
+  reembolso_disputa                     1 items       R$ 209.04  [137820920749]
+  difal                                 3 items       -R$ 77.64  [2728587235, 2775052514, 2778152634]
+  mismatch_mp_expenses diff (IOF or amount mismatch)   3 items       -R$ 29.43  [140496724089, 141215405790, 143199074090]
+  debito_divida_disputa                 1 items       -R$ 28.14  [137617703230]
+
+================================================================================
+END OF REPORT
+================================================================================

@@ -22,6 +22,8 @@ O fluxo atual de despesas no Admin inclui export ZIP + backup Google Drive assin
 
 **Mecanismo de ingestao:** Daily sync automatico as 00:01 BRT (D-1 a D-3). Webhooks continuam recebendo e logando, mas NAO processam payments (daily sync cuida de tudo).
 
+**Arquitetura de dados (v2.0):** O estado de pagamentos vive exclusivamente na tabela `payment_events` (event ledger append-only). A tabela `payments` **nao e mais escrita** por nenhum servico. Status e derivado via `event_ledger.derive_payment_status(event_types)`: `ca_sync_failed` → error, `refund_created`/`charged_back` → refunded, `ca_sync_completed` → synced, `sale_approved` → queued. Erros de escrita levantam `EventRecordError` (nunca sao engolidos silenciosamente). Toda leitura passa por `event_ledger.py`.
+
 **Funcionalidades adicionais:**
 - Dashboard de faturamento (React SPA)
 - Sync periodico de faturamento
@@ -158,7 +160,8 @@ lever money/
 │   │   ├── queue.py             # Queue monitoring + reconciliation
 │   │   └── health.py            # Health check + debug endpoints
 │   ├── services/
-│   │   ├── processor.py         # CORE: ML payment → CA events
+│   │   ├── processor.py         # CORE: ML payment → CA events (via event_ledger)
+│   │   ├── event_ledger.py      # SOURCE OF TRUTH: append-only payment_events log
 │   │   ├── ca_api.py            # CA HTTP client (retry, rate limit, token rotation)
 │   │   ├── ml_api.py            # ML/MP HTTP client (per-seller tokens)
 │   │   ├── ca_queue.py          # Persistent job queue + CaWorker
@@ -186,7 +189,8 @@ lever money/
 ├── migrations/
 │   ├── 003_expenses_batches_sync_state.sql    # Expense batch tracking + sync_state
 │   ├── 004_onboarding_v2.sql                  # Onboarding V2 schema
-│   └── 005_expense_batches_gdrive_snapshot.sql # gdrive_* em expense_batches + snapshot_payload
+│   ├── 005_expense_batches_gdrive_snapshot.sql # gdrive_* em expense_batches + snapshot_payload
+│   └── 006_payment_events.sql                 # Event ledger table (append-only)
 ├── API_DOCUMENTATION.md         # Documentacao completa da API (endpoints detalhados)
 ├── PLANO.md                     # Plano do projeto v1.8
 ├── FLUXO-DETALHADO.md           # Fluxo detalhado v3.3
@@ -256,14 +260,15 @@ Daily Sync (00:01 BRT, D-1 a D-3) ou Backfill manual
     │
     ├─ search_payments() pagina todos payments do periodo
     │   (busca por date_approved + date_last_updated, deduplica por payment_id)
-    ├─ Filtra already_done (payments + mp_expenses)
+    ├─ Filtra already_done (payment_events + mp_expenses)
+    │   Status change detection via sale_approved event metadata (ml_status, status_detail)
     └─ Para cada payment:
            │
            ├─ Tem order_id? → process_payment_webhook(payment_data=payment)
            ├─ Sem order_id? → classify_non_order_payment() → mp_expenses
            ├─ Filtros order: skip se marketplace_shipment, collector_id (purchase)
            │
-           ├─ Seller sem config CA? → status = "pending_ca" (reprocessado quando seller migrar)
+           ├─ Seller sem config CA? → skip (reprocessado quando seller tiver config)
            │
            ├─ status = "approved" / "in_mediation"
            │   └─ _process_approved()
@@ -271,7 +276,7 @@ Daily Sync (00:01 BRT, D-1 a D-3) ou Backfill manual
            │       ├─ Extrai taxas de charges_details (source of truth)
            │       ├─ comissao = soma fee (from=collector, exclui financing_fee)
            │       ├─ frete_seller = max(0, soma shipping from=collector - shipping_amount)
-           │       ├─ Persiste processor_fee/processor_shipping em payments
+           │       ├─ Grava eventos: sale_approved, fee_charged, shipping_charged
            │       ├─ Enqueue: receita (contas-a-receber)
            │       ├─ Enqueue: comissao (contas-a-pagar) se > 0
            │       ├─ Enqueue: frete (contas-a-pagar) se > 0
@@ -281,12 +286,13 @@ Daily Sync (00:01 BRT, D-1 a D-3) ou Backfill manual
            │   └─ Trata como approved (ML cobriu o chargeback)
            │
            ├─ status = "refunded" + status_detail = "by_admin"
-           │   ├─ Se JA synced: _process_refunded() (webhook: estornar receita existente)
-           │   └─ Se NAO synced: SKIP (backfill: novos payments split cobrem a receita)
+           │   ├─ Se JA tem sale_approved: _process_refunded()
+           │   └─ Se NAO: SKIP (backfill: novos payments split cobrem a receita)
            │
            ├─ status = "refunded" / "charged_back"
            │   └─ _process_refunded()
-           │       ├─ Se nunca synced: cria receita+despesas primeiro
+           │       ├─ Se nunca processado: grava eventos de aprovacao primeiro
+           │       ├─ Grava eventos: refund_created, refund_fee, refund_shipping
            │       ├─ Enqueue: estorno receita (contas-a-pagar)
            │       └─ Enqueue: estorno taxa (contas-a-receber) se refund total
            │
@@ -325,7 +331,7 @@ Para detalhes especificos, consulte os docs abaixo:
 - **Logs**: `logging.getLogger(__name__)` em cada modulo
 - **Env vars**: via pydantic-settings (BaseSettings + .env)
 - **Sem ORMs**: queries diretas via Supabase SDK
-- **Testes**: simulacao com dados reais via `simulate_backfill.py` (ver `docs/TESTES.md`)
+- **Testes**: 366 testes pytest offline com dados reais (ver `docs/TESTES.md`). Rodar: `python3 -m pytest`
 
 ---
 
@@ -356,6 +362,8 @@ Para trabalhar no dashboard, consulte esse arquivo. Resumo:
 - [ ] Novos endpoints respeitam rate_limiter?
 - [ ] Jobs CA usam idempotency_key unica?
 - [ ] CA API responses tratam o formato async (protocolo)?
+- [ ] Estado de pagamentos lido de `payment_events` (NUNCA de `payments`)?
+- [ ] Novos eventos usam `event_ledger.record_event()` com signed_amount correto?
 
 ---
 
@@ -370,6 +378,8 @@ Para trabalhar no dashboard, consulte esse arquivo. Resumo:
 - Fazer refresh de token CA sem asyncio.Lock
 - Processar payments com `description == "marketplace_shipment"`
 - Assumir que CA API retorna `id` (retorna `protocolo`)
+- Ler ou escrever na tabela `payments` (usar `payment_events` via `event_ledger`)
+- Chamar `_upsert_payment()` (funcao removida na v2.0)
 
 **SEMPRE:**
 - Usar `charges_details` para breakdown de taxas
@@ -377,6 +387,8 @@ Para trabalhar no dashboard, consulte esse arquivo. Resumo:
 - Usar `account_statement` (`release_report`/`bank_report`) para comparativo de caixa diario
 - Enfileirar via `ca_queue.enqueue_*()` em vez de chamar CA API diretamente
 - Verificar `money_release_status` antes de dar baixa
-- Manter idempotencia via `_upsert_payment()` e `idempotency_key`
+- Gravar eventos via `event_ledger.record_event()` (idempotencia via ON CONFLICT DO NOTHING). Tratar `EventRecordError` no caller
+- Ler estado de pagamentos via `event_ledger` helpers (NUNCA da tabela `payments`)
+- Derivar status de pagamento via `event_ledger.derive_payment_status()` (NUNCA reimplementar localmente)
 - Logar em ingles com payment_id/seller_slug para rastreabilidade
-- Rodar `simulate_backfill.py` antes de processar novo seller ou apos alterar processor.py
+- Rodar `python3 -m pytest` antes de alterar processor.py ou event_ledger.py

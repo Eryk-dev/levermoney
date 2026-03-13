@@ -30,6 +30,24 @@ processor_fee (numeric), processor_shipping (numeric), fee_adjusted (bool),
 created_at, updated_at
 ```
 
+### payment_events
+Event ledger — append-only log de eventos financeiros por payment.
+```
+id (PK bigserial), seller_slug (FK sellers), ml_payment_id, ml_order_id,
+event_type (sale_approved|fee_charged|shipping_charged|subsidy_credited|
+  refund_created|refund_fee|refund_shipping|partial_refund|
+  ca_sync_completed|ca_sync_failed|money_released|mediation_opened|
+  charged_back|reimbursed),
+signed_amount (numeric 12,2), competencia_date (date), event_date (date),
+created_at (timestamptz), source, idempotency_key (unique), metadata (jsonb)
+
+Indexes:
+  idx_pe_seller_payment: (seller_slug, ml_payment_id)
+  idx_pe_seller_comp: (seller_slug, competencia_date)
+  idx_pe_seller_event: (seller_slug, event_date)
+  idx_pe_type: (event_type)
+```
+
 ### ca_jobs
 Fila persistente de jobs para CA API.
 ```

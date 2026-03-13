@@ -1,0 +1,18 @@
+[project]
+name = "levermoney"
+version = "1.1.0"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["testes"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "integration: tests that require Supabase connection (deselect with '-m \"not integration\"')",
+]
+# Default: run only offline (unit) tests
+addopts = "-m 'not integration' -v --tb=short"
+
+# Standalone scripts excluded via conftest.py:collect_ignore_glob
+# (pyproject.toml does not support collect_ignore_glob in this pytest version)

@@ -79,7 +79,12 @@ try:
         _normalize_text,
         _build_expense_from_extrato,
         _EXPENSE_TYPE_ABBREV,
+        _CHECK_PAYMENTS,
+        _CHECK_PAYMENTS_FALLBACK,
+        _resolve_check_payments,
         EXTRATO_CLASSIFICATION_RULES,
+        _update_expense_amount_from_extrato,
+        _fuzzy_match_expense,
     )
     _IMPORT_OK = True
 except ImportError as _e:
@@ -176,22 +181,26 @@ def test_classification_rules() -> None:
         return
 
     # (raw_tx_type,                                     expected_expense_type, expected_direction)
-    # None expense_type means the line should be SKIPPED (already covered)
+    # None expense_type means the line should be UNCONDITIONALLY SKIPPED.
+    # "_check_payments" means CONDITIONALLY SKIPPED: skip if ref_id is in payments table,
+    #   otherwise ingest as fallback type (resolved at runtime).
+    _CP = "_check_payments"
     cases = [
-        # SKIPS — covered by processor or mp_expenses via API
-        ("Liberação de dinheiro ",                         None,                    None),
-        ("Liberacao de dinheiro ",                         None,                    None),
+        # CONDITIONAL SKIPS — check payments table before skip/ingest decision
+        ("Liberação de dinheiro ",                         _CP,                     "income"),
+        ("Liberacao de dinheiro ",                         _CP,                     "income"),
+        ("Pagamento com Código QR Pix DAVID JHONY",       _CP,                     "income"),
+        ("Dinheiro recebido ",                             _CP,                     "income"),
+        # UNCONDITIONAL SKIPS — truly internal transfers
         ("Transferência Pix enviada JOAO SILVA",           None,                    None),
         ("Pix enviado",                                    None,                    None),
         ("Pagamento de conta Itaú Unibanco S.A.",          None,                    None),
-        ("Pagamento com Código QR Pix DAVID JHONY",        None,                    None),
         # INCOME
         ("Reembolso Reclamações e devoluções",             "reembolso_disputa",     "income"),
         ("Reembolso Envio cancelado a Joao",               "reembolso_disputa",     "income"),
         ("Reembolso de tarifas cobradas",                  "reembolso_generico",    "income"),
         ("Reembolso ",                                     "reembolso_generico",    "income"),
         ("Entrada de dinheiro ",                           "entrada_dinheiro",      "income"),
-        ("Dinheiro recebido ",                             "deposito_avulso",       "income"),
         ("Bônus por Envio",                                "bonus_envio",           "income"),
         # EXPENSES
         ("Dinheiro retido Reclamações e devoluções",       "dinheiro_retido",       "expense"),
@@ -202,6 +211,9 @@ def test_classification_rules() -> None:
         ("Reclamações no Mercado Livre",                   "debito_divida_disputa", "expense"),
         ("Reclamacoes no Mercado Livre",                   "debito_divida_disputa", "expense"),
         ("Troca de produto",                               "debito_troca",          "expense"),
+        # CREDIT CARD — was previously skipped (bug), now captured as expense
+        ("Pagamento cartão de crédito",                    "pagamento_cartao_credito", "expense"),
+        ("Pagamento cartao de credito",                    "pagamento_cartao_credito", "expense"),
         # LIBERACAO CANCELADA — special: is an expense even though name has "liberacao"
         ("Liberação de dinheiro cancelada",                "liberacao_cancelada",   "expense"),
     ]
@@ -231,16 +243,15 @@ def test_skip_rules() -> None:
     if not _require_import(name):
         return
 
+    # Only unconditional skips (None, None, None) — patterns that are
+    # _check_payments are NOT included here as they return a non-None type.
     skip_patterns = [
-        "Liberação de dinheiro ",
         "Transferência Pix enviada EMPRESA XYZ",
         "Pix enviado para 12345",
         "Pagamento de conta BRADESCO",
-        "Pagamento com QR Code",
         "Compra Mercado Libre produto ABC",
         "Transferencia enviada",
         "Transferência de saldo",
-        "Pagamento cartão de crédito",
     ]
 
     failures = []
@@ -303,10 +314,14 @@ def test_composite_key_for_all_expense_types() -> None:
         return
 
     # Collect all expense_types produced by EXTRATO_CLASSIFICATION_RULES
+    # Exclude _check_payments sentinel — it resolves to fallback types at runtime
     classified_types = set()
     for _pattern, expense_type, _direction, _cat in EXTRATO_CLASSIFICATION_RULES:
-        if expense_type is not None:
+        if expense_type is not None and expense_type != "_check_payments":
             classified_types.add(expense_type)
+    # Also check that fallback types have abbreviations
+    for fallback_type, _fallback_dir in _CHECK_PAYMENTS_FALLBACK.values():
+        classified_types.add(fallback_type)
 
     missing_abbrev = classified_types - set(_EXPENSE_TYPE_ABBREV.keys())
     if missing_abbrev:
@@ -789,10 +804,14 @@ def test_description_templates() -> None:
     from app.services.extrato_ingester import _DESCRIPTION_TEMPLATES
 
     # Collect all non-None expense_types from the rules
+    # Exclude _check_payments sentinel — it resolves to fallback types at runtime
     classified_types = set()
     for _pattern, expense_type, _direction, _cat in EXTRATO_CLASSIFICATION_RULES:
-        if expense_type is not None:
+        if expense_type is not None and expense_type != "_check_payments":
             classified_types.add(expense_type)
+    # Also check that fallback types have templates
+    for fallback_type, _fallback_dir in _CHECK_PAYMENTS_FALLBACK.values():
+        classified_types.add(fallback_type)
 
     failures = []
     for et in sorted(classified_types):
@@ -862,6 +881,434 @@ def test_operation_type_prefix() -> None:
         _pass(name, f"all {len(test_cases)} operation_type prefixes correct")
 
 
+# ── 11. IOF amount correction logic ──────────────────────────────────────────
+
+
+def test_iof_amount_detection() -> None:
+    """Verify that the IOF amount difference detection works for known
+    international subscription cases. The extrato (source of truth) includes
+    IOF while the API does not."""
+    name = "iof_amount_detection"
+    if not _require_import(name):
+        return
+
+    # Known IOF cases from gap analysis (141Air January 2026)
+    iof_cases = [
+        # (service,   api_amount, extrato_amount, expected_iof)
+        ("Supabase",  163.31,     169.03,         5.72),
+        ("Claude.ai", 550.00,     569.25,         19.25),
+        ("Notion",    127.48,     131.94,         4.46),
+    ]
+
+    failures = []
+    for service, api_amt, extrato_amt, expected_iof in iof_cases:
+        diff = extrato_amt - api_amt
+        # The IOF difference should be positive (extrato > API)
+        if diff < 0:
+            failures.append(f"{service}: extrato ({extrato_amt}) < API ({api_amt})")
+            continue
+        # Verify the difference matches expected IOF
+        if abs(diff - expected_iof) > 0.01:
+            failures.append(
+                f"{service}: IOF diff {diff:.2f} != expected {expected_iof:.2f}"
+            )
+        # Verify amounts differ by >= 0.01 (threshold used in the code)
+        if abs(api_amt - extrato_amt) < 0.01:
+            failures.append(f"{service}: amounts too close, would NOT trigger update")
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(name, f"all {len(iof_cases)} IOF cases correctly detected as amount differences")
+
+
+def test_subscription_classified_for_iof_update() -> None:
+    """Verify that subscription payment descriptions from the extrato are
+    classified as 'subscription' type, which allows the IOF update path to
+    trigger when the ref_id is found in mp_expenses."""
+    name = "subscription_classified_for_iof_update"
+    if not _require_import(name):
+        return
+
+    subscription_tx_types = [
+        "Pagamento Supabase",
+        "Pagamento Claude.ai subscription",
+        "Pagamento Notion",
+        "Pagamento SomeOtherSaaS",
+    ]
+
+    failures = []
+    for tx_type in subscription_tx_types:
+        et, direction, _cat = _classify_extrato_line(tx_type)
+        if et != "subscription":
+            failures.append(
+                f"{tx_type!r}: expected 'subscription', got {et!r}"
+            )
+        if direction != "expense":
+            failures.append(
+                f"{tx_type!r}: expected direction='expense', got {direction!r}"
+            )
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(name, f"all {len(subscription_tx_types)} subscription types correctly classified")
+
+
+# ── 12. Fuzzy match for faturas ML / different IDs ───────────────────────────
+
+
+def test_faturas_ml_classification() -> None:
+    """Verify that 'Faturas vencidas' from the extrato are classified as
+    'faturas_ml' expense type, enabling the fuzzy match path."""
+    name = "faturas_ml_classification"
+    if not _require_import(name):
+        return
+
+    faturas_tx_types = [
+        "Débito por dívida Faturas vencidas do Mercado Livre",
+        "Debito por divida Faturas vencidas do ML",
+        "Faturas vencidas 2026",
+    ]
+
+    failures = []
+    for tx_type in faturas_tx_types:
+        et, direction, cat = _classify_extrato_line(tx_type)
+        if et != "faturas_ml":
+            failures.append(f"{tx_type!r}: expected 'faturas_ml', got {et!r}")
+        if direction != "expense":
+            failures.append(f"{tx_type!r}: expected direction='expense', got {direction!r}")
+        if cat is None:
+            failures.append(f"{tx_type!r}: expected non-None ca_category")
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(name, f"all {len(faturas_tx_types)} faturas types correctly classified")
+
+
+def test_difal_short_ids_classification() -> None:
+    """Verify that DIFAL lines with short internal ML IDs (27xxxxx) are correctly
+    classified and would get composite keys that don't collide with payment IDs."""
+    name = "difal_short_ids_classification"
+    if not _require_import(name):
+        return
+
+    difal_tx_types = [
+        ("Débito por dívida Diferença da aliquota (DIFAL)", "2728587235"),
+        ("Débito por dívida Diferença da aliquota (DIFAL)", "2775052514"),
+        ("Débito por dívida Diferença da aliquota (DIFAL)", "2778152634"),
+    ]
+
+    failures = []
+    composite_keys = set()
+
+    for tx_type, ref_id in difal_tx_types:
+        et, direction, cat = _classify_extrato_line(tx_type)
+        if et != "difal":
+            failures.append(f"ref={ref_id}: expected 'difal', got {et!r}")
+            continue
+
+        abbrev = _EXPENSE_TYPE_ABBREV.get(et, "xx")
+        key = f"{ref_id}:{abbrev}"
+        composite_keys.add(key)
+
+        if cat is None:
+            failures.append(f"ref={ref_id}: expected non-None ca_category for DIFAL")
+
+    # All keys must be distinct
+    if len(composite_keys) != len(difal_tx_types):
+        failures.append(f"composite keys not distinct: {composite_keys}")
+
+    # Keys should use :df suffix
+    for key in composite_keys:
+        if not key.endswith(":df"):
+            failures.append(f"DIFAL key {key!r} should end with ':df'")
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(name, f"all {len(difal_tx_types)} DIFAL lines correctly classified with distinct :df keys")
+
+
+# ── 13. _CHECK_PAYMENTS conditional skip ────────────────────────────────────
+
+
+def test_check_payments_conditional_skip() -> None:
+    """Verify that _CHECK_PAYMENTS lines have fallback types defined and that
+    the fallback types have abbreviations and description templates."""
+    name = "check_payments_conditional_skip"
+    if not _require_import(name):
+        return
+
+    from app.services.extrato_ingester import (
+        _DESCRIPTION_TEMPLATES,
+        _resolve_check_payments,
+    )
+
+    # All _CHECK_PAYMENTS patterns should have fallback entries
+    check_patterns = [
+        "Liberação de dinheiro ",
+        "Pagamento com Código QR Pix",
+        "Dinheiro recebido ",
+    ]
+
+    failures = []
+    for tx_type in check_patterns:
+        try:
+            fallback_type, fallback_dir = _resolve_check_payments(tx_type)
+        except Exception as exc:
+            failures.append(f"{tx_type!r}: _resolve_check_payments raised {exc}")
+            continue
+
+        if fallback_type == "other":
+            failures.append(f"{tx_type!r}: resolved to 'other' (no fallback)")
+            continue
+
+        # Check abbreviation exists
+        if fallback_type not in _EXPENSE_TYPE_ABBREV:
+            failures.append(f"{tx_type!r}: fallback {fallback_type!r} missing abbreviation")
+
+        # Check description template exists
+        if fallback_type not in _DESCRIPTION_TEMPLATES:
+            failures.append(f"{tx_type!r}: fallback {fallback_type!r} missing description template")
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(name, f"all {len(check_patterns)} _CHECK_PAYMENTS patterns have valid fallbacks")
+
+
+# ── 14. Smart skip comprehensive tests ───────────────────────────────────────
+
+
+def test_check_payments_vs_unconditional_skip_distinction() -> None:
+    """Verify that lines previously unconditionally skipped are now split
+    correctly: some become _CHECK_PAYMENTS (conditional), others remain
+    unconditional (None, None, None)."""
+    name = "check_payments_vs_unconditional_distinction"
+    if not _require_import(name):
+        return
+
+    # _CHECK_PAYMENTS: these need the payments-table check
+    conditional = [
+        ("Liberação de dinheiro ",              _CHECK_PAYMENTS),
+        ("Pagamento com QR Code Pix",           _CHECK_PAYMENTS),
+        ("Dinheiro recebido ",                  _CHECK_PAYMENTS),
+    ]
+    # Unconditional skips: truly internal
+    unconditional = [
+        ("Transferência Pix enviada EMPRESA",   None),
+        ("Pix enviado para 12345",              None),
+        ("Pagamento de conta BRADESCO",         None),
+        ("Transferencia de saldo",              None),
+        ("Compra Mercado Libre produto",        None),
+        ("Compra de Adaptador XYZ",             None),
+    ]
+
+    failures = []
+    for tx_type, expected_type in conditional:
+        got_type, _, _ = _classify_extrato_line(tx_type)
+        if got_type != expected_type:
+            failures.append(
+                f"CONDITIONAL {tx_type!r}: expected {expected_type!r}, got {got_type!r}"
+            )
+
+    for tx_type, expected_type in unconditional:
+        got_type, _, _ = _classify_extrato_line(tx_type)
+        if got_type != expected_type:
+            failures.append(
+                f"UNCONDITIONAL {tx_type!r}: expected {expected_type!r}, got {got_type!r}"
+            )
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(
+            name,
+            f"{len(conditional)} conditional + {len(unconditional)} unconditional "
+            "correctly distinguished",
+        )
+
+
+def test_resolve_check_payments_all_fallbacks() -> None:
+    """Verify that _resolve_check_payments resolves all _CHECK_PAYMENTS
+    patterns to the correct fallback types with correct directions."""
+    name = "resolve_check_payments_all_fallbacks"
+    if not _require_import(name):
+        return
+
+    cases = [
+        # (tx_type, expected_fallback_type, expected_direction)
+        ("Liberação de dinheiro ",          "liberacao_nao_sync",  "income"),
+        ("Liberacao de dinheiro ",          "liberacao_nao_sync",  "income"),
+        ("Pagamento com Código QR Pix",     "qr_pix_nao_sync",    "income"),
+        ("Pagamento com QR Code Pix",       "qr_pix_nao_sync",    "income"),
+        ("Dinheiro recebido ",              "dinheiro_recebido",   "income"),
+        ("Dinheiro recebido de JOAO",       "dinheiro_recebido",   "income"),
+    ]
+
+    failures = []
+    for tx_type, expected_type, expected_dir in cases:
+        got_type, got_dir = _resolve_check_payments(tx_type)
+        if got_type != expected_type:
+            failures.append(
+                f"{tx_type!r}: expected type={expected_type!r}, got={got_type!r}"
+            )
+        if got_dir != expected_dir:
+            failures.append(
+                f"{tx_type!r}: expected dir={expected_dir!r}, got={got_dir!r}"
+            )
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(name, f"all {len(cases)} fallback resolutions correct")
+
+
+def test_new_expense_types_abbreviations_unique() -> None:
+    """Verify that all abbreviations in _EXPENSE_TYPE_ABBREV are unique
+    (no two expense_types share the same abbreviation)."""
+    name = "new_expense_types_abbreviations_unique"
+    if not _require_import(name):
+        return
+
+    seen: dict[str, str] = {}
+    failures = []
+    for etype, abbrev in _EXPENSE_TYPE_ABBREV.items():
+        if abbrev in seen:
+            failures.append(
+                f"duplicate abbreviation {abbrev!r}: {seen[abbrev]!r} and {etype!r}"
+            )
+        seen[abbrev] = etype
+
+    new_types = ["liberacao_nao_sync", "qr_pix_nao_sync", "dinheiro_recebido"]
+    for nt in new_types:
+        if nt not in _EXPENSE_TYPE_ABBREV:
+            failures.append(f"new type {nt!r} missing from _EXPENSE_TYPE_ABBREV")
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(
+            name,
+            f"all {len(_EXPENSE_TYPE_ABBREV)} abbreviations unique, "
+            f"3 new types present",
+        )
+
+
+def test_debito_envio_ml_ingested_with_payment_match() -> None:
+    """Verify that debito_envio_ml is classified correctly. In the processing
+    loop, it should be in the 'always ingest' set so it gets captured even when
+    the same ref_id exists in the payments table (it's a separate charge)."""
+    name = "debito_envio_ml_with_payment_match"
+    if not _require_import(name):
+        return
+
+    test_lines = [
+        "Débito por dívida Envio do Mercado Livre",
+        "Debito por divida Envio do Mercado Livre retroativo",
+    ]
+
+    failures = []
+    for tx_type in test_lines:
+        et, direction, _cat = _classify_extrato_line(tx_type)
+        if et != "debito_envio_ml":
+            failures.append(f"{tx_type!r}: expected debito_envio_ml, got {et!r}")
+        if direction != "expense":
+            failures.append(f"{tx_type!r}: expected expense, got {direction!r}")
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(name, f"all {len(test_lines)} envio ML debt patterns classified correctly")
+
+
+def test_bonus_envio_classification_including_bonificacao() -> None:
+    """Verify that 'bonificacao' pattern also matches as bonus_envio."""
+    name = "bonus_envio_including_bonificacao"
+    if not _require_import(name):
+        return
+
+    cases = [
+        "Bônus por Envio",
+        "Bonus por envio",
+        "Bonificacao de envio",
+        "Bonificação especial",
+    ]
+
+    failures = []
+    for tx_type in cases:
+        et, direction, _cat = _classify_extrato_line(tx_type)
+        if et != "bonus_envio":
+            failures.append(f"{tx_type!r}: expected bonus_envio, got {et!r}")
+        if direction != "income":
+            failures.append(f"{tx_type!r}: expected income, got {direction!r}")
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(name, f"all {len(cases)} bonus/bonificacao patterns classify as bonus_envio")
+
+
+def test_build_expense_row_for_new_types() -> None:
+    """Verify that _build_expense_from_extrato produces correct rows for the
+    new expense types (liberacao_nao_sync, qr_pix_nao_sync, dinheiro_recebido)."""
+    name = "build_expense_row_new_types"
+    if not _require_import(name):
+        return
+
+    new_types = [
+        ("liberacao_nao_sync",  "income", "ln"),
+        ("qr_pix_nao_sync",    "income", "qn"),
+        ("dinheiro_recebido",   "income", "dc"),
+    ]
+
+    failures = []
+    for expense_type, direction, abbrev in new_types:
+        tx = {
+            "date": "2026-01-26",
+            "transaction_type": f"Test {expense_type}",
+            "reference_id": "141043812466",
+            "amount": 734.76,
+            "balance": 0.0,
+        }
+        ref_id = tx["reference_id"]
+        payment_id_key = f"{ref_id}:{abbrev}"
+
+        row = _build_expense_from_extrato(
+            tx=tx,
+            seller_slug="141air",
+            expense_type=expense_type,
+            direction=direction,
+            ca_category_uuid=None,
+            payment_id_key=payment_id_key,
+        )
+
+        # Verify key fields
+        if row["expense_type"] != expense_type:
+            failures.append(f"{expense_type}: wrong expense_type={row['expense_type']!r}")
+        if row["expense_direction"] != direction:
+            failures.append(f"{expense_type}: wrong direction={row['expense_direction']!r}")
+        if row["payment_id"] != payment_id_key:
+            failures.append(f"{expense_type}: wrong payment_id={row['payment_id']!r}")
+        if row["status"] != "pending_review":
+            failures.append(f"{expense_type}: expected pending_review, got {row['status']!r}")
+        if row["ca_category"] is not None:
+            failures.append(f"{expense_type}: ca_category should be None")
+        if row["auto_categorized"] is not False:
+            failures.append(f"{expense_type}: auto_categorized should be False")
+        if row["source"] != "extrato":
+            failures.append(f"{expense_type}: source should be 'extrato'")
+        if abs(row["amount"] - 734.76) > 0.01:
+            failures.append(f"{expense_type}: amount should be 734.76, got {row['amount']}")
+
+    if failures:
+        _fail(name, "; ".join(failures))
+    else:
+        _pass(name, f"all {len(new_types)} new types produce correct mp_expenses rows")
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 
@@ -907,6 +1354,29 @@ def main() -> None:
     test_build_expense_row_pending_review()
     test_description_templates()
     test_operation_type_prefix()
+
+    print()
+    print("--- IOF Amount Correction ---")
+    test_iof_amount_detection()
+    test_subscription_classified_for_iof_update()
+
+    print()
+    print("--- Fuzzy Match / Different IDs ---")
+    test_faturas_ml_classification()
+    test_difal_short_ids_classification()
+
+    print()
+    print("--- Conditional Skip (_CHECK_PAYMENTS) ---")
+    test_check_payments_conditional_skip()
+
+    print()
+    print("--- Smart Skip Comprehensive ---")
+    test_check_payments_vs_unconditional_skip_distinction()
+    test_resolve_check_payments_all_fallbacks()
+    test_new_expense_types_abbreviations_unique()
+    test_debito_envio_ml_ingested_with_payment_match()
+    test_bonus_envio_classification_including_bonificacao()
+    test_build_expense_row_for_new_types()
 
     # Summary
     print()

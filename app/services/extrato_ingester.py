@@ -2,7 +2,7 @@
 Extrato Line Ingester — ingests account_statement (release_report) lines that
 are NOT covered by the Payments API or existing mp_expenses.
 
-Handles 8 gap types that exist only in the account_statement:
+Handles gap types that exist only in the account_statement:
   1. DIFAL            — state tax difference (Diferença da aliquota ICMS)
   2. faturas_ml       — overdue ML invoices (Faturas vencidas do Mercado Livre)
   3. reembolso_disputa — dispute refund returned to seller (Reembolso Reclamações)
@@ -13,6 +13,14 @@ Handles 8 gap types that exist only in the account_statement:
   8. reembolso_generico — generic reimbursement / rounding (Reembolso genérico)
   9. debito_divida_disputa — dispute debit direct charge (Reclamações no Mercado Livre)
  10. deposito_avulso  — one-off deposit / aporte (Dinheiro recebido)
+ 11. pagamento_cartao_credito — credit card payment debit (Pagamento cartão de crédito)
+ 12. liberacao_nao_sync — release not found in payment_events (ML API gap)
+ 13. qr_pix_nao_sync  — QR/PIX payment not found in payment_events (ML API gap)
+
+Smart skip logic: lines like "Liberacao de dinheiro" or "Pagamento com QR"
+are only skipped if their reference_id already exists in the payment_events.
+If the ML search API silently dropped them (batch release bug), the ingester
+captures them as mp_expenses with pending_review status.
 
 All gap lines go to mp_expenses for XLSX export. The financial team categorises
 and imports them in Conta Azul.
@@ -66,18 +74,29 @@ _CA_CATEGORY_CODE_MAP: dict[str, str] = {
 # ---------------------------------------------------------------------------
 # Each rule: (normalised_pattern, expense_type | None, direction | None, ca_category_code | None)
 #
-# None expense_type → SKIP (already covered by processor or mp_expenses via API).
+# None expense_type → UNCONDITIONAL SKIP (truly internal, never needs ingestion).
+# "_check_payments" expense_type → CONDITIONAL SKIP: skip only if the
+#   reference_id exists in the payment_events.  If the ML search API silently
+#   dropped the payment (batch release bug), ingest as mp_expense with the
+#   fallback_type specified in _CHECK_PAYMENTS_FALLBACK.
 # direction values: "expense", "income", "transfer"
 # ca_category_code: maps to _CA_CATEGORY_CODE_MAP; None means pending_review.
 
+# Sentinel value for conditional skip rules
+_CHECK_PAYMENTS = "_check_payments"
+
 EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Optional[str]]] = [
-    # --- SKIPS (covered elsewhere) ---
+    # --- CONDITIONAL SKIPS (check payment_events first) ---
+    # "Liberacao de dinheiro cancelada" must come BEFORE "liberacao de dinheiro"
     ("liberacao de dinheiro cancelada",   "liberacao_cancelada",   "expense",  None),
-    ("liberacao de dinheiro",             None,                    None,       None),
+    ("liberacao de dinheiro",             _CHECK_PAYMENTS,         "income",   None),
+    ("pagamento com",                     _CHECK_PAYMENTS,         "income",   None),
+    # --- CONDITIONAL SKIPS (PIX received — check if ref_id is in payments) ---
+    ("pix recebido",                      _CHECK_PAYMENTS,         "income",   None),
+    # --- UNCONDITIONAL SKIPS (truly internal, no financial impact) ---
     ("transferencia pix",                 None,                    None,       None),
     ("pix enviado",                       None,                    None,       None),
     ("pagamento de conta",                None,                    None,       None),
-    ("pagamento com",                     None,                    None,       None),
     # --- INCOME ---
     ("reembolso reclamacoes",             "reembolso_disputa",     "income",   "1.3.4"),
     ("reembolso reclamações",             "reembolso_disputa",     "income",   "1.3.4"),
@@ -86,7 +105,7 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("reembolso de tarifas",              "reembolso_generico",    "income",   "1.3.4"),
     ("reembolso",                         "reembolso_generico",    "income",   "1.3.4"),
     ("entrada de dinheiro",               "entrada_dinheiro",      "income",   None),
-    ("dinheiro recebido",                 "deposito_avulso",       "income",   None),
+    ("dinheiro recebido",                 _CHECK_PAYMENTS,         "income",   None),
     # --- EXPENSES ---
     ("dinheiro retido",                   "dinheiro_retido",       "expense",  None),
     ("diferenca da aliquota",             "difal",                 "expense",  "2.2.3"),
@@ -97,42 +116,71 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("reclamações no mercado livre",      "debito_divida_disputa", "expense",  None),
     # Additional types found in real extratos (jan 2026)
     ("troca de produto",                  "debito_troca",          "expense",  None),
+    ("bonificacao",                       "bonus_envio",           "income",   "1.3.7"),
     ("bonus por envio",                   "bonus_envio",           "income",   "1.3.7"),
     ("bônus por envio",                   "bonus_envio",           "income",   "1.3.7"),
     ("compra mercado libre",              None,                    None,       None),
+    ("compra mercado livre",              None,                    None,       None),
     ("transferencia enviada",             None,                    None,       None),
     ("transferência enviada",             None,                    None,       None),
     ("transferencia recebida",            "entrada_dinheiro",      "income",   None),
     ("transferência recebida",            "entrada_dinheiro",      "income",   None),
     ("transferencia de saldo",            None,                    None,       None),
     ("transferência de saldo",            None,                    None,       None),
-    ("pagamento cartao de credito",       None,                    None,       None),
-    ("pagamento cartão de crédito",       None,                    None,       None),
+    # FIX: credit card payments are real debits, not internal transfers.
+    # ca_category=None → pending_review (user must assign the correct CA category).
+    ("pagamento cartao de credito",       "pagamento_cartao_credito", "expense", None),
+    ("pagamento cartão de crédito",       "pagamento_cartao_credito", "expense", None),
     # SaaS subscriptions billed directly through MP (no "de conta" / "com QR")
     # e.g. "Pagamento Supabase", "Pagamento Claude.ai subscription", "Pagamento Notion"
     # Must come AFTER more specific "pagamento de conta" / "pagamento com" rules.
     ("pagamento",                         "subscription",          "expense",  None),
+    # MP loan approval (Empréstimos Express)
+    ("aprovacao do dinheiro express",      "emprestimo_mp",         "income",   None),
+    ("aprovação do dinheiro express",      "emprestimo_mp",         "income",   None),
+    # MP investment (Renda = money market fund within MP)
+    ("dinheiro reservado renda",           None,                    None,       None),
+    ("dinheiro retirado renda",            None,                    None,       None),
+    # Internal transfers to sub-accounts (e.g. Lever Talents)
+    ("dinheiro reservado",                 None,                    None,       None),
     # Purchase made via ML (product description embedded in tx_type)
     # e.g. "Compra de Adaptador Acelerador Piloto Automático..."
     ("compra de ",                        None,                    None,       None),
 ]
 
+# Fallback expense_type when _CHECK_PAYMENTS finds a line NOT in the payments
+# table.  Keyed by the normalised pattern prefix from the classification rule.
+_CHECK_PAYMENTS_FALLBACK: dict[str, tuple[str, str]] = {
+    # pattern_prefix → (fallback_expense_type, fallback_direction)
+    "liberacao de dinheiro":  ("liberacao_nao_sync",   "income"),
+    "pagamento com":          ("qr_pix_nao_sync",      "income"),
+    "dinheiro recebido":      ("dinheiro_recebido",     "income"),
+    "pix recebido":           ("pix_nao_sync",          "income"),
+}
+
 # Abbreviated suffixes used when the same REFERENCE_ID appears multiple times
 # in the extrato with different transaction types (e.g. dispute groups).
 _EXPENSE_TYPE_ABBREV: dict[str, str] = {
-    "liberacao_cancelada":   "lc",
-    "reembolso_disputa":     "rd",
-    "reembolso_generico":    "rg",
-    "entrada_dinheiro":      "ed",
-    "deposito_avulso":       "da",
-    "dinheiro_retido":       "dr",
-    "difal":                 "df",
-    "faturas_ml":            "fm",
-    "debito_envio_ml":       "de",
-    "debito_divida_disputa": "dd",
-    "debito_troca":          "dt",
-    "bonus_envio":           "be",
-    "subscription":          "sb",
+    "liberacao_cancelada":      "lc",
+    "reembolso_disputa":        "rd",
+    "reembolso_generico":       "rg",
+    "entrada_dinheiro":         "ed",
+    "deposito_avulso":          "da",
+    "dinheiro_retido":          "dr",
+    "difal":                    "df",
+    "faturas_ml":               "fm",
+    "debito_envio_ml":          "de",
+    "debito_divida_disputa":    "dd",
+    "debito_troca":             "dt",
+    "bonus_envio":              "be",
+    "subscription":             "sb",
+    "pagamento_cartao_credito": "pc",
+    "emprestimo_mp":            "em",
+    # New types for smart skip (lines not found in payment_events)
+    "liberacao_nao_sync":       "ln",
+    "qr_pix_nao_sync":         "qn",
+    "dinheiro_recebido":        "dc",
+    "pix_nao_sync":             "pn",
 }
 
 
@@ -151,6 +199,13 @@ _DESCRIPTION_TEMPLATES: dict[str, str] = {
     "debito_troca":          "Debito Troca Produto ML - Ref {ref_id}",
     "bonus_envio":           "Bonus Envio ML - Ref {ref_id}",
     "subscription":          "Assinatura MP - Ref {ref_id}",
+    "pagamento_cartao_credito": "Pagamento Cartao Credito MP - Ref {ref_id}",
+    "emprestimo_mp":         "Emprestimo Express MP - Ref {ref_id}",
+    # New types for smart skip (lines not found in payment_events)
+    "liberacao_nao_sync":    "Liberacao Nao Sincronizada - Ref {ref_id}",
+    "qr_pix_nao_sync":      "Pagamento QR/PIX Nao Sincronizado - Ref {ref_id}",
+    "dinheiro_recebido":     "Dinheiro Recebido Nao Sincronizado - Ref {ref_id}",
+    "pix_nao_sync":          "PIX Recebido Nao Sincronizado - Ref {ref_id}",
 }
 
 
@@ -283,17 +338,22 @@ def _classify_extrato_line(
     """Classify an extrato TRANSACTION_TYPE into (expense_type, direction, ca_category_uuid).
 
     Uses normalised text matching against EXTRATO_CLASSIFICATION_RULES (first
-    match wins). Returns (None, None, None) when the line should be skipped
-    because it is already covered by the processor or mp_expenses via the API.
+    match wins). Returns (None, None, None) when the line should be
+    unconditionally skipped (truly internal transfers with no financial impact).
+
+    Returns ("_check_payments", direction, None) when the line should be
+    conditionally skipped: skip only if the reference_id exists in the payments
+    table. The caller must resolve _CHECK_PAYMENTS into a real expense_type
+    using _CHECK_PAYMENTS_FALLBACK when the ref_id is NOT in payments.
 
     Args:
         transaction_type: Raw TRANSACTION_TYPE string from the extrato.
 
     Returns:
         Tuple of (expense_type, direction, ca_category_uuid).
-        All three are None when the line is a known skip (already covered).
-        expense_type is None and direction is None specifically indicates skip;
-        a non-None expense_type with direction indicates a real gap line.
+        All three are None → unconditional skip (already covered).
+        expense_type == "_check_payments" → conditional skip (check payment_events).
+        Otherwise → real gap line to ingest.
     """
     normalized = _normalize_text(transaction_type)
 
@@ -305,6 +365,32 @@ def _classify_extrato_line(
     # No rule matched — log as unknown and treat as pending-review expense
     logger.warning("No classification rule matched extrato type: %r", transaction_type)
     return "other", "expense", None
+
+
+def _resolve_check_payments(
+    transaction_type: str,
+) -> tuple[str, str]:
+    """Resolve a _CHECK_PAYMENTS classification into a concrete fallback type.
+
+    Called when the ref_id is NOT found in the payment_events, meaning the ML
+    search API dropped this payment and we need to ingest it.
+
+    Args:
+        transaction_type: Raw TRANSACTION_TYPE string from the extrato.
+
+    Returns:
+        Tuple of (fallback_expense_type, fallback_direction).
+    """
+    normalized = _normalize_text(transaction_type)
+    for pattern, (fallback_type, fallback_dir) in _CHECK_PAYMENTS_FALLBACK.items():
+        if pattern in normalized:
+            return fallback_type, fallback_dir
+    # Should not happen if _CHECK_PAYMENTS_FALLBACK covers all _CHECK_PAYMENTS rules
+    logger.warning(
+        "_resolve_check_payments: no fallback for %r, defaulting to 'other'",
+        transaction_type,
+    )
+    return "other", "expense"
 
 
 # ---------------------------------------------------------------------------
@@ -386,17 +472,18 @@ def _build_expense_from_extrato(
 # ---------------------------------------------------------------------------
 
 
-def _batch_lookup_payment_ids(
+async def _batch_lookup_payment_ids(
     db,
     seller_slug: str,
     ref_ids: list[str],
 ) -> set[str]:
-    """Return set of reference_id strings found in payments table.
+    """Return set of reference_id strings found in payment_events (processed).
 
     Looks up by ml_payment_id (integer). Only numeric reference IDs are
     checked — DIFAL and similar IDs are non-payment and will not match.
     """
-    found: set[str] = set()
+    from app.services import event_ledger
+
     numeric_ids: list[int] = []
     for rid in ref_ids:
         try:
@@ -404,19 +491,8 @@ def _batch_lookup_payment_ids(
         except (ValueError, TypeError):
             continue
 
-    for i in range(0, len(numeric_ids), 100):
-        chunk = numeric_ids[i : i + 100]
-        result = (
-            db.table("payments")
-            .select("ml_payment_id")
-            .eq("seller_slug", seller_slug)
-            .in_("ml_payment_id", chunk)
-            .execute()
-        )
-        for row in result.data or []:
-            found.add(str(row["ml_payment_id"]))
-
-    return found
+    found_ints = await event_ledger.get_processed_payment_ids_in(seller_slug, numeric_ids)
+    return {str(pid) for pid in found_ints}
 
 
 def _batch_lookup_expense_payment_ids(
@@ -459,6 +535,49 @@ def _batch_lookup_expense_payment_ids(
     return found
 
 
+def _batch_lookup_expense_details(
+    db,
+    seller_slug: str,
+    ref_ids: list[str],
+) -> dict[str, dict]:
+    """Return dict mapping payment_id → {id, amount, status, expense_type} for mp_expenses.
+
+    Used to detect IOF differences: when the extrato shows a different amount
+    than the API-originated mp_expense, the amount should be updated.
+    Only returns plain-integer payment_id matches (API-originated expenses).
+    """
+    details: dict[str, dict] = {}
+    if not ref_ids:
+        return details
+
+    numeric_ids: list[int] = []
+    for rid in ref_ids:
+        try:
+            numeric_ids.append(int(rid))
+        except (ValueError, TypeError):
+            continue
+
+    if numeric_ids:
+        for i in range(0, len(numeric_ids), 100):
+            chunk = numeric_ids[i : i + 100]
+            result = (
+                db.table("mp_expenses")
+                .select("id, payment_id, amount, status, expense_type")
+                .eq("seller_slug", seller_slug)
+                .in_("payment_id", chunk)
+                .execute()
+            )
+            for row in result.data or []:
+                details[str(row["payment_id"])] = {
+                    "id": row["id"],
+                    "amount": float(row.get("amount") or 0),
+                    "status": row.get("status"),
+                    "expense_type": row.get("expense_type"),
+                }
+
+    return details
+
+
 def _batch_lookup_composite_expense_ids(
     db,
     seller_slug: str,
@@ -487,18 +606,19 @@ def _batch_lookup_composite_expense_ids(
     return found
 
 
-def _batch_lookup_refunded_payment_ids(
+async def _batch_lookup_refunded_payment_ids(
     db,
     seller_slug: str,
     ref_ids: list[str],
 ) -> set[str]:
-    """Return set of reference_id strings for payments with ml_status='refunded'.
+    """Return set of reference_id strings for payments with refund_created event.
 
     Used to prevent double-counting devoluções: when processor.py already created
     estorno_receita (1.2.1) for a refunded payment, the extrato debito_divida_disputa
     line for the same payment_id must be skipped to avoid duplicating the deduction.
     """
-    found: set[str] = set()
+    from app.services import event_ledger
+
     numeric_ids: list[int] = []
     for rid in ref_ids:
         try:
@@ -506,20 +626,108 @@ def _batch_lookup_refunded_payment_ids(
         except (ValueError, TypeError):
             continue
 
-    for i in range(0, len(numeric_ids), 100):
-        chunk = numeric_ids[i : i + 100]
+    found_ints = await event_ledger.get_processed_payment_ids_in(
+        seller_slug, numeric_ids, event_type="refund_created"
+    )
+    return {str(pid) for pid in found_ints}
+
+
+def _fuzzy_match_expense(
+    db,
+    seller_slug: str,
+    amount: float,
+    date: str,
+    expense_types: list[str],
+) -> bool:
+    """Check if an mp_expense exists with matching amount, date, and type.
+
+    Used to deduplicate faturas ML and similar charges that appear in the
+    extrato with internal ML IDs (e.g. 27xxxxx) while mp_expenses stores
+    them with collection IDs (e.g. 14xxxxxxxxxx). Same charge, different IDs.
+
+    Matches by: seller_slug + approximate amount (within R$ 0.01) +
+    date_approved + expense_type in the given list.
+
+    Returns True if a matching record exists (meaning the extrato line is
+    already covered and should be skipped).
+    """
+    if not expense_types:
+        return False
+
+    try:
         result = (
-            db.table("payments")
-            .select("ml_payment_id")
+            db.table("mp_expenses")
+            .select("id, payment_id, amount")
             .eq("seller_slug", seller_slug)
-            .in_("ml_payment_id", chunk)
-            .eq("ml_status", "refunded")
+            .eq("date_approved", date)
+            .in_("expense_type", expense_types)
             .execute()
         )
         for row in result.data or []:
-            found.add(str(row["ml_payment_id"]))
+            existing_amount = float(row.get("amount") or 0)
+            if abs(existing_amount - amount) < 0.01:
+                logger.debug(
+                    "fuzzy_match_expense: found match for amount=%.2f date=%s "
+                    "type=%s → existing payment_id=%s",
+                    amount, date, expense_types, row["payment_id"],
+                )
+                return True
+    except Exception as exc:
+        logger.warning("fuzzy_match_expense: query failed — %s", exc)
 
-    return found
+    return False
+
+
+def _update_expense_amount_from_extrato(
+    db,
+    seller_slug: str,
+    expense_detail: dict,
+    real_amount: float,
+    ref_id: str,
+) -> bool:
+    """Update an existing mp_expense with the real amount from the extrato.
+
+    The extrato is the source of truth for actual debited amounts. This
+    corrects IOF differences on international subscriptions where the API
+    returns the pre-IOF amount but the bank statement shows the post-IOF
+    (actual) amount.
+
+    Args:
+        db: Supabase client.
+        seller_slug: Seller identifier.
+        expense_detail: Dict with {id, amount, status, expense_type}.
+        real_amount: The actual amount from the extrato (positive).
+        ref_id: Reference ID for logging.
+
+    Returns:
+        True if the amount was updated, False otherwise.
+    """
+    if expense_detail.get("status") == "exported":
+        return False  # Don't touch exported rows
+
+    existing_amount = expense_detail["amount"]
+    if abs(existing_amount - real_amount) < 0.01:
+        return False  # Already correct
+
+    try:
+        db.table("mp_expenses").update({
+            "amount": real_amount,
+            "notes": f"Amount updated from extrato (was {existing_amount:.2f}, IOF diff {real_amount - existing_amount:.2f})",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", expense_detail["id"]).execute()
+
+        logger.info(
+            "extrato_ingester %s: updated mp_expense %s amount: %.2f → %.2f (extrato, IOF diff %.2f)",
+            seller_slug, ref_id, existing_amount, real_amount,
+            real_amount - existing_amount,
+        )
+        return True
+    except Exception as exc:
+        logger.error(
+            "extrato_ingester %s: failed to update amount for %s — %s",
+            seller_slug, ref_id, exc,
+        )
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -538,10 +746,17 @@ async def ingest_extrato_for_seller(
       1. Download account_statement (release_report) via ML API.
       2. Parse all transaction lines.
       3. Classify each line using EXTRATO_CLASSIFICATION_RULES.
-      4. Skip lines already covered (known patterns: liberação, PIX, boleto).
-      5. Batch-lookup remaining reference_ids against payments + mp_expenses.
+      4. First-pass: unconditional skips + _CHECK_PAYMENTS markers.
+      5. Batch-lookup reference_ids against payment_events.
+      5b. Resolve _CHECK_PAYMENTS: if ref_id in payments → skip,
+          otherwise resolve to fallback expense_type and ingest.
       6. For truly uncovered lines: build row and upsert into mp_expenses.
       7. Return stats dict.
+
+    Smart skip logic: lines like "Liberacao de dinheiro" and "Pagamento com QR"
+    are only skipped if their reference_id exists in the payment_events. If the
+    ML search API silently dropped a payment (batch release bug), the line is
+    ingested as an mp_expense with pending_review status.
 
     Idempotency: same-REFERENCE_ID lines with different expense_types use
     composite payment_id strings (e.g. "123456789:df") to avoid collisions.
@@ -586,6 +801,7 @@ async def ingest_extrato_for_seller(
             "total_lines":     0,
             "skipped_internal": 0,
             "already_covered": 0,
+            "amount_updated":  0,
             "newly_ingested":  0,
             "errors":          0,
             "by_type":         {},
@@ -614,7 +830,8 @@ async def ingest_extrato_for_seller(
         )
 
     # 4. First-pass classification — split into skip vs gap lists
-    # For gap lines, build the composite payment_id key immediately.
+    # _CHECK_PAYMENTS lines get a temporary "cp" abbreviation; they will be
+    # resolved in step 5b once we know which ref_ids are in the payment_events.
     classified: list[tuple[dict, str, str, Optional[str], str]] = []
     # (tx, expense_type, direction, ca_category_uuid, payment_id_key)
     stats = Counter()
@@ -624,14 +841,19 @@ async def ingest_extrato_for_seller(
             tx["transaction_type"]
         )
 
-        # (None, None, None) → explicitly covered by existing pipeline
+        # (None, None, None) → unconditionally covered by existing pipeline
         if expense_type is None and direction is None:
             stats["skipped_internal"] += 1
             continue
 
-        # Build composite key: "{reference_id}:{abbrev}"
-        abbrev = _EXPENSE_TYPE_ABBREV.get(expense_type, "xx") if expense_type else "xx"
-        payment_id_key = f"{tx['reference_id']}:{abbrev}"
+        # _CHECK_PAYMENTS lines need batch lookup before skip/ingest decision.
+        # Use a temporary "cp" abbreviation for the composite key.
+        if expense_type == _CHECK_PAYMENTS:
+            payment_id_key = f"{tx['reference_id']}:cp"
+        else:
+            # Build composite key: "{reference_id}:{abbrev}"
+            abbrev = _EXPENSE_TYPE_ABBREV.get(expense_type, "xx") if expense_type else "xx"
+            payment_id_key = f"{tx['reference_id']}:{abbrev}"
 
         classified.append((tx, expense_type, direction, ca_category_uuid, payment_id_key))
 
@@ -648,6 +870,7 @@ async def ingest_extrato_for_seller(
             "total_lines":      len(transactions) + stats["skipped_internal"],
             "skipped_internal": stats["skipped_internal"],
             "already_covered":  0,
+            "amount_updated":   0,
             "newly_ingested":   0,
             "errors":           0,
             "by_type":          {},
@@ -656,14 +879,47 @@ async def ingest_extrato_for_seller(
 
     # 5. Batch lookups to detect already-covered lines
     all_ref_ids = list({item[0]["reference_id"] for item in classified})
-    composite_keys = [item[4] for item in classified]
 
-    payment_ids_in_db = _batch_lookup_payment_ids(db, seller_slug, all_ref_ids)
+    payment_ids_in_db = await _batch_lookup_payment_ids(db, seller_slug, all_ref_ids)
     expense_ids_in_db = _batch_lookup_expense_payment_ids(db, seller_slug, all_ref_ids)
+    # Detailed lookup for IOF amount correction (includes amount, status, etc.)
+    expense_details_in_db = _batch_lookup_expense_details(db, seller_slug, all_ref_ids)
+
+    # 5b. Resolve _CHECK_PAYMENTS lines now that we have payment_ids_in_db.
+    #     Lines whose ref_id IS in payments → skip (covered by processor).
+    #     Lines whose ref_id is NOT in payments → resolve to real expense_type.
+    resolved: list[tuple[dict, str, str, Optional[str], str]] = []
+    for tx, expense_type, direction, ca_category_uuid, payment_id_key in classified:
+        if expense_type == _CHECK_PAYMENTS:
+            ref_id = tx["reference_id"]
+            if ref_id in payment_ids_in_db:
+                # Payment exists in DB — line is covered by processor pipeline
+                stats["skipped_internal"] += 1
+                continue
+            # Payment NOT in DB — ML API gap, resolve to fallback type
+            fallback_type, fallback_dir = _resolve_check_payments(tx["transaction_type"])
+            abbrev = _EXPENSE_TYPE_ABBREV.get(fallback_type, "xx")
+            payment_id_key = f"{ref_id}:{abbrev}"
+            logger.warning(
+                "extrato_ingester %s: ref_id %s NOT in payments (type=%r) — "
+                "ingesting as %s (ML API gap)",
+                seller_slug,
+                ref_id,
+                tx["transaction_type"],
+                fallback_type,
+            )
+            resolved.append((tx, fallback_type, fallback_dir, None, payment_id_key))
+        else:
+            resolved.append((tx, expense_type, direction, ca_category_uuid, payment_id_key))
+
+    classified = resolved
+
+    # Recompute composite keys after _CHECK_PAYMENTS resolution
+    composite_keys = [item[4] for item in classified]
     composite_ids_in_db = _batch_lookup_composite_expense_ids(db, seller_slug, composite_keys)
     # Only needed for debito_divida_disputa deduplication — payments already
     # handled as refund by processor.py must not generate a second 1.2.1 entry.
-    refunded_payment_ids_in_db = _batch_lookup_refunded_payment_ids(db, seller_slug, all_ref_ids)
+    refunded_payment_ids_in_db = await _batch_lookup_refunded_payment_ids(db, seller_slug, all_ref_ids)
 
     logger.info(
         "extrato_ingester %s: found %d in payments (%d refunded), %d in mp_expenses (plain), %d in mp_expenses (composite)",
@@ -685,12 +941,12 @@ async def ingest_extrato_for_seller(
             stats["already_covered"] += 1
             continue
 
-        # b. Plain ref_id covered by payments table → skip unless it's a
+        # b. Plain ref_id covered by payment_events → skip unless it's a
         #    distinct expense type that can legitimately share the same ref_id
         #    (e.g. a dispute group: debit + refund + entry on the same payment_id).
-        #    Liberação de dinheiro lines are already skipped by classification,
-        #    so anything that arrives here with a payment-table match is a
-        #    supplementary line (e.g. dinheiro_retido on a payment that was
+        #    _CHECK_PAYMENTS lines have already been resolved above, so anything
+        #    that arrives here with a payment-table match is a supplementary
+        #    line (e.g. dinheiro_retido, debito_envio_ml on a payment that was
         #    also liberado). We still ingest it to capture the full picture.
         if ref_id in payment_ids_in_db:
             if expense_type == "debito_divida_disputa":
@@ -709,7 +965,8 @@ async def ingest_extrato_for_seller(
                 # extrato line (dispute debit not yet reflected in CA).
             elif expense_type in ("reembolso_disputa", "reembolso_generico",
                                   "entrada_dinheiro", "dinheiro_retido",
-                                  "liberacao_cancelada"):
+                                  "liberacao_cancelada", "debito_envio_ml",
+                                  "bonus_envio", "debito_troca"):
                 pass  # Distinct cash events that complement the payment — always ingest
             else:
                 # For most types, if the ref_id already has a payment record,
@@ -718,10 +975,44 @@ async def ingest_extrato_for_seller(
                 continue
 
         # c. Plain ref_id already in mp_expenses as exact numeric id (API path)
-        #    For gap types that share a ref_id with an API-originated expense
-        #    (e.g. DIFAL with same numeric id as a bill_payment), we still
-        #    store the extrato line under its composite key so both are tracked.
-        # (No skip here — composite key is unique per type)
+        #    For types that share a ref_id with an API-originated expense
+        #    (e.g. subscription with IOF difference), update the existing
+        #    amount to match the extrato (source of truth for actual debits).
+        #    For DIFAL and other gap types, composite key ensures no collision.
+        if ref_id in expense_ids_in_db:
+            detail = expense_details_in_db.get(ref_id)
+            if detail:
+                extrato_amount = abs(tx["amount"])
+                # If amounts differ, update the existing record (IOF correction)
+                if abs(detail["amount"] - extrato_amount) >= 0.01:
+                    updated = _update_expense_amount_from_extrato(
+                        db, seller_slug, detail, extrato_amount, ref_id,
+                    )
+                    if updated:
+                        stats["amount_updated"] += 1
+                    else:
+                        stats["already_covered"] += 1
+                else:
+                    stats["already_covered"] += 1
+                continue
+
+        # c2. Fuzzy dedup for faturas_ml / collection with internal ML IDs.
+        #     The extrato may use an internal ML ID (e.g. 27xxxxx) while
+        #     mp_expenses has the same charge under a collection ID
+        #     (e.g. 14xxxxxxxxxx). Match by amount + date + type.
+        if expense_type in ("faturas_ml", "collection"):
+            extrato_amount = abs(tx["amount"])
+            if _fuzzy_match_expense(
+                db, seller_slug, extrato_amount, tx["date"],
+                ["faturas_ml", "collection"],
+            ):
+                stats["already_covered"] += 1
+                logger.debug(
+                    "extrato_ingester %s: %s fuzzy-matched existing faturas_ml/collection "
+                    "(amount=%.2f date=%s), skipping",
+                    seller_slug, ref_id, extrato_amount, tx["date"],
+                )
+                continue
 
         # d. Build and upsert
         row = _build_expense_from_extrato(
@@ -800,6 +1091,7 @@ async def ingest_extrato_for_seller(
         "total_lines":      total_lines,
         "skipped_internal": stats["skipped_internal"],
         "already_covered":  stats["already_covered"],
+        "amount_updated":   stats.get("amount_updated", 0),
         "newly_ingested":   stats["newly_ingested"],
         "errors":           stats["errors"],
         "by_type":          dict(by_type),

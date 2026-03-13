@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from app.db.supabase import get_db
 from app.services.rate_limiter import rate_limiter
 from app.services.ca_api import _headers, CA_API, _token_cache
+from app.services import event_ledger
+from app.services.event_ledger import EventRecordError
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +144,18 @@ async def enqueue_estorno_taxa(seller_slug: str, payment_id: int, payload: dict)
         ca_endpoint=_ep("/v1/financeiro/eventos-financeiros/contas-a-receber"),
         ca_payload=payload,
         idempotency_key=f"{seller_slug}:{payment_id}:estorno_taxa",
+        group_id=f"{seller_slug}:{payment_id}",
+        priority=20,
+    )
+
+
+async def enqueue_estorno_frete(seller_slug: str, payment_id: int, payload: dict) -> dict:
+    return await enqueue(
+        seller_slug=seller_slug,
+        job_type="estorno_frete",
+        ca_endpoint=_ep("/v1/financeiro/eventos-financeiros/contas-a-receber"),
+        ca_payload=payload,
+        idempotency_key=f"{seller_slug}:{payment_id}:estorno_frete",
         group_id=f"{seller_slug}:{payment_id}",
         priority=20,
     )
@@ -360,18 +374,19 @@ class CaWorker:
 
         if dead.count and dead.count > 0:
             parts = group_id.split(":")
+            logger.error(f"Group {group_id} has dead jobs ({dead.count}) — recording ca_sync_failed")
             if len(parts) >= 2:
-                seller_slug, payment_id = parts[0], parts[1]
                 try:
-                    db.table("payments").update({
-                        "error": f"CA group has {dead.count} dead job(s)",
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }).eq("ml_payment_id", int(payment_id)).eq(
-                        "seller_slug", seller_slug
-                    ).eq("status", "queued").execute()
-                except Exception as e:
-                    logger.warning(f"Could not set payment error for dead group {group_id}: {e}")
-            logger.error(f"Group {group_id} has dead jobs ({dead.count}) — payment will remain queued")
+                    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    await event_ledger.record_event(
+                        seller_slug=parts[0], ml_payment_id=int(parts[1]),
+                        event_type="ca_sync_failed", signed_amount=0,
+                        competencia_date=today, event_date=today,
+                        source="ca_worker",
+                        metadata={"dead_count": dead.count},
+                    )
+                except EventRecordError as e:
+                    logger.error("Event ledger ca_sync_failed failed for %s: %s", group_id, e)
             return
 
         # Count non-completed jobs in this group
@@ -382,18 +397,18 @@ class CaWorker:
         if pending.count and pending.count > 0:
             return
 
-        # All done — extract seller_slug and payment_id from group_id
+        # All done — record ca_sync_completed event
         parts = group_id.split(":")
         if len(parts) >= 2:
             seller_slug, payment_id = parts[0], parts[1]
             try:
-                db.table("payments").update({
-                    "status": "synced",
-                    "error": None,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }).eq("ml_payment_id", int(payment_id)).eq(
-                    "seller_slug", seller_slug
-                ).eq("status", "queued").execute()
-                logger.info(f"Group {group_id} completed — payment marked synced")
-            except Exception as e:
-                logger.warning(f"Could not update payment for group {group_id}: {e}")
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                await event_ledger.record_event(
+                    seller_slug=seller_slug, ml_payment_id=int(payment_id),
+                    event_type="ca_sync_completed", signed_amount=0,
+                    competencia_date=today, event_date=today,
+                    source="ca_worker",
+                )
+                logger.info(f"Group {group_id} completed — ca_sync_completed recorded")
+            except EventRecordError as e:
+                logger.error(f"Event ledger ca_sync_completed failed for {group_id}: {e}")
