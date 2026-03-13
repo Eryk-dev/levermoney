@@ -28,6 +28,7 @@ and imports them in Conta Azul.
 Runs inside the nightly pipeline AFTER sync_all_sellers() and BEFORE
 check_extrato_coverage_all_sellers() so coverage reaches 100%.
 """
+import calendar
 import logging
 import unicodedata
 from collections import Counter
@@ -1101,6 +1102,331 @@ async def ingest_extrato_for_seller(
         k: v for k, v in result.items() if k not in ("summary", "by_type")
     })
     logger.info("extrato_ingester %s: by_type=%s", seller_slug, dict(by_type))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# CSV upload entry point (admin panel)
+# ---------------------------------------------------------------------------
+
+
+async def ingest_extrato_from_csv(
+    seller_slug: str,
+    csv_text: str,
+    month: str,
+) -> dict:
+    """Ingest account_statement lines from a pre-downloaded CSV string.
+
+    Variant of ingest_extrato_for_seller() that accepts raw CSV text
+    instead of downloading the report from the ML API. Called by the
+    admin upload endpoint when the user supplies the file manually.
+
+    The month parameter is used for date filtering (keeps only lines
+    within the calendar month) and for logging. It does NOT restrict
+    what the CSV may contain — the CSV may include a few days of the
+    previous or next month at the margins (MP reports overlap); those
+    lines are filtered out before ingestion.
+
+    Args:
+        seller_slug: Seller identifier (must exist in sellers table).
+        csv_text:    Raw text content of the account_statement CSV.
+                     BOM (UTF-8-sig) is handled internally.
+        month:       Calendar month to ingest, format "YYYY-MM".
+                     Lines outside this month are skipped.
+
+    Returns:
+        Stats dict matching ingest_extrato_for_seller() return format:
+        {
+            seller, total_lines, skipped_internal, already_covered,
+            amount_updated, newly_ingested, errors, by_type, summary
+        }
+
+    Raises:
+        ValueError: If the CSV does not contain an INITIAL_BALANCE header
+                    (i.e. it is not a valid account_statement CSV).
+    """
+    # Validate CSV format
+    if "INITIAL_BALANCE" not in csv_text.upper():
+        raise ValueError("CSV invalido: header INITIAL_BALANCE nao encontrado")
+
+    # Derive begin_date / end_date from month
+    year, mo = int(month[:4]), int(month[5:7])
+    begin_date = f"{year:04d}-{mo:02d}-01"
+    last_day = calendar.monthrange(year, mo)[1]
+    end_date = f"{year:04d}-{mo:02d}-{last_day:02d}"
+
+    db = get_db()
+    seller = get_seller_config(db, seller_slug)
+    if not seller:
+        return {"seller": seller_slug, "error": "seller_not_found"}
+
+    # Parse CSV
+    summary, transactions = _parse_account_statement(csv_text)
+
+    if not transactions:
+        logger.info("extrato_ingester %s: upload path, month=%s — no transactions found", seller_slug, month)
+        return {
+            "seller":          seller_slug,
+            "total_lines":     0,
+            "skipped_internal": 0,
+            "already_covered": 0,
+            "amount_updated":  0,
+            "newly_ingested":  0,
+            "errors":          0,
+            "by_type":         {},
+            "summary":         summary,
+        }
+
+    logger.info(
+        "extrato_ingester %s: upload path, month=%s, %d transactions",
+        seller_slug,
+        month,
+        len(transactions),
+    )
+
+    # Filter by date range
+    transactions = [
+        tx for tx in transactions
+        if begin_date <= tx["date"] <= end_date
+    ]
+    logger.info(
+        "extrato_ingester %s: %d transactions after date filtering (%s to %s)",
+        seller_slug,
+        len(transactions),
+        begin_date,
+        end_date,
+    )
+
+    # --- From here the pipeline is identical to ingest_extrato_for_seller() ---
+
+    # First-pass classification
+    classified: list[tuple[dict, str, str, Optional[str], str]] = []
+    stats = Counter()
+
+    for tx in transactions:
+        expense_type, direction, ca_category_uuid = _classify_extrato_line(
+            tx["transaction_type"]
+        )
+
+        if expense_type is None and direction is None:
+            stats["skipped_internal"] += 1
+            continue
+
+        if expense_type == _CHECK_PAYMENTS:
+            payment_id_key = f"{tx['reference_id']}:cp"
+        else:
+            abbrev = _EXPENSE_TYPE_ABBREV.get(expense_type, "xx") if expense_type else "xx"
+            payment_id_key = f"{tx['reference_id']}:{abbrev}"
+
+        classified.append((tx, expense_type, direction, ca_category_uuid, payment_id_key))
+
+    logger.info(
+        "extrato_ingester %s: %d gap lines to check (%d internal skips)",
+        seller_slug,
+        len(classified),
+        stats["skipped_internal"],
+    )
+
+    if not classified:
+        return {
+            "seller":           seller_slug,
+            "total_lines":      len(transactions) + stats["skipped_internal"],
+            "skipped_internal": stats["skipped_internal"],
+            "already_covered":  0,
+            "amount_updated":   0,
+            "newly_ingested":   0,
+            "errors":           0,
+            "by_type":          {},
+            "summary":          summary,
+        }
+
+    # Batch lookups
+    all_ref_ids = list({item[0]["reference_id"] for item in classified})
+
+    payment_ids_in_db = await _batch_lookup_payment_ids(db, seller_slug, all_ref_ids)
+    expense_ids_in_db = _batch_lookup_expense_payment_ids(db, seller_slug, all_ref_ids)
+    expense_details_in_db = _batch_lookup_expense_details(db, seller_slug, all_ref_ids)
+
+    # Resolve _CHECK_PAYMENTS
+    resolved: list[tuple[dict, str, str, Optional[str], str]] = []
+    for tx, expense_type, direction, ca_category_uuid, payment_id_key in classified:
+        if expense_type == _CHECK_PAYMENTS:
+            ref_id = tx["reference_id"]
+            if ref_id in payment_ids_in_db:
+                stats["skipped_internal"] += 1
+                continue
+            fallback_type, fallback_dir = _resolve_check_payments(tx["transaction_type"])
+            abbrev = _EXPENSE_TYPE_ABBREV.get(fallback_type, "xx")
+            payment_id_key = f"{ref_id}:{abbrev}"
+            logger.warning(
+                "extrato_ingester %s: ref_id %s NOT in payments (type=%r) — "
+                "ingesting as %s (ML API gap)",
+                seller_slug,
+                ref_id,
+                tx["transaction_type"],
+                fallback_type,
+            )
+            resolved.append((tx, fallback_type, fallback_dir, None, payment_id_key))
+        else:
+            resolved.append((tx, expense_type, direction, ca_category_uuid, payment_id_key))
+
+    classified = resolved
+
+    composite_keys = [item[4] for item in classified]
+    composite_ids_in_db = _batch_lookup_composite_expense_ids(db, seller_slug, composite_keys)
+    refunded_payment_ids_in_db = await _batch_lookup_refunded_payment_ids(db, seller_slug, all_ref_ids)
+
+    logger.info(
+        "extrato_ingester %s: found %d in payments (%d refunded), %d in mp_expenses (plain), %d in mp_expenses (composite)",
+        seller_slug,
+        len(payment_ids_in_db),
+        len(refunded_payment_ids_in_db),
+        len(expense_ids_in_db),
+        len(composite_ids_in_db),
+    )
+
+    # Upsert uncovered lines into mp_expenses
+    by_type: Counter = Counter()
+
+    for tx, expense_type, direction, ca_category_uuid, payment_id_key in classified:
+        ref_id = tx["reference_id"]
+
+        if payment_id_key in composite_ids_in_db:
+            stats["already_covered"] += 1
+            continue
+
+        if ref_id in payment_ids_in_db:
+            if expense_type == "debito_divida_disputa":
+                if ref_id in refunded_payment_ids_in_db:
+                    stats["already_covered"] += 1
+                    logger.debug(
+                        "extrato_ingester %s: %s debito_divida_disputa skipped — processor already refunded",
+                        seller_slug,
+                        ref_id,
+                    )
+                    continue
+            elif expense_type in ("reembolso_disputa", "reembolso_generico",
+                                  "entrada_dinheiro", "dinheiro_retido",
+                                  "liberacao_cancelada", "debito_envio_ml",
+                                  "bonus_envio", "debito_troca"):
+                pass
+            else:
+                stats["already_covered"] += 1
+                continue
+
+        if ref_id in expense_ids_in_db:
+            detail = expense_details_in_db.get(ref_id)
+            if detail:
+                extrato_amount = abs(tx["amount"])
+                if abs(detail["amount"] - extrato_amount) >= 0.01:
+                    updated = _update_expense_amount_from_extrato(
+                        db, seller_slug, detail, extrato_amount, ref_id,
+                    )
+                    if updated:
+                        stats["amount_updated"] += 1
+                    else:
+                        stats["already_covered"] += 1
+                else:
+                    stats["already_covered"] += 1
+                continue
+
+        if expense_type in ("faturas_ml", "collection"):
+            extrato_amount = abs(tx["amount"])
+            if _fuzzy_match_expense(
+                db, seller_slug, extrato_amount, tx["date"],
+                ["faturas_ml", "collection"],
+            ):
+                stats["already_covered"] += 1
+                logger.debug(
+                    "extrato_ingester %s: %s fuzzy-matched existing faturas_ml/collection "
+                    "(amount=%.2f date=%s), skipping",
+                    seller_slug, ref_id, extrato_amount, tx["date"],
+                )
+                continue
+
+        row = _build_expense_from_extrato(
+            tx, seller_slug, expense_type, direction, ca_category_uuid, payment_id_key
+        )
+
+        existing_check = (
+            db.table("mp_expenses")
+            .select("id, status")
+            .eq("seller_slug", seller_slug)
+            .eq("payment_id", payment_id_key)
+            .execute()
+        )
+
+        try:
+            if existing_check.data:
+                existing_row = existing_check.data[0]
+                if existing_row.get("status") == "exported":
+                    stats["already_covered"] += 1
+                    logger.debug(
+                        "extrato_ingester %s: %s already exported, skipping",
+                        seller_slug,
+                        payment_id_key,
+                    )
+                    continue
+
+                db.table("mp_expenses").update(row).eq(
+                    "id", existing_row["id"]
+                ).execute()
+                stats["already_covered"] += 1
+                logger.debug(
+                    "extrato_ingester %s: updated existing %s type=%s",
+                    seller_slug,
+                    payment_id_key,
+                    expense_type,
+                )
+            else:
+                row["created_at"] = datetime.now(timezone.utc).isoformat()
+                db.table("mp_expenses").insert(row).execute()
+                stats["newly_ingested"] += 1
+                by_type[expense_type] += 1
+                logger.info(
+                    "extrato_ingester %s: ingested %s type=%s dir=%s amount=%.2f",
+                    seller_slug,
+                    payment_id_key,
+                    expense_type,
+                    direction,
+                    abs(tx["amount"]),
+                )
+
+        except Exception as exc:
+            error_str = str(exc).lower()
+            if "duplicate" in error_str or "unique" in error_str:
+                stats["already_covered"] += 1
+                logger.debug(
+                    "extrato_ingester %s: duplicate key for %s, skipping",
+                    seller_slug,
+                    payment_id_key,
+                )
+            else:
+                stats["errors"] += 1
+                logger.error(
+                    "extrato_ingester %s: failed to insert %s — %s",
+                    seller_slug,
+                    payment_id_key,
+                    exc,
+                    exc_info=True,
+                )
+
+    total_lines = len(transactions) + stats["skipped_internal"]
+    result = {
+        "seller":           seller_slug,
+        "total_lines":      total_lines,
+        "skipped_internal": stats["skipped_internal"],
+        "already_covered":  stats["already_covered"],
+        "amount_updated":   stats.get("amount_updated", 0),
+        "newly_ingested":   stats["newly_ingested"],
+        "errors":           stats["errors"],
+        "by_type":          dict(by_type),
+        "summary":          summary,
+    }
+    logger.info("extrato_ingester %s: upload result — %s", seller_slug, {
+        k: v for k, v in result.items() if k not in ("summary", "by_type")
+    })
+    logger.info("extrato_ingester %s: upload by_type=%s", seller_slug, dict(by_type))
     return result
 
 
