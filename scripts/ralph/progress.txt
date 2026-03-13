@@ -1,174 +1,31 @@
-# Ralph Progress Log
-Started: Fri Mar 13 15:16:22 -03 2026
----
-
 ## Codebase Patterns
-- Expense lifecycle events use `record_expense_event()` with idempotency key `{seller}:{payment_id}:{event_type}` (3 parts)
-- expense_captured uses sign "any" (positive=income, negative=expense), other expense events use "zero"
-- All event_ledger queries (get_dre_summary, get_payment_statuses) already filter out `expense_*` events — same as `cash_*`
-- Tests in `testes/test_event_ledger.py` cover pure functions; async tests use `unittest.mock.patch` on `record_event`
-- Full test suite: 469 tests, ~4.2s
-- Dual-write helper pattern: `_dual_write_expense_events()` as async helper, called after mp_expenses upsert, catches `EventRecordError` as warning
-- Metadata for expense_captured must include ALL fields for Fase 3: expense_type, expense_direction, ca_category, auto_categorized, description, amount, date_created, date_approved, business_branch, operation_type, payment_method, external_reference, beneficiary_name, notes
-- Signed amount: positive for income direction, negative for expense/transfer
-- Ledger read helpers: `_fetch_expense_events()` → `_group_expense_events()` → `_build_expense_row()` pipeline reconstructs mp_expenses-compatible rows from event metadata
-- Feature flag pattern for Fase 3: `settings.expenses_source` ('mp_expenses' | 'ledger') — consumers check flag and branch to old or new read path
-- Router ledger migration: add `if settings.expenses_source == "ledger":` branch at top of each endpoint, import ledger helpers conditionally inside the block
-- Ledger export: `get_pending_exports()` replaces mp_expenses query; `record_expense_event(event_type='expense_exported', signed_amount=0)` replaces status update
-- Ledger rows have string `id` (reference_id); convert to int via `int(payment_id.split(':')[0])` for batch persistence (expense_batch_items.expense_id is bigint)
-- Release report dual-write: `row["date"]` for both date_created/date_approved, `f"release_{desc_type}"` for operation_type, `payout_bank_account` for notes
-- Export.py lazy imports (inside conditional blocks) must be patched at source (`app.services.event_ledger.record_expense_event`), not at module level
-- Historical data backfill: INSERT INTO payment_events SELECT ... FROM mp_expenses ON CONFLICT DO NOTHING — safe to re-run, uses same idempotency_key pattern
-- review_expense ledger mode: query payment_events for reference_id, write expense_reviewed event with review fields as metadata
+- Expense ledger events: expense_captured has ALL metadata fields in its `metadata` dict, expense_classified merges `ca_category`, expense_reviewed merges review fields
+- `_group_expense_events()` + `_build_expense_row()` are the bridge between raw ledger events and mp_expenses-compatible dicts
+- To simulate dual-write data in tests, build expense_captured with full metadata + expense_classified when auto_categorized=True + expense_exported for exported rows
+- `_signed_amount()` in financial_closing.py uses expense_direction to determine sign: expense→negative, income→positive, transfer→depends on expense_type
+- DRE functions (get_dre_summary, get_cash_summary) filter out expense_* and cash_* events respectively — they won't regress from expense read migration
+- Test pattern: mock `_fetch_expense_events` to avoid DB calls, then test ledger helpers directly
 
+# Ralph Progress Log
+Started: Fri Mar 13 16:10:45 -03 2026
 ---
 
-## 2026-03-13 - US-001
-- Added 4 expense lifecycle event types to EVENT_TYPES: expense_captured (any), expense_classified (zero), expense_reviewed (zero), expense_exported (zero)
-- Added `record_expense_event()` helper: idempotency key `{seller}:{payment_id}:{event_type}`, ml_payment_id via `int(payment_id.split(':')[0])` with fallback 0, source='expense_lifecycle', metadata always includes expense_type
-- Added `derive_expense_status()`: exported > reviewed > auto_categorized > pending_review > unknown
-- Added 20 new unit tests (7 for derive_expense_status, 11 for record_expense_event, 2 for validate_event on new types)
-- Updated TestEventTypesCoverage: EXPECTED_TYPES list, zero/any sets, count 22→26
-- Files changed: `app/services/event_ledger.py`, `testes/test_event_ledger.py`
+## 2026-03-13 - US-004
+- Implemented parity validation test suite (29 tests) comparing mp_expenses vs event ledger responses
+- Files changed:
+  - `testes/test_parity_expenses_source.py` (NEW) — 529 lines, 29 tests across 6 test classes
+- Test coverage:
+  - **TestListExpensesParity** (7 tests): count, payment_ids, amounts, types, directions, categories, descriptions
+  - **TestExpenseStatsParity** (8 tests): total count/amount, by_type, by_direction, by_status, pending_review/auto_categorized counts, with status_filter
+  - **TestExportParity** (7 tests): pending export count, payment_ids, amounts, directions, categories, status_filter, XLSX field completeness
+  - **TestFinancialClosingManualLaneParity** (4 tests): same day count, rows per day, signed amounts per day, payment_ids per day
+  - **TestDREUnchanged** (2 tests): dre_summary excludes expense_* events, cash_summary only includes cash_* events
+  - **TestZeroDifferences** (1 test): comprehensive cross-check of all dimensions reporting any differences
+- Zero unexplained differences found
+- All 529 tests pass (including 29 new)
 - **Learnings for future iterations:**
-  - The test for `test_cash_events.py::test_get_dre_summary_excludes_cash` already included `expense_classified` in its mock data — the existing filter `not r["event_type"].startswith("expense_")` was already in place
-  - `record_expense_event` follows same pattern as `record_cash_event` but with simpler idempotency key (no date/abbrev suffix)
-  - 395 tests total passing after changes
----
-
-## 2026-03-13 - US-002
-- Added dual-write to `classify_non_order_payment()` in `expense_classifier.py`
-- After mp_expenses upsert: writes `expense_captured` event (and `expense_classified` if auto-categorized)
-- Helper functions: `_expense_signed_amount()`, `_expense_competencia_date()`, `_build_expense_metadata()`, `_dual_write_expense_events()`
-- `EventRecordError` caught as warning — never blocks mp_expenses upsert
-- Already-exported payments return early (no dual-write)
-- Skipped directions (partition_transfer, payment_addition) return None before dual-write
-- Added 16 new tests in `testes/test_expense_classifier_dual_write.py`
-- Files changed: `app/services/expense_classifier.py`, `testes/test_expense_classifier_dual_write.py`
-- **Learnings for future iterations:**
-  - The mock DB pattern needs chained `.table().select().eq().eq().execute()` — 2 levels of `.eq()` for seller_slug + payment_id
-  - `_classify()` is a pure function (no DB) — easy to test independently
-  - For US-003 (extrato_ingester): follow same `_dual_write_expense_events()` pattern, import and reuse `_expense_signed_amount`, `_expense_competencia_date`, `_build_expense_metadata` OR duplicate them locally (since extrato has different data shape)
-  - 411 tests total passing after changes
----
-
-## 2026-03-13 - US-001 (Fase 3 / prd4)
-- Added 3 async read helpers to `event_ledger.py`: `get_expense_list()`, `get_expense_stats()`, `get_pending_exports()`
-- Added 3 internal pure functions: `_fetch_expense_events()`, `_group_expense_events()`, `_build_expense_row()`
-- `_group_expense_events()` groups expense_* events by reference_id, merges metadata from classified/reviewed events
-- `_build_expense_row()` reconstructs mp_expenses-compatible dict from grouped events using `derive_expense_status()`
-- `get_expense_list()`: filters by status/type/direction, sorts by date_created DESC, paginates
-- `get_expense_stats()`: returns same shape as crud.py stats endpoint (seller, total, total_amount, by_type, by_direction, by_status, pending/auto counts)
-- `get_pending_exports()`: excludes expense_exported, filters by status_filter, sorts by date_created ASC
-- Added 32 new tests in `testes/test_expense_read_helpers.py` (8 group, 5 build, 7 list, 4 stats, 8 exports)
-- Files changed: `app/services/event_ledger.py`, `testes/test_expense_read_helpers.py`
-- **Learnings for future iterations:**
-  - All expense data lives in metadata of expense_captured events — reconstruct rows from there
-  - expense_classified metadata merges ca_category; expense_reviewed metadata merges overrides for ca_category/description/notes/etc.
-  - Mock pattern for async helpers: `patch("app.services.event_ledger._fetch_expense_events", new_callable=AsyncMock, return_value=events)`
-  - `_build_expense_row` uses reference_id as both `id` and `payment_id` (surrogate for mp_expenses.id)
-  - 443 tests total passing after changes
----
-
-## 2026-03-13 - US-002 (Fase 3 / prd4)
-- Added `expenses_source: str = "mp_expenses"` feature flag to `app/config.py`
-- Migrated `financial_closing.py` `_compute_manual_lane()`:
-  - Made function async (was sync, only called from async context)
-  - When `expenses_source == 'ledger'`: calls `get_expense_list()` with limit=1_000_000 instead of querying mp_expenses table
-  - When `expenses_source == 'mp_expenses'`: original behavior unchanged
-  - Updated call site in `compute_seller_financial_closing()` to await
-- Migrated `extrato_coverage_checker.py` `_lookup_expense_ids()`:
-  - When `expenses_source == 'ledger'`: new `_lookup_expense_ids_ledger()` queries `payment_events` WHERE `event_type = 'expense_captured'` matching `ml_payment_id`
-  - When `expenses_source == 'mp_expenses'`: original behavior unchanged
-  - Same batching pattern (chunks of 100) for both paths
-- Added 9 new tests in `testes/test_feature_flag_expenses_source.py`:
-  - 4 tests for `_compute_manual_lane` (default mode, ledger mode, exported status, signed amounts)
-  - 5 tests for `_lookup_expense_ids` (default, ledger, empty sets, batching)
-- Files changed: `app/config.py`, `app/services/financial_closing.py`, `app/services/extrato_coverage_checker.py`, `testes/test_feature_flag_expenses_source.py`
-- **Learnings for future iterations:**
-  - `_compute_manual_lane` was sync but called from async — making it async is safe since only caller is `compute_seller_financial_closing`
-  - Ledger `get_expense_list()` returns string `payment_id` (reference_id), while mp_expenses returns int. `_signed_amount()` and `int()` casts handle both gracefully
-  - `_lookup_expense_ids_ledger` matches on `ml_payment_id` (int) in payment_events, which corresponds to `int(payment_id.split(':')[0])` from `record_expense_event`
-  - The batch_tables logic for imported status tracking is independent of expense source — it always comes from `expense_batches`/`expense_batch_items`
-  - 452 tests total passing after changes
----
-
-## 2026-03-13 - US-003 (Fase 3 / prd4)
-- Migrated `expenses/crud.py` — 4 endpoints get ledger branches:
-  - `list_expenses`: calls `get_expense_list()` when `expenses_source == 'ledger'`
-  - `expense_stats`: calls `get_expense_stats()` when `expenses_source == 'ledger'`
-  - `review_expense`: queries `payment_events` for existence/export check, writes `expense_reviewed` event with review fields as metadata
-  - `pending_review_summary`: calls `get_expense_list(status="pending_review")`, shares grouping logic with mp_expenses path
-- Migrated `expenses/export.py` — `export_expenses` gets ledger branch:
-  - Fetches rows via `get_pending_exports()` instead of mp_expenses query
-  - Converts string `id` to int for batch persistence compatibility
-  - When `mark_exported=True`, writes `expense_exported` events (signed_amount=0, metadata with batch_id) instead of updating mp_expenses
-  - Event write failures caught as warnings, never block export
-- Added 17 tests in `testes/test_crud_export_ledger_mode.py`:
-  - 3 tests for list_expenses (ledger, filters, default)
-  - 2 tests for expense_stats (ledger, no-filter)
-  - 4 tests for review_expense (success, 404, 409, 400)
-  - 2 tests for pending_review_summary (ledger, default)
-  - 6 tests for export (ledger fetch, mark exported, no mark, id conversion, default, event failure)
-- Files changed: `app/routers/expenses/crud.py`, `app/routers/expenses/export.py`, `testes/test_crud_export_ledger_mode.py`
-- **Learnings for future iterations:**
-  - Conditional imports inside `if settings.expenses_source == "ledger":` blocks keep ledger code lazy-loaded and avoid import side effects in mp_expenses mode
-  - Ledger `_build_expense_row` returns `id` as string (reference_id), but `expense_batch_items.expense_id` is bigint — need `int(payment_id.split(':')[0])` conversion
-  - `review_expense` in ledger mode uses `expense_reviewed` event (status="reviewed") vs mp_expenses mode which sets status="manually_categorized" — status names differ between modes
-  - `get_pending_exports()` already excludes expense_exported, equivalent to mp_expenses `not_.in_("status", ["exported", "imported"])`
-  - `record_expense_event` name imported in earlier if-block is available later in same function scope (Python flat function scope), safe since both blocks check same condition
-  - 469 tests total passing after changes
----
-
-## 2026-03-13 - US-003 (Dual-write / prd.json)
-- Added dual-write to `extrato_ingester.py` for both `ingest_extrato_for_seller()` and `ingest_extrato_from_csv()`
-- Helper functions: `_extrato_signed_amount()`, `_build_extrato_expense_metadata()`, `_dual_write_extrato_expense_events()`
-- Uses `upserted` flag pattern: dual-write only after successful insert/update, skipped for exported rows and exceptions
-- Same metadata pattern as expense_classifier (all 14 Fase 3 fields present)
-- Extrato-specific mappings: `date_created`/`date_approved` both use `tx["date"]`, `operation_type` uses `f"extrato_{expense_type}"`, `business_branch`/`payment_method`/`beneficiary_name` are None
-- Added 12 new tests in `testes/test_extrato_ingester_dual_write.py` (4 signed_amount, 2 metadata, 6 dual-write helper)
-- Files changed: `app/services/extrato_ingester.py`, `testes/test_extrato_ingester_dual_write.py`
-- **Learnings for future iterations:**
-  - Extrato transactions have a different data shape from ML payments: `tx["date"]` (ISO date), `tx["amount"]` (signed), `tx["reference_id"]`, `tx["transaction_type"]`
-  - The `ingest_extrato_from_csv()` function has a nearly identical upsert loop to `ingest_extrato_for_seller()` — changes must be applied to BOTH
-  - The `upserted` flag pattern cleanly handles `continue` statements (exported rows) and exception paths
-  - `_build_expense_from_extrato()` provides `row["description"]` which can be passed directly to the metadata builder
-  - 481 tests total passing after changes
----
-
-## 2026-03-13 - US-004 (Dual-write / prd3.json)
-- Added dual-write to `release_report_sync.py` for both `sync_release_report()` and `backfill_release_report()`
-- Helper functions: `_release_signed_amount()`, `_build_release_expense_metadata()`, `_dual_write_release_expense_events()`
-- After each successful `mp_expenses.insert()`: writes `expense_captured` event (and `expense_classified` if auto-categorized)
-- Release-specific mappings: `date_created`/`date_approved` both use `row["date"]`, `operation_type` uses `f"release_{desc_type}"`, `notes` uses `payout_bank_account`
-- Added dual-write of `expense_exported` events in `export.py` (mp_expenses mode, `else` branch)
-- After batch update marking rows as `exported`, loops through rows writing `expense_exported` events (signed_amount=0, metadata with batch_id)
-- Both dual-writes: failure caught as warning, never blocks main operation
-- Added 14 tests in `testes/test_release_report_dual_write.py` (4 signed_amount, 3 metadata, 7 dual-write helper)
-- Added 5 tests in `testes/test_export_dual_write.py` (exported events written, failure handling, fallback date, signed_amount=0, id conversion)
-- Files changed: `app/services/release_report_sync.py`, `app/routers/expenses/export.py`, `testes/test_release_report_dual_write.py`, `testes/test_export_dual_write.py`, `scripts/ralph/prd3.json`
-- **Learnings for future iterations:**
-  - Release report rows have a different data shape from both ML payments and extrato transactions: `row["date"]` (ISO datetime string from CSV), `row["net_debit"]`/`row["net_credit"]`, `row["source_id"]`
-  - `backfill_release_report()` has a nearly identical insert loop to `sync_release_report()` — dual-write must be applied to BOTH
-  - In export.py, the `record_expense_event` import is lazy (inside `if` block) — can't patch at module level, must patch at source (`app.services.event_ledger.record_expense_event`)
-  - The `_classify_payout()` and `_classify_credit()` functions return the classification tuple BEFORE the insert, so all values (expense_type, direction, ca_category, auto_cat) are available for the dual-write call
-  - 500 tests total passing after changes
----
-
-## 2026-03-13 - US-005 (Dual-write / prd.json)
-- Validated dual-write consistency across all sellers via SQL queries
-- Backfilled expense_captured events for all 503 existing mp_expenses rows (9 sellers) via SQL INSERT ... ON CONFLICT DO NOTHING
-- Backfilled expense_classified events for all auto_categorized rows
-- Validation results for 141air: COUNT 359=359, SUM 338741.36=338741.36
-- All 9 sellers: counts and sums match perfectly between mp_expenses and expense_captured events
-- DRE unchanged: expense_* events filtered out by get_dre_summary (confirmed by test_get_dre_summary_excludes_cash)
-- Export ZIP unchanged: default expenses_source='mp_expenses' reads from mp_expenses table
-- 500 tests passing
-- Files changed: `scripts/ralph/prd.json` (US-004 + US-005 marked passes: true)
-- **Learnings for future iterations:**
-  - Historical mp_expenses rows need a one-time SQL backfill to create corresponding expense_captured events
-  - Backfill uses same idempotency_key pattern as record_expense_event: `{seller}:{payment_id}:{event_type}` — ON CONFLICT DO NOTHING makes it safe to re-run
-  - signed_amount sign convention: positive for income direction, negative for expense/transfer — matches _expense_signed_amount() helper
-  - The JOIN-based validation query (mp_expenses LEFT JOIN payment_events) catches per-seller discrepancies more effectively than UNION ALL
-  - SUM with DISTINCT is needed in JOIN queries to avoid double-counting when rows have multiple events
+  - Building ledger events from mp_expenses rows is straightforward: capture→classify→export lifecycle
+  - The key fields that must match between sources: amount, expense_type, expense_direction, ca_category, description, auto_categorized, external_reference, dates
+  - financial_closing._signed_amount uses expense_direction NOT signed_amount from events — so direction field parity is critical
+  - get_dre_summary and get_cash_summary already filter expense_* events, so read migration doesn't affect DRE at all
 ---
