@@ -34,7 +34,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Read rfcs/plano-execucao/06-fase4-deprecar-mp-expenses.md Etapa 2 for script structure. The idempotency key {seller}:{payment_id}:expense_captured prevents duplicates. Use pagination when reading mp_expenses (may have thousands of rows). The signed_amount must follow convention: positive for income, negative for expense."
     },
     {

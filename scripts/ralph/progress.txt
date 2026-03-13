@@ -3,6 +3,8 @@
 - When removing a function from a service, always grep test files for imports of that function — tests will fail at collection time with ImportError
 - Test files that test dual-mode behavior (mp_expenses vs ledger) need the mp_expenses-specific tests removed when the code path is removed
 - crud.py still has expenses_source branching (to be cleaned in US-003)
+- For standalone migration scripts: use PROJECT_ROOT sys.path insert, asyncio.run, argparse pattern from backfill_events.py
+- Pre-fetch existing idempotency keys in bulk rather than checking per-record (much faster for large datasets)
 
 # Ralph Progress Log
 Started: Fri Mar 13 16:21:40 -03 2026
@@ -18,5 +20,24 @@ Started: Fri Mar 13 16:21:40 -03 2026
   - test_extrato_classification.py imported _build_expense_from_extrato which was the mp_expenses-specific builder (now gone)
   - test_crud_export_ledger_mode.py had a test asserting `table("mp_expenses")` is called in default mode — needed removal
   - crud.py still has `expenses_source` branching with mp_expenses fallback — US-003 must clean that
+  - 525 tests passing after changes
+---
+
+## 2026-03-13 - US-002
+- Created migration script `testes/migrate_mp_expenses_to_ledger.py`
+- Script migrates historical mp_expenses records to event ledger events
+- For each mp_expense without matching expense_captured: creates expense_captured event with full metadata
+- If auto_categorized: also creates expense_classified event
+- If status == 'exported': creates expense_exported event with batch_id='legacy_migration'
+- If status == 'manually_categorized': creates expense_reviewed event
+- Script is idempotent (re-run creates 0 new events via ON CONFLICT DO NOTHING)
+- Includes validation: compares mp_expenses count vs expense_captured count per seller
+- Supports --seller, --all, --dry-run, --validate-only flags
+- Files changed: 1 new file (testes/migrate_mp_expenses_to_ledger.py)
+- **Learnings for future iterations:**
+  - Follow backfill_events.py pattern for standalone scripts: PROJECT_ROOT insertion, asyncio.run, argparse
+  - Signed amount convention: positive=income, negative=expense/transfer (same as _expense_signed_amount in classifier)
+  - Bulk pre-fetch existing idempotency keys is much faster than checking one-by-one per expense
+  - mp_expenses.payment_id is text (can be composite like "12345:df"), pass as-is to record_expense_event
   - 525 tests passing after changes
 ---
