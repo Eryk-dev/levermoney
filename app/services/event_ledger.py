@@ -41,6 +41,13 @@ EVENT_TYPES = {
     # Adjustments (release report validator)
     "adjustment_fee":      "negative",
     "adjustment_shipping": "negative",
+    # Cash events — competencia_date = event_date (caixa, NAO competencia real). DRE queries MUST exclude these.
+    "cash_release":      "positive",
+    "cash_expense":      "negative",
+    "cash_income":       "positive",
+    "cash_transfer_out": "negative",
+    "cash_transfer_in":  "positive",
+    "cash_internal":     "any",
 }
 
 
@@ -77,7 +84,9 @@ def validate_event(event_type: str, signed_amount: float) -> None:
         raise ValueError(
             f"{event_type} expects negative amount, got {signed_amount}"
         )
-    if expected == "zero" and signed_amount != 0:
+    if expected == "any":
+        pass  # accepts any sign (cash_internal can be + or -)
+    elif expected == "zero" and signed_amount != 0:
         raise ValueError(
             f"{event_type} expects zero amount, got {signed_amount}"
         )
@@ -119,6 +128,7 @@ async def record_event(
     source: str = "processor",
     metadata: dict | None = None,
     idempotency_key: str | None = None,
+    reference_id: str | None = None,
 ) -> dict | None:
     """Insert an event into the ledger.
 
@@ -146,6 +156,7 @@ async def record_event(
         "source": source,
         "idempotency_key": idempotency_key,
         "metadata": metadata,
+        "reference_id": reference_id if reference_id is not None else str(ml_payment_id),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -334,6 +345,9 @@ async def get_payment_statuses(
             q = q.lte("competencia_date", date_to)
 
         rows = q.range(page_start, page_start + page_limit - 1).execute().data or []
+        rows = [r for r in rows
+                if not r["event_type"].startswith("cash_")
+                and not r["event_type"].startswith("expense_")]
         for r in rows:
             pid = int(r["ml_payment_id"])
             if pid not in events_by_pid:
@@ -373,6 +387,9 @@ async def get_dre_summary(
         ).range(page_start, page_start + page_limit - 1).execute()
 
         rows = result.data or []
+        rows = [r for r in rows
+                if not r["event_type"].startswith("cash_")
+                and not r["event_type"].startswith("expense_")]
         for row in rows:
             et = row["event_type"]
             summary[et] = round(summary.get(et, 0) + row["signed_amount"], 2)

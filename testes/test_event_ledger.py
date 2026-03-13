@@ -178,6 +178,8 @@ class TestEventTypesCoverage:
         "money_released", "mediation_opened",
         "charged_back", "reimbursed",
         "adjustment_fee", "adjustment_shipping",
+        "cash_release", "cash_expense", "cash_income",
+        "cash_transfer_out", "cash_transfer_in", "cash_internal",
     ]
 
     def test_all_types_defined(self):
@@ -194,6 +196,7 @@ class TestEventTypesCoverage:
         assert set(positive) == {
             "sale_approved", "subsidy_credited",
             "refund_fee", "refund_shipping", "reimbursed",
+            "cash_release", "cash_income", "cash_transfer_in",
         }
 
     def test_negative_types(self):
@@ -202,6 +205,7 @@ class TestEventTypesCoverage:
             "fee_charged", "shipping_charged",
             "refund_created", "partial_refund", "charged_back",
             "adjustment_fee", "adjustment_shipping",
+            "cash_expense", "cash_transfer_out",
         }
 
     def test_zero_types(self):
@@ -212,7 +216,7 @@ class TestEventTypesCoverage:
         }
 
     def test_type_count(self):
-        assert len(EVENT_TYPES) == 16
+        assert len(EVENT_TYPES) == 22
 
 
 # ===========================================================================

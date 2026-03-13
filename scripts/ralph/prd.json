@@ -19,7 +19,7 @@
         "python3 -m pytest passes (152+ tests)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Read migrations/006_payment_events.sql for existing schema. Read rfcs/plano-execucao/03-fase1-cash-events.md Passo 1 for exact SQL."
     },
     {
@@ -37,7 +37,7 @@
         "python3 -m pytest passes (152+ tests, DRE values unchanged)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Read app/services/event_ledger.py fully. The EVENT_TYPES dict is near the top. validate_event() checks sign constraints. get_dre_summary() is around line 350 — it queries by competencia_date without filtering event_type. get_payment_statuses() is around line 313. CRITICAL: cash events use competencia_date = event_date, so without the filter they would contaminate DRE results."
     },
     {
