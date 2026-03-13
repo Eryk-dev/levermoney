@@ -1,9 +1,8 @@
 """
-Tests for dual-write in release_report_sync.py.
+Tests for expense event writes in release_report_sync.py.
 
-Verifies that sync_release_report() and backfill_release_report()
-write expense_captured (and expense_classified if auto-categorized)
-to the event ledger after inserting to mp_expenses.
+Verifies that release report sync writes expense_captured
+(and expense_classified if auto-categorized) to the event ledger.
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.release_report_sync import (
     _release_signed_amount,
     _build_release_expense_metadata,
-    _dual_write_release_expense_events,
+    _write_release_expense_events,
 )
 
 
@@ -127,7 +126,7 @@ class TestDualWriteReleaseExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.release_report_sync.record_expense_event", side_effect=fake_record):
-            await _dual_write_release_expense_events(
+            await _write_release_expense_events(
                 "141air", "987654321", "transfer_pix", "transfer",
                 None, False, row,
                 "Saque PIX p/ conta 12345 - R$ 500.0", 500.0,
@@ -152,7 +151,7 @@ class TestDualWriteReleaseExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.release_report_sync.record_expense_event", side_effect=fake_record):
-            await _dual_write_release_expense_events(
+            await _write_release_expense_events(
                 "141air", "111222333", "cashback", "income",
                 "1.3.4 Descontos e Estornos de Taxas e Tarifas", True, row,
                 "Cashback ML (release) - 111222333 R$ 25.0", 25.0,
@@ -176,7 +175,7 @@ class TestDualWriteReleaseExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.release_report_sync.record_expense_event", side_effect=fake_record):
-            await _dual_write_release_expense_events(
+            await _write_release_expense_events(
                 "141air", "555666", "cashback", "income",
                 "1.3.4 Descontos e Estornos de Taxas e Tarifas", True, row,
                 "Bonus envio ML (release)", 15.0,
@@ -196,7 +195,7 @@ class TestDualWriteReleaseExpenseEvents:
 
         with patch("app.services.release_report_sync.record_expense_event", side_effect=failing_record):
             # Should NOT raise
-            await _dual_write_release_expense_events(
+            await _write_release_expense_events(
                 "141air", "987654321", "transfer_pix", "transfer",
                 None, False, row,
                 "Saque PIX", 500.0,
@@ -218,7 +217,7 @@ class TestDualWriteReleaseExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.release_report_sync.record_expense_event", side_effect=selective_fail):
-            await _dual_write_release_expense_events(
+            await _write_release_expense_events(
                 "141air", "111", "cashback", "income",
                 "cat-123", True, row,
                 "Cashback ML", 25.0,
@@ -237,7 +236,7 @@ class TestDualWriteReleaseExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.release_report_sync.record_expense_event", side_effect=fake_record):
-            await _dual_write_release_expense_events(
+            await _write_release_expense_events(
                 "141air", "987654321", "transfer_pix", "transfer",
                 None, False, row,
                 "Saque PIX p/ conta 12345 - R$ 500.0", 500.0,
@@ -264,7 +263,7 @@ class TestDualWriteReleaseExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.release_report_sync.record_expense_event", side_effect=fake_record):
-            await _dual_write_release_expense_events(
+            await _write_release_expense_events(
                 "141air", "123", "transfer_pix", "transfer",
                 None, False, row, "Test", 100.0,
             )

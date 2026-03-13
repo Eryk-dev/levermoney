@@ -6,8 +6,7 @@ Verifies that:
 - crud.py expense_stats calls get_expense_stats when expenses_source='ledger'
 - crud.py review_expense writes expense_reviewed event when expenses_source='ledger'
 - crud.py pending_review_summary uses ledger when expenses_source='ledger'
-- export.py export_expenses uses get_pending_exports and record_expense_event when expenses_source='ledger'
-- All endpoints still use mp_expenses when expenses_source='mp_expenses' (default)
+- export.py export_expenses uses get_pending_exports and record_expense_event (always ledger)
 
 Run: python3 -m pytest testes/test_crud_export_ledger_mode.py -v
 """
@@ -483,32 +482,6 @@ async def test_export_ledger_converts_ids_to_int():
     # Verify ids were converted to int
     assert rows[0]["id"] == 1001
     assert rows[1]["id"] == 1002
-
-
-@pytest.mark.asyncio
-async def test_export_mp_expenses_default():
-    """Default mode queries mp_expenses, NOT ledger."""
-    mock_db = MagicMock()
-    chain = mock_db.table.return_value.select.return_value.eq.return_value
-    chain.not_.in_.return_value.order.return_value.execute.return_value.data = []
-    seller = {"slug": "test-seller", "dashboard_empresa": "TEST", "ml_user_id": 123}
-
-    with patch("app.routers.expenses.export.settings") as mock_settings, \
-         patch("app.routers.expenses.export.get_db", return_value=mock_db), \
-         patch("app.routers.expenses.export.get_seller_config", return_value=seller), \
-         patch("app.routers.expenses.export._batch_tables_available", return_value=False):
-        mock_settings.expenses_source = "mp_expenses"
-        mock_settings.legacy_daily_google_drive_root_folder_id = ""
-
-        from app.routers.expenses.export import export_expenses
-        await export_expenses(
-            seller_slug="test-seller",
-            date_from=None, date_to=None,
-            status_filter=None,
-            mark_exported=False, gdrive_backup=False,
-        )
-
-    mock_db.table.assert_any_call("mp_expenses")
 
 
 @pytest.mark.asyncio

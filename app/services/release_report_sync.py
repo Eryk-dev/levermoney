@@ -2,8 +2,8 @@
 Release Report Sync — parse MP release report CSV to capture transactions
 invisible to the Payments API (PIX withdrawals, DARFs, ML credits/cashback).
 
-Cross-references SOURCE_ID with payments.ml_payment_id and mp_expenses.payment_id
-to avoid duplicates, then inserts new entries into mp_expenses.
+Cross-references SOURCE_ID with payment_events to avoid duplicates,
+then records new entries via the event ledger.
 """
 import csv
 import io
@@ -193,7 +193,7 @@ def _build_release_expense_metadata(
     }
 
 
-async def _dual_write_release_expense_events(
+async def _write_release_expense_events(
     seller_slug: str,
     source_id: str,
     expense_type: str,
@@ -206,7 +206,7 @@ async def _dual_write_release_expense_events(
 ) -> None:
     """Write expense_captured (and expense_classified if auto) to event ledger.
 
-    Failures are logged as warnings but never block the mp_expenses insert.
+    Failures are logged as warnings but do not propagate.
     """
     signed = _release_signed_amount(direction, amount)
     competencia = row["date"][:10]
@@ -226,7 +226,7 @@ async def _dual_write_release_expense_events(
         )
     except EventRecordError:
         logger.warning(
-            "Dual-write expense_captured failed for %s/%s, continuing",
+            "expense_captured failed for %s/%s, continuing",
             seller_slug, source_id,
         )
 
@@ -243,24 +243,24 @@ async def _dual_write_release_expense_events(
             )
         except EventRecordError:
             logger.warning(
-                "Dual-write expense_classified failed for %s/%s, continuing",
+                "expense_classified failed for %s/%s, continuing",
                 seller_slug, source_id,
             )
 
 
 async def _lookup_existing_ids(db, seller_slug: str, source_ids: list[str]) -> tuple[set, set]:
-    """Check which SOURCE_IDs already exist in payment_events or mp_expenses.
+    """Check which SOURCE_IDs already exist in payment_events.
 
     Returns (payment_ids_set, expense_ids_set).
+    payment_ids_set: IDs with sale_approved events (order payments).
+    expense_ids_set: IDs with expense_captured events (non-order expenses).
     """
     if not source_ids:
         return set(), set()
 
     from app.services import event_ledger
 
-    expense_ids = set()
-
-    # Check payment_events table via event_ledger
+    # Check for order-level payment events (sale_approved etc.)
     int_ids = []
     for sid in source_ids:
         try:
@@ -271,56 +271,21 @@ async def _lookup_existing_ids(db, seller_slug: str, source_ids: list[str]) -> t
     found_ints = await event_ledger.get_processed_payment_ids_in(seller_slug, int_ids)
     payment_ids = {str(pid) for pid in found_ints}
 
-    # Check mp_expenses table (payment_id)
-    for i in range(0, len(source_ids), 100):
-        chunk = source_ids[i:i + 100]
-        int_ids = []
-        for sid in chunk:
-            try:
-                int_ids.append(int(sid))
-            except (ValueError, TypeError):
-                continue
-        if int_ids:
-            result = db.table("mp_expenses").select("payment_id, amount").eq(
+    # Check for expense_captured events in payment_events
+    expense_ids: set[str] = set()
+    if int_ids:
+        for i in range(0, len(int_ids), 100):
+            chunk = int_ids[i:i + 100]
+            result = db.table("payment_events").select("ml_payment_id").eq(
                 "seller_slug", seller_slug
-            ).in_("payment_id", int_ids).execute()
+            ).eq("event_type", "expense_captured").in_(
+                "ml_payment_id", chunk
+            ).execute()
             for r in (result.data or []):
-                expense_ids.add(str(r["payment_id"]))
+                expense_ids.add(str(r["ml_payment_id"]))
 
     return payment_ids, expense_ids
 
-
-def _update_existing_expense_amount(db, seller_slug: str, source_id: str, real_amount: float):
-    """Update an existing mp_expense with the real amount from release report.
-
-    This corrects IOF/exchange rate differences for SaaS/boleto payments.
-    Only updates if the amount actually differs.
-    """
-    result = db.table("mp_expenses").select("id, amount, status").eq(
-        "seller_slug", seller_slug
-    ).eq("payment_id", int(source_id)).execute()
-
-    if not result.data:
-        return
-
-    existing = result.data[0]
-    if existing.get("status") == "exported":
-        return  # Don't touch exported rows
-
-    existing_amount = float(existing.get("amount") or 0)
-    if abs(existing_amount - real_amount) < 0.01:
-        return  # Already correct
-
-    db.table("mp_expenses").update({
-        "amount": real_amount,
-        "notes": f"Amount updated from release report (was {existing_amount})",
-        "updated_at": datetime.now().isoformat(),
-    }).eq("id", existing["id"]).execute()
-
-    logger.info(
-        "Updated mp_expense %s amount: %.2f → %.2f (release report)",
-        source_id, existing_amount, real_amount,
-    )
 
 
 async def sync_release_report(
@@ -328,7 +293,7 @@ async def sync_release_report(
     begin_date: str,
     end_date: str,
 ) -> dict:
-    """Main entry point: fetch/create release report, parse, and sync to mp_expenses.
+    """Main entry point: fetch/create release report, parse, and sync to event ledger.
 
     Args:
         seller_slug: seller identifier
@@ -363,7 +328,7 @@ async def sync_release_report(
     # 4. Look up which ones already exist
     payment_ids, expense_ids = await _lookup_existing_ids(db, seller_slug, source_ids)
     logger.info(
-        "Release report cross-ref: %d in payments, %d in mp_expenses",
+        "Release report cross-ref: %d in payments, %d in expenses",
         len(payment_ids), len(expense_ids),
     )
 
@@ -397,17 +362,12 @@ async def sync_release_report(
             stats["already_in_payments"] += 1
             continue
 
-        # Already tracked in mp_expenses
+        # Already tracked as expense in event ledger
         if source_id in expense_ids:
-            # Update amount if payout has different real value
-            if desc_type == "payout" and is_debit:
-                _update_existing_expense_amount(db, seller_slug, source_id, row["net_debit"])
-                stats["updated_amounts"] += 1
-            else:
-                stats["already_in_expenses"] += 1
+            stats["already_in_expenses"] += 1
             continue
 
-        # 6. Classify and create new mp_expense
+        # 6. Classify and record via event ledger
         if desc_type == "payout":
             if not is_debit:
                 stats["skipped_payout_no_debit"] += 1
@@ -424,59 +384,15 @@ async def sync_release_report(
             amount = row["net_credit"]
             auto_cat = ca_category is not None
 
-        status = "auto_categorized" if auto_cat else "pending_review"
-
-        data = {
-            "seller_slug": seller_slug,
-            "payment_id": int(source_id),
-            "expense_type": expense_type,
-            "expense_direction": direction,
-            "ca_category": ca_category,
-            "auto_categorized": auto_cat,
-            "amount": amount,
-            "description": description[:200],
-            "business_branch": None,
-            "operation_type": f"release_{desc_type}",
-            "payment_method": row.get("payment_method") or None,
-            "external_reference": row.get("external_reference") or None,
-            "febraban_code": None,
-            "date_created": row["date"],
-            "date_approved": row["date"],
-            "status": status,
-            "raw_payment": {
-                "source": "release_report",
-                "source_id": source_id,
-                "description": desc_type,
-                "net_credit": row["net_credit"],
-                "net_debit": row["net_debit"],
-                "gross_amount": row["gross_amount"],
-                "order_id": row.get("order_id"),
-                "payout_bank_account": row.get("payout_bank_account"),
-            },
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat(),
-        }
-
-        try:
-            db.table("mp_expenses").insert(data).execute()
-            stats["new_expenses"] += 1
-            logger.info(
-                "New expense from release report: %s type=%s dir=%s amount=%.2f",
-                source_id, expense_type, direction, amount,
-            )
-            # Dual-write to event ledger
-            await _dual_write_release_expense_events(
-                seller_slug, source_id, expense_type, direction,
-                ca_category, auto_cat, row, description, amount,
-            )
-        except Exception as e:
-            error_str = str(e)
-            if "duplicate" in error_str.lower() or "unique" in error_str.lower():
-                stats["duplicate_skipped"] += 1
-                logger.debug("Duplicate mp_expense for %s, skipping", source_id)
-            else:
-                stats["errors"] += 1
-                logger.error("Failed to insert mp_expense for %s: %s", source_id, e)
+        await _write_release_expense_events(
+            seller_slug, source_id, expense_type, direction,
+            ca_category, auto_cat, row, description, amount,
+        )
+        stats["new_expenses"] += 1
+        logger.info(
+            "New expense from release report: %s type=%s dir=%s amount=%.2f",
+            source_id, expense_type, direction, amount,
+        )
 
     result = {
         "total_rows": len(rows),
@@ -485,7 +401,6 @@ async def sync_release_report(
             stats.get("already_in_payments", 0)
             + stats.get("already_in_expenses", 0)
         ),
-        "updated_amounts": stats.get("updated_amounts", 0),
         "skipped": (
             stats.get("skipped_no_id", 0)
             + stats.get("skipped_payment", 0)
@@ -494,7 +409,6 @@ async def sync_release_report(
             + stats.get("skipped_credit_zero", 0)
         ),
         "errors": stats.get("errors", 0),
-        "duplicate_skipped": stats.get("duplicate_skipped", 0),
         "breakdown": dict(stats),
     }
     logger.info("Release report sync for %s: %s", seller_slug, result)
@@ -666,11 +580,7 @@ async def backfill_release_report(
                 continue
 
             if source_id in expense_ids:
-                if desc_type == "payout" and is_debit:
-                    _update_existing_expense_amount(db, seller_slug, source_id, row["net_debit"])
-                    total_stats["updated_amounts"] += 1
-                else:
-                    total_stats["already_in_expenses"] += 1
+                total_stats["already_in_expenses"] += 1
                 continue
 
             if desc_type == "payout":
@@ -689,61 +599,15 @@ async def backfill_release_report(
                 amount = row["net_credit"]
                 auto_cat = ca_category is not None
 
-            status = "auto_categorized" if auto_cat else "pending_review"
-
-            data = {
-                "seller_slug": seller_slug,
-                "payment_id": int(source_id),
-                "expense_type": expense_type,
-                "expense_direction": direction,
-                "ca_category": ca_category,
-                "auto_categorized": auto_cat,
-                "amount": amount,
-                "description": description[:200],
-                "business_branch": None,
-                "operation_type": f"release_{desc_type}",
-                "payment_method": row.get("payment_method") or None,
-                "external_reference": row.get("external_reference") or None,
-                "febraban_code": None,
-                "date_created": row["date"],
-                "date_approved": row["date"],
-                "status": status,
-                "raw_payment": {
-                    "source": "release_report",
-                    "source_id": source_id,
-                    "description": desc_type,
-                    "net_credit": row["net_credit"],
-                    "net_debit": row["net_debit"],
-                    "gross_amount": row["gross_amount"],
-                    "order_id": row.get("order_id"),
-                    "payout_bank_account": row.get("payout_bank_account"),
-                },
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat(),
-            }
-
-            try:
-                db.table("mp_expenses").insert(data).execute()
-                total_stats["new_expenses"] += 1
-                logger.info(
-                    "backfill_release_report %s: new %s type=%s dir=%s amount=%.2f",
-                    seller_slug, source_id, expense_type, direction, amount,
-                )
-                # Dual-write to event ledger
-                await _dual_write_release_expense_events(
-                    seller_slug, source_id, expense_type, direction,
-                    ca_category, auto_cat, row, description, amount,
-                )
-            except Exception as e:
-                error_str = str(e)
-                if "duplicate" in error_str.lower() or "unique" in error_str.lower():
-                    total_stats["duplicate_skipped"] += 1
-                else:
-                    total_stats["errors"] += 1
-                    logger.error(
-                        "backfill_release_report %s: insert failed %s: %s",
-                        seller_slug, source_id, e,
-                    )
+            await _write_release_expense_events(
+                seller_slug, source_id, expense_type, direction,
+                ca_category, auto_cat, row, description, amount,
+            )
+            total_stats["new_expenses"] += 1
+            logger.info(
+                "backfill_release_report %s: new %s type=%s dir=%s amount=%.2f",
+                seller_slug, source_id, expense_type, direction, amount,
+            )
 
         # Small delay between reports
         await _asyncio.sleep(1)
@@ -757,7 +621,6 @@ async def backfill_release_report(
             total_stats.get("already_in_payments", 0)
             + total_stats.get("already_in_expenses", 0)
         ),
-        "updated_amounts": total_stats.get("updated_amounts", 0),
         "errors": total_stats.get("errors", 0),
         "breakdown": dict(total_stats),
     }

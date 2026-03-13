@@ -1,9 +1,9 @@
 """
-Tests for dual-write in extrato_ingester.py.
+Tests for expense event writes in extrato_ingester.py.
 
 Verifies that ingest_extrato_for_seller() and ingest_extrato_from_csv()
 write expense_captured (and expense_classified if auto-categorized) to
-the event ledger after upserting to mp_expenses.
+the event ledger.
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.services.extrato_ingester import (
     _extrato_signed_amount,
     _build_extrato_expense_metadata,
-    _dual_write_extrato_expense_events,
+    _write_extrato_expense_events,
 )
 
 
@@ -100,7 +100,7 @@ class TestDualWriteExtratoExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.extrato_ingester.record_expense_event", side_effect=fake_record):
-            await _dual_write_extrato_expense_events(
+            await _write_extrato_expense_events(
                 "141air", "123456789:df", "difal", "expense",
                 None, tx, "DIFAL - Ref 123456789",
             )
@@ -124,7 +124,7 @@ class TestDualWriteExtratoExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.extrato_ingester.record_expense_event", side_effect=fake_record):
-            await _dual_write_extrato_expense_events(
+            await _write_extrato_expense_events(
                 "141air", "999:cm", "faturas_ml", "expense",
                 "uuid-cat-123", tx, "Fatura ML - Ref 999",
             )
@@ -147,7 +147,7 @@ class TestDualWriteExtratoExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.extrato_ingester.record_expense_event", side_effect=fake_record):
-            await _dual_write_extrato_expense_events(
+            await _write_extrato_expense_events(
                 "141air", "555:rd", "reembolso_disputa", "income",
                 None, tx, "Reembolso - Ref 555",
             )
@@ -167,7 +167,7 @@ class TestDualWriteExtratoExpenseEvents:
 
         with patch("app.services.extrato_ingester.record_expense_event", side_effect=failing_record):
             # Should NOT raise
-            await _dual_write_extrato_expense_events(
+            await _write_extrato_expense_events(
                 "141air", "123:df", "difal", "expense",
                 None, tx, "DIFAL - Ref 123",
             )
@@ -188,7 +188,7 @@ class TestDualWriteExtratoExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.extrato_ingester.record_expense_event", side_effect=selective_fail):
-            await _dual_write_extrato_expense_events(
+            await _write_extrato_expense_events(
                 "141air", "123:cm", "faturas_ml", "expense",
                 "uuid-cat", tx, "Fatura ML - Ref 123",
             )
@@ -206,7 +206,7 @@ class TestDualWriteExtratoExpenseEvents:
             return {"id": 1}
 
         with patch("app.services.extrato_ingester.record_expense_event", side_effect=fake_record):
-            await _dual_write_extrato_expense_events(
+            await _write_extrato_expense_events(
                 "141air", "123:df", "difal", "expense",
                 None, tx, "DIFAL - Ref 123",
             )

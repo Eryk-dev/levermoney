@@ -1,10 +1,8 @@
 """
 Classifier for non-order ML/MP payments (bill payments, subscriptions, cashback, etc.).
-Saves classified expenses to mp_expenses table for XLSX export.
-Dual-writes expense_captured (+ expense_classified) events to event ledger.
+Writes expense_captured (+ expense_classified) events to the event ledger.
 """
 import logging
-from datetime import datetime
 
 from app.services.event_ledger import EventRecordError, record_expense_event
 
@@ -285,13 +283,13 @@ def _build_expense_metadata(
     }
 
 
-async def _dual_write_expense_events(
+async def _write_expense_events(
     seller_slug: str, payment_id: str, expense_type: str, direction: str,
     category: str | None, auto_cat: bool, desc: str, payment: dict,
 ) -> None:
     """Write expense_captured (and expense_classified if auto) to event ledger.
 
-    Failures are logged as warnings but never block the mp_expenses upsert.
+    Failures are logged as warnings but do not propagate.
     """
     amount = payment.get("transaction_amount", 0)
     signed = _expense_signed_amount(direction, amount)
@@ -312,7 +310,7 @@ async def _dual_write_expense_events(
         )
     except EventRecordError:
         logger.warning(
-            "Dual-write expense_captured failed for %s/%s, continuing",
+            "expense_captured failed for %s/%s, continuing",
             seller_slug, payment_id,
         )
 
@@ -329,15 +327,16 @@ async def _dual_write_expense_events(
             )
         except EventRecordError:
             logger.warning(
-                "Dual-write expense_classified failed for %s/%s, continuing",
+                "expense_classified failed for %s/%s, continuing",
                 seller_slug, payment_id,
             )
 
 
 async def classify_non_order_payment(db, seller_slug: str, payment: dict) -> dict | None:
-    """Classify and store a non-order payment in mp_expenses.
+    """Classify a non-order payment and record it in the event ledger.
 
-    Returns the inserted/updated row, or None if skipped (partition_transfer, payment_addition).
+    Returns classification dict, or None if skipped (partition_transfer, payment_addition).
+    The `db` parameter is kept for backward compatibility with callers.
     """
     payment_id = payment["id"]
     expense_type, direction, category, auto_cat, desc = _classify(payment)
@@ -347,52 +346,21 @@ async def classify_non_order_payment(db, seller_slug: str, payment: dict) -> dic
         logger.info(f"Payment {payment_id} classified as {expense_type}, skipping (internal)")
         return None
 
-    branch = _extract_branch(payment)
-    febraban = _extract_febraban(payment)
-    status = "auto_categorized" if auto_cat else "pending_review"
+    # Write to event ledger
+    await _write_expense_events(
+        seller_slug, str(payment_id), expense_type, direction,
+        category, auto_cat, desc, payment,
+    )
 
-    data = {
+    logger.info(f"Payment {payment_id} classified: type={expense_type} dir={direction} cat={category} auto={auto_cat}")
+
+    return {
         "seller_slug": seller_slug,
         "payment_id": payment_id,
         "expense_type": expense_type,
         "expense_direction": direction,
         "ca_category": category,
         "auto_categorized": auto_cat,
-        "amount": payment.get("transaction_amount", 0),
         "description": desc,
-        "business_branch": branch or None,
-        "operation_type": payment.get("operation_type"),
-        "payment_method": payment.get("payment_method_id"),
-        "external_reference": payment.get("external_reference"),
-        "febraban_code": febraban,
-        "date_created": payment.get("date_created"),
-        "date_approved": payment.get("date_approved"),
-        "status": status,
-        "raw_payment": payment,
-        "updated_at": datetime.now().isoformat(),
+        "amount": payment.get("transaction_amount", 0),
     }
-
-    # Upsert: insert or update on conflict
-    existing = db.table("mp_expenses").select("id, status").eq(
-        "seller_slug", seller_slug
-    ).eq("payment_id", payment_id).execute()
-
-    if existing.data:
-        # Don't overwrite if already exported
-        if existing.data[0].get("status") == "exported":
-            logger.info(f"Payment {payment_id} already exported, skipping update")
-            return existing.data[0]
-        db.table("mp_expenses").update(data).eq("id", existing.data[0]["id"]).execute()
-        logger.info(f"Payment {payment_id} updated: type={expense_type} dir={direction} auto={auto_cat}")
-    else:
-        data["created_at"] = datetime.now().isoformat()
-        db.table("mp_expenses").insert(data).execute()
-        logger.info(f"Payment {payment_id} classified: type={expense_type} dir={direction} cat={category} auto={auto_cat}")
-
-    # ── Dual-write to event ledger ──────────────────────────────────────
-    await _dual_write_expense_events(
-        seller_slug, str(payment_id), expense_type, direction,
-        category, auto_cat, desc, payment,
-    )
-
-    return data

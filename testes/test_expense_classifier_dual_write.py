@@ -1,9 +1,8 @@
 """
-Tests for dual-write in expense_classifier.py.
+Tests for expense event writes in expense_classifier.py.
 
 Verifies that classify_non_order_payment() writes expense_captured
-(and expense_classified if auto-categorized) to the event ledger
-after upserting to mp_expenses.
+(and expense_classified if auto-categorized) to the event ledger.
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -51,34 +50,9 @@ def _make_payment(
     return payment
 
 
-def _mock_db(existing_data=None):
-    """Create a mock DB that simulates mp_expenses select/insert/update."""
-    mock = MagicMock()
-    table = MagicMock()
-    mock.table.return_value = table
-
-    select_chain = MagicMock()
-    table.select.return_value = select_chain
-    eq1 = MagicMock()
-    select_chain.eq.return_value = eq1
-    eq2 = MagicMock()
-    eq1.eq.return_value = eq2
-
-    result = MagicMock()
-    result.data = existing_data or []
-    eq2.execute.return_value = result
-
-    insert_chain = MagicMock()
-    table.insert.return_value = insert_chain
-    insert_chain.execute.return_value = MagicMock()
-
-    update_chain = MagicMock()
-    table.update.return_value = update_chain
-    update_eq = MagicMock()
-    update_chain.eq.return_value = update_eq
-    update_eq.execute.return_value = MagicMock()
-
-    return mock
+def _mock_db():
+    """Create a mock DB (no longer used for mp_expenses, kept for signature compat)."""
+    return MagicMock()
 
 
 # ── Pure function tests ──────────────────────────────────────────────────
@@ -133,10 +107,10 @@ class TestBuildExpenseMetadata:
         assert meta["business_branch"] == "Bill Payment"
 
 
-# ── Dual-write integration tests ────────────────────────────────────────
+# ── Event ledger write tests ───────────────────────────────────────────
 
-class TestDualWriteExpenseClassifier:
-    """Tests that classify_non_order_payment dual-writes to event ledger."""
+class TestExpenseClassifierEventWrites:
+    """Tests that classify_non_order_payment writes to event ledger."""
 
     @pytest.mark.asyncio
     async def test_expense_captured_written_for_pending_review(self):
@@ -216,8 +190,8 @@ class TestDualWriteExpenseClassifier:
         assert captured["metadata"]["expense_direction"] == "income"
 
     @pytest.mark.asyncio
-    async def test_skip_direction_no_dual_write(self):
-        """Skipped payments (partition_transfer) → no dual-write, no mp_expenses."""
+    async def test_skip_direction_no_write(self):
+        """Skipped payments (partition_transfer) → no event writes."""
         db = _mock_db()
         payment = _make_payment(
             pid=99004, operation_type="partition_transfer", branch="other",
@@ -235,8 +209,8 @@ class TestDualWriteExpenseClassifier:
         assert len(calls) == 0
 
     @pytest.mark.asyncio
-    async def test_dual_write_failure_does_not_block_upsert(self):
-        """EventRecordError on dual-write → warning logged, data still returned."""
+    async def test_event_failure_still_returns_data(self):
+        """EventRecordError on write → warning logged, classification still returned."""
         from app.services.event_ledger import EventRecordError
 
         db = _mock_db()
@@ -248,14 +222,13 @@ class TestDualWriteExpenseClassifier:
         with patch("app.services.expense_classifier.record_expense_event", side_effect=failing_record):
             result = await classify_non_order_payment(db, "141air", payment)
 
-        # mp_expenses upsert still succeeded
         assert result is not None
         assert result["payment_id"] == 99005
 
     @pytest.mark.asyncio
-    async def test_exported_payment_skips_dual_write(self):
-        """Already exported payment → returns early, no dual-write."""
-        db = _mock_db(existing_data=[{"id": 1, "status": "exported"}])
+    async def test_return_dict_has_classification_fields(self):
+        """Return dict should contain all classification fields."""
+        db = _mock_db()
         payment = _make_payment(pid=99006)
         calls = []
 
@@ -266,12 +239,18 @@ class TestDualWriteExpenseClassifier:
         with patch("app.services.expense_classifier.record_expense_event", side_effect=fake_record):
             result = await classify_non_order_payment(db, "141air", payment)
 
-        assert result == {"id": 1, "status": "exported"}
-        assert len(calls) == 0  # no dual-write for already-exported
+        assert result["seller_slug"] == "141air"
+        assert result["payment_id"] == 99006
+        assert "expense_type" in result
+        assert "expense_direction" in result
+        assert "ca_category" in result
+        assert "auto_categorized" in result
+        assert "description" in result
+        assert "amount" in result
 
     @pytest.mark.asyncio
     async def test_metadata_has_all_required_fields(self):
-        """Verify metadata contains all fields needed for Fase 3."""
+        """Verify metadata contains all fields needed for expense reads."""
         db = _mock_db()
         payment = _make_payment(pid=99007)
         calls = []

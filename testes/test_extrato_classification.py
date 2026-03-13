@@ -14,7 +14,6 @@ from app.services.extrato_ingester import (
     _parse_account_statement,
     _classify_extrato_line,
     _resolve_check_payments,
-    _build_expense_from_extrato,
     _CHECK_PAYMENTS,
     EXTRATO_CLASSIFICATION_RULES,
     _EXPENSE_TYPE_ABBREV,
@@ -388,65 +387,6 @@ class TestResolveCheckPayments:
         fb_type, fb_dir = _resolve_check_payments("Unknown type XYZ")
         assert fb_type == "other"
         assert fb_dir == "expense"
-
-
-# ===========================================================================
-# _build_expense_from_extrato
-# ===========================================================================
-
-class TestBuildExpenseFromExtrato:
-    def test_basic_expense(self):
-        tx = {
-            "date": "2026-01-14",
-            "transaction_type": "Débito por dívida Diferença da aliquota (DIFAL)",
-            "reference_id": "2728587235",
-            "amount": -20.36,
-            "balance": 3179.64,
-        }
-        row = _build_expense_from_extrato(
-            tx, "141air", "difal", "expense",
-            _CA_CATEGORY_CODE_MAP.get("2.2.3"), "2728587235:df",
-        )
-        assert row["seller_slug"] == "141air"
-        assert row["payment_id"] == "2728587235:df"
-        assert row["expense_type"] == "difal"
-        assert row["expense_direction"] == "expense"
-        assert row["amount"] == 20.36  # stored as positive
-        assert row["date_approved"] == "2026-01-14"
-        assert row["source"] == "extrato"
-        assert row["status"] == "auto_categorized"  # has CA category
-        assert row["ca_category"] is not None
-
-    def test_pending_review_status(self):
-        """Without CA category → pending_review."""
-        tx = {
-            "date": "2026-01-08",
-            "transaction_type": "Dinheiro retido Reclamações e devoluções",
-            "reference_id": "138209751237",
-            "amount": -77.91,
-            "balance": 0,
-        }
-        row = _build_expense_from_extrato(
-            tx, "141air", "dinheiro_retido", "expense", None, "138209751237:dr",
-        )
-        assert row["status"] == "pending_review"
-        assert row["ca_category"] is None
-
-    def test_income_direction(self):
-        tx = {
-            "date": "2026-01-26",
-            "transaction_type": "Reembolso Reclamações e devoluções",
-            "reference_id": "140241282353",
-            "amount": 82.62,
-            "balance": 0,
-        }
-        row = _build_expense_from_extrato(
-            tx, "141air", "reembolso_disputa", "income",
-            _CA_CATEGORY_CODE_MAP.get("1.3.4"), "140241282353:rd",
-        )
-        assert row["expense_direction"] == "income"
-        assert row["amount"] == 82.62  # positive, abs(82.62)
-        assert row["status"] == "auto_categorized"
 
 
 # ===========================================================================

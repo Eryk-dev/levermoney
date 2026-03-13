@@ -12,8 +12,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 
-from app.db.supabase import get_db
 from app.config import settings
+from app.db.supabase import get_db
 from app.models.sellers import get_seller_config
 from app.routers.admin import require_admin
 from app.services.gdrive_client import upload_expenses_zip
@@ -132,39 +132,21 @@ async def export_expenses(
     if not seller:
         return {"error": f"Seller {seller_slug} not found"}
 
-    # Fetch rows based on expenses source
-    if settings.expenses_source == "ledger":
-        from app.services.event_ledger import get_pending_exports, record_expense_event
-        statuses = [s.strip() for s in status_filter.split(",") if s.strip()] if status_filter else None
-        rows = await get_pending_exports(
-            seller_slug=seller_slug,
-            date_from=date_from,
-            date_to=date_to,
-            status_filter=statuses,
-        )
-        # Convert string ids to int for batch persistence compatibility
-        for r in rows:
-            try:
-                r["id"] = int(str(r.get("payment_id", "0")).split(":")[0])
-            except (ValueError, TypeError):
-                r["id"] = 0
-    else:
-        q = db.table("mp_expenses").select("*").eq("seller_slug", seller_slug)
-
-        if status_filter:
-            statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
-            q = q.in_("status", statuses)
-        else:
-            q = q.not_.in_("status", ["exported", "imported"])
-
-        if date_from:
-            q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
-        if date_to:
-            q = q.lte("date_created", f"{date_to}T23:59:59.999-03:00")
-
-        q = q.order("date_created", desc=False)
-        result = q.execute()
-        rows = result.data or []
+    # Fetch rows from event ledger
+    from app.services.event_ledger import get_pending_exports, record_expense_event
+    statuses = [s.strip() for s in status_filter.split(",") if s.strip()] if status_filter else None
+    rows = await get_pending_exports(
+        seller_slug=seller_slug,
+        date_from=date_from,
+        date_to=date_to,
+        status_filter=statuses,
+    )
+    # Convert string ids to int for batch persistence compatibility
+    for r in rows:
+        try:
+            r["id"] = int(str(r.get("payment_id", "0")).split(":")[0])
+        except (ValueError, TypeError):
+            r["id"] = 0
 
     batch_id = f"exp_{uuid4().hex[:24]}"
 
@@ -195,56 +177,22 @@ async def export_expenses(
 
     # Mark as exported if requested
     if mark_exported and rows:
-        if settings.expenses_source == "ledger":
-            for row in rows:
-                pid = str(row.get("payment_id", ""))
-                comp = (row.get("date_approved") or row.get("date_created") or "")[:10]
-                try:
-                    await record_expense_event(
-                        seller_slug=seller_slug,
-                        payment_id=pid,
-                        event_type="expense_exported",
-                        signed_amount=0,
-                        competencia_date=comp,
-                        expense_type=row.get("expense_type", "unknown"),
-                        metadata={"batch_id": batch_id},
-                    )
-                except Exception:
-                    logger.warning("Failed to record expense_exported for %s", pid)
-            logger.info("Recorded %d expense_exported events for %s", len(rows), seller_slug)
-        else:
-            ids = [r["id"] for r in rows]
-            now = datetime.now().isoformat()
-            # Batch update in chunks of 100
-            for i in range(0, len(ids), 100):
-                chunk = ids[i:i + 100]
-                db.table("mp_expenses").update({
-                    "status": "exported",
-                    "exported_at": now,
-                    "updated_at": now,
-                }).in_("id", chunk).execute()
-            logger.info(f"Marked {len(ids)} expenses as exported for {seller_slug}")
-
-            # Dual-write expense_exported events to ledger
-            from app.services.event_ledger import record_expense_event as _rec_exp_event
-            for row in rows:
-                pid = str(row.get("payment_id", ""))
-                comp = (row.get("date_approved") or row.get("date_created") or "")[:10]
-                try:
-                    await _rec_exp_event(
-                        seller_slug=seller_slug,
-                        payment_id=pid,
-                        event_type="expense_exported",
-                        signed_amount=0,
-                        competencia_date=comp,
-                        expense_type=row.get("expense_type", "unknown"),
-                        metadata={"batch_id": batch_id},
-                    )
-                except Exception:
-                    logger.warning(
-                        "Dual-write expense_exported failed for %s/%s, continuing",
-                        seller_slug, pid,
-                    )
+        for row in rows:
+            pid = str(row.get("payment_id", ""))
+            comp = (row.get("date_approved") or row.get("date_created") or "")[:10]
+            try:
+                await record_expense_event(
+                    seller_slug=seller_slug,
+                    payment_id=pid,
+                    event_type="expense_exported",
+                    signed_amount=0,
+                    competencia_date=comp,
+                    expense_type=row.get("expense_type", "unknown"),
+                    metadata={"batch_id": batch_id},
+                )
+            except Exception:
+                logger.warning("Failed to record expense_exported for %s", pid)
+        logger.info("Recorded %d expense_exported events for %s", len(rows), seller_slug)
 
     # Determine gdrive_status for batch persistence
     gdrive_initial_status: str | None = None
@@ -357,8 +305,7 @@ async def redownload_batch(seller_slug: str, batch_id: str):
     """Re-download a deterministic ZIP for a previously exported batch.
 
     Uses snapshot_payload from expense_batch_items to reconstruct the XLSX
-    files exactly as they were at export time, regardless of any later edits
-    to mp_expenses.
+    files exactly as they were at export time.
     """
     db = get_db()
 
