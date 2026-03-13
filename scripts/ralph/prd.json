@@ -50,7 +50,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Read app/services/daily_sync.py — it builds an already_done_expenses set from mp_expenses. Change to query payment_events WHERE event_type = 'expense_captured'. Read app/services/onboarding_backfill.py — same pattern. Then grep -r mp_expenses app/ to find and remove ALL remaining references."
     },
     {

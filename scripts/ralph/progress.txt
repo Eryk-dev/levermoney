@@ -2,7 +2,8 @@
 - The 4 expense services (expense_classifier, extrato_ingester, release_report_sync, export) already had event ledger writes (record_expense_event) from Etapa 3 — the mp_expenses writes were the dual-write path being removed
 - When removing a function from a service, always grep test files for imports of that function — tests will fail at collection time with ImportError
 - Test files that test dual-mode behavior (mp_expenses vs ledger) need the mp_expenses-specific tests removed when the code path is removed
-- crud.py still has expenses_source branching (to be cleaned in US-003)
+- When removing a feature flag, also remove all `patch("module.settings")` mocks in tests that set the flag — the patch target no longer exists and will cause AttributeError
+- daily_sync.py already used payment_events for expense dedup before US-003 — always verify before changing
 - For standalone migration scripts: use PROJECT_ROOT sys.path insert, asyncio.run, argparse pattern from backfill_events.py
 - Pre-fetch existing idempotency keys in bulk rather than checking per-record (much faster for large datasets)
 
@@ -40,4 +41,22 @@ Started: Fri Mar 13 16:21:40 -03 2026
   - Bulk pre-fetch existing idempotency keys is much faster than checking one-by-one per expense
   - mp_expenses.payment_id is text (can be composite like "12345:df"), pass as-is to record_expense_event
   - 525 tests passing after changes
+---
+
+## 2026-03-13 - US-003
+- onboarding_backfill.py: replaced mp_expenses dedup with payment_events WHERE event_type='expense_captured'
+- daily_sync.py: already used payment_events for dedup (no change needed)
+- Removed expenses_source feature flag from config.py
+- Removed all conditional branches in crud.py, financial_closing.py, extrato_coverage_checker.py, expenses/closing.py
+- Merged _lookup_expense_ids + _lookup_expense_ids_ledger into single function in extrato_coverage_checker.py
+- Updated docstrings in admin routers (extrato.py, release_report.py, sellers.py) and event_ledger.py
+- Fixed test files: removed settings.expenses_source mocks, deleted mp_expenses-mode tests
+- Verified: grep -r 'mp_expenses' app/ --include='*.py' returns ZERO results
+- Files changed: 10 app files + 2 test files
+- **Learnings for future iterations:**
+  - daily_sync.py was already clean — always read the file before assuming it needs changes
+  - When removing a feature flag, the `patch("module.settings")` in tests breaks because the module no longer imports settings — must remove the patch entirely
+  - expenses/closing.py had NO feature flag branching, it queried mp_expenses directly — needed full rewrite to use get_expense_list
+  - extrato_coverage_checker.py had two parallel functions (_lookup_expense_ids and _lookup_expense_ids_ledger) — merged into one
+  - 520 tests passing (5 tests removed that tested deleted mp_expenses code paths)
 ---
