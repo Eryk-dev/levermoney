@@ -108,3 +108,15 @@ Started: Fri Mar 13 14:19:07 -03 2026
   - The upload endpoint is multipart form-data (FormData), not JSON — don't set Content-Type header, let browser set boundary
   - Admin token key in sessionStorage: `'lever-admin-token'` (hardcoded in useAdmin.ts)
 ---
+
+## 2026-03-13 - US-001 (prd2: cash-events)
+- Created `migrations/008_unified_ledger.sql` with exact SQL from RFC Passo 1
+- Applied migration to Supabase via `mcp__supabase__apply_migration`
+- Verified: reference_id column populated (backfilled from ml_payment_id::text), ml_payment_id default=0, both indexes created
+- 366 pytest tests passing
+- Files changed: `migrations/008_unified_ledger.sql` (new)
+- **Learnings for future iterations:**
+  - Migration 008 adds `reference_id TEXT` to `payment_events` — used by cash events for text-based ref IDs
+  - `ml_payment_id` default changed to 0 — cash events may not have numeric payment IDs
+  - Two partial indexes added: `idx_pe_seller_ref` (WHERE reference_id IS NOT NULL), `idx_pe_cash_events` (WHERE event_type LIKE 'cash_%')
+---

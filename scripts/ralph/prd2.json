@@ -1,0 +1,110 @@
+{
+  "project": "LeverMoney",
+  "branchName": "ralph/cash-events",
+  "description": "Etapa 2: Cash events no event ledger. Cada linha do extrato vira um evento cash_* imutavel. Permite reconciliacao automatica: sum(cash) == extrato.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Migration 008: reference_id column + indexes",
+      "description": "As a developer, I need the reference_id column and cash event indexes added to payment_events table.",
+      "acceptanceCriteria": [
+        "File migrations/008_unified_ledger.sql created",
+        "SQL adds: ALTER TABLE payment_events ADD COLUMN IF NOT EXISTS reference_id TEXT",
+        "SQL backfills: UPDATE payment_events SET reference_id = ml_payment_id::text WHERE reference_id IS NULL",
+        "SQL sets: ALTER TABLE payment_events ALTER COLUMN ml_payment_id SET DEFAULT 0",
+        "SQL creates index: idx_pe_seller_ref ON payment_events (seller_slug, reference_id) WHERE reference_id IS NOT NULL",
+        "SQL creates index: idx_pe_cash_events ON payment_events (seller_slug, event_date) WHERE event_type LIKE 'cash_%'",
+        "Migration applied to Supabase via mcp__supabase__apply_migration",
+        "Verification: SELECT reference_id FROM payment_events LIMIT 5 returns non-null values",
+        "python3 -m pytest passes (152+ tests)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Read migrations/006_payment_events.sql for existing schema. Read rfcs/plano-execucao/03-fase1-cash-events.md Passo 1 for exact SQL."
+    },
+    {
+      "id": "US-002",
+      "title": "Add 6 cash event types + protect existing queries",
+      "description": "As a system, I need 6 new cash_* event types in the ledger, support for 'any' sign validation, reference_id parameter in record_event(), and existing DRE/status queries protected from contamination.",
+      "acceptanceCriteria": [
+        "6 event types added to EVENT_TYPES dict in app/services/event_ledger.py: cash_release (positive), cash_expense (negative), cash_income (positive), cash_transfer_out (negative), cash_transfer_in (positive), cash_internal (any)",
+        "Comment added above cash types: '# Cash events — competencia_date = event_date (caixa, NAO competencia real). DRE queries MUST exclude these.'",
+        "validate_event() updated: if expected == 'any': pass (accepts any sign)",
+        "record_event() gains new optional parameter: reference_id: str | None = None",
+        "record_event() includes reference_id in the row dict: reference_id = reference_id if reference_id is not None else str(ml_payment_id)",
+        "get_dre_summary(): after fetching rows, filter out rows where event_type starts with 'cash_' or 'expense_'",
+        "get_payment_statuses(): after fetching rows, filter out rows where event_type starts with 'cash_' or 'expense_'",
+        "python3 -m pytest passes (152+ tests, DRE values unchanged)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Read app/services/event_ledger.py fully. The EVENT_TYPES dict is near the top. validate_event() checks sign constraints. get_dre_summary() is around line 350 — it queries by competencia_date without filtering event_type. get_payment_statuses() is around line 313. CRITICAL: cash events use competencia_date = event_date, so without the filter they would contaminate DRE results."
+    },
+    {
+      "id": "US-003",
+      "title": "record_cash_event() and get_cash_summary() functions",
+      "description": "As a system, I need functions to record cash events with correct idempotency key (including abbreviation) and query cash summaries by date range.",
+      "acceptanceCriteria": [
+        "Function record_cash_event(seller_slug, reference_id, event_type, signed_amount, event_date, extrato_type, expense_type_abbrev='xx', metadata=None) added to event_ledger.py",
+        "Validates event_type starts with 'cash_' (raises ValueError otherwise)",
+        "Idempotency key format: {seller}:{ref_id}:{event_type}:{date}:{abbrev} (5 parts)",
+        "ml_payment_id set via int(reference_id) with fallback to 0",
+        "competencia_date set equal to event_date (documented in docstring)",
+        "source set to 'extrato'",
+        "Metadata includes extrato_type and source='account_statement'",
+        "Function get_cash_summary(seller_slug, date_from, date_to) added",
+        "get_cash_summary uses .range() pagination (page_limit=1000)",
+        "get_cash_summary returns dict like {cash_release: 12345.67, cash_expense: -1234.56}",
+        "get_cash_summary filters only event_type starting with 'cash_'",
+        "python3 -m pytest passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Read rfcs/plano-execucao/03-fase1-cash-events.md Passo 4 and Passo 7 for exact function signatures. The abbreviation in the idempotency key prevents collision when two different transaction types generate the same cash event type for the same ref_id on the same day."
+    },
+    {
+      "id": "US-004",
+      "title": "Cash events test suite",
+      "description": "As a developer, I need comprehensive tests for cash event types, idempotency, and query protection.",
+      "acceptanceCriteria": [
+        "File testes/test_cash_events.py created with 9 tests",
+        "test_cash_event_types_exist: all 6 cash types in EVENT_TYPES",
+        "test_validate_cash_any_sign: cash_internal accepts both positive and negative",
+        "test_record_cash_event_idempotency_includes_date: same ref_id different dates produce different idem keys",
+        "test_record_cash_event_idempotency_includes_abbrev: same ref_id same date different abbrev produce different idem keys",
+        "test_no_collision_different_types_same_ref: two expense types with same ref_id/day do not collide",
+        "test_get_dre_summary_excludes_cash: get_dre_summary does not return cash events",
+        "test_get_payment_statuses_excludes_cash: get_payment_statuses does not return cash events",
+        "test_get_cash_summary: correct aggregation by type",
+        "test_skip_mapping_not_all_internal: verifies PIX enviado is NOT cash_internal",
+        "python3 -m pytest passes (152 existing + 9 new = 161+ tests)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Read testes/test_event_ledger.py for existing test patterns. Tests use conftest.py fixtures and mock Supabase. Follow the same pattern of mocking db calls. The SKIP_TO_CASH_TYPE and CASH_TYPE_MAP dicts should be importable from wherever the ingestion script defines them (or define in event_ledger.py)."
+    },
+    {
+      "id": "US-005",
+      "title": "Extrato ingestion script for cash events",
+      "description": "As an operator, I need a script that reads the extrato CSV and creates cash events in the ledger with correct type mappings and validates the reconciliation invariant.",
+      "acceptanceCriteria": [
+        "Script testes/ingest_extrato_to_ledger.py created",
+        "Accepts CLI args: --seller 141air --month jan2026 [--dry-run]",
+        "CASH_TYPE_MAP has 17 entries (NO deposito_avulso or cashback — these are dead mappings)",
+        "SKIP_TO_CASH_TYPE has 13 entries with per-rule mapping: PIX/transferencia/pagamento -> cash_transfer_out, compra -> cash_expense, transferencia de saldo/reservado/renda -> cash_internal",
+        "SKIP_TO_CASH_TYPE includes accented keys: transferência enviada, transferência de saldo",
+        "SKIP_ABBREV has 13 entries matching SKIP_TO_CASH_TYPE keys",
+        "For _CHECK_PAYMENTS: if ref_id in payment_events -> cash_release with abbrev 'cr'",
+        "Dry-run mode: counts and validates without writing, prints total lines and count per cash event type and SUM",
+        "Real run for 141air jan2026: creates 690 cash events (verify via SQL: SELECT COUNT(*) FROM payment_events WHERE seller_slug = '141air' AND event_type LIKE 'cash_%')",
+        "Sum verification: SELECT ROUND(SUM(signed_amount)::numeric, 2) FROM payment_events WHERE seller_slug = '141air' AND event_type LIKE 'cash_%' returns -3385.83",
+        "Re-run is idempotent: reports '0 newly ingested, 690 already exist'",
+        "DRE unchanged: SELECT event_type, ROUND(SUM(signed_amount)::numeric, 2) FROM payment_events WHERE seller_slug = '141air' AND event_type NOT LIKE 'cash_%' AND event_type NOT LIKE 'expense_%' AND competencia_date BETWEEN '2026-01-01' AND '2026-01-31' GROUP BY event_type returns same values as before ingestion",
+        "python3 -m pytest passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Read rfcs/plano-execucao/03-fase1-cash-events.md Passo 5 and Passo 6 for complete mappings and script flow. Read app/services/extrato_ingester.py lines 88-149 for EXTRATO_CLASSIFICATION_RULES, lines 151-184 for _CHECK_PAYMENTS_FALLBACK and _EXPENSE_TYPE_ABBREV, lines 243-327 for _parse_account_statement(). Extrato CSV is at testes/data/extratos/extrato janeiro 141Air.csv. The script must import and reuse these existing functions, NOT reimplement them. Reference data: initial_balance=4476.23, final_balance=1090.40, net=-3385.83, 690 lines."
+    }
+  ]
+}
