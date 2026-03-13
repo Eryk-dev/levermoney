@@ -41,6 +41,70 @@ EVENT_TYPES = {
     # Adjustments (release report validator)
     "adjustment_fee":      "negative",
     "adjustment_shipping": "negative",
+    # Cash events — competencia_date = event_date (caixa, NAO competencia real). DRE queries MUST exclude these.
+    "cash_release":      "positive",
+    "cash_expense":      "negative",
+    "cash_income":       "positive",
+    "cash_transfer_out": "negative",
+    "cash_transfer_in":  "positive",
+    "cash_internal":     "any",
+}
+
+# Extrato line → cash event type mapping (for classified lines with expense_type)
+CASH_TYPE_MAP: dict[str, str] = {
+    "liberacao_cancelada":      "cash_expense",
+    "reembolso_disputa":        "cash_income",
+    "reembolso_generico":       "cash_income",
+    "entrada_dinheiro":         "cash_income",
+    "dinheiro_retido":          "cash_expense",
+    "difal":                    "cash_expense",
+    "faturas_ml":               "cash_expense",
+    "debito_envio_ml":          "cash_expense",
+    "debito_divida_disputa":    "cash_expense",
+    "debito_troca":             "cash_expense",
+    "bonus_envio":              "cash_income",
+    "subscription":             "cash_expense",
+    "pagamento_cartao_credito": "cash_expense",
+    "emprestimo_mp":            "cash_income",
+    "liberacao_nao_sync":       "cash_release",
+    "qr_pix_nao_sync":          "cash_income",
+    "dinheiro_recebido":        "cash_income",
+    "pix_nao_sync":             "cash_transfer_in",
+}
+
+# Skip rules: extrato lines with expense_type=None → per-rule cash event mapping
+# Keys are normalized transaction type substrings (lowercase)
+SKIP_TO_CASH_TYPE: dict[str, str] = {
+    "transferencia pix":         "cash_transfer_out",
+    "pix enviado":               "cash_transfer_out",
+    "pagamento de conta":        "cash_transfer_out",
+    "compra mercado libre":      "cash_expense",
+    "compra mercado livre":      "cash_expense",
+    "transferencia enviada":     "cash_transfer_out",
+    "transferência enviada":     "cash_transfer_out",
+    "compra de ":                "cash_expense",
+    "transferencia de saldo":    "cash_internal",
+    "transferência de saldo":    "cash_internal",
+    "dinheiro reservado renda":  "cash_internal",
+    "dinheiro retirado renda":   "cash_internal",
+    "dinheiro reservado":        "cash_internal",
+}
+
+# Abbreviation for skip rules (used in idempotency key)
+SKIP_ABBREV: dict[str, str] = {
+    "transferencia pix":         "tp",
+    "pix enviado":               "pe",
+    "pagamento de conta":        "pg",
+    "compra mercado libre":      "cm",
+    "compra mercado livre":      "cm",
+    "transferencia enviada":     "te",
+    "transferência enviada":     "te",
+    "compra de ":                "cd",
+    "transferencia de saldo":    "ts",
+    "transferência de saldo":    "ts",
+    "dinheiro reservado renda":  "rr",
+    "dinheiro retirado renda":   "xr",
+    "dinheiro reservado":        "rv",
 }
 
 
@@ -77,7 +141,9 @@ def validate_event(event_type: str, signed_amount: float) -> None:
         raise ValueError(
             f"{event_type} expects negative amount, got {signed_amount}"
         )
-    if expected == "zero" and signed_amount != 0:
+    if expected == "any":
+        pass  # accepts any sign (cash_internal can be + or -)
+    elif expected == "zero" and signed_amount != 0:
         raise ValueError(
             f"{event_type} expects zero amount, got {signed_amount}"
         )
@@ -119,6 +185,7 @@ async def record_event(
     source: str = "processor",
     metadata: dict | None = None,
     idempotency_key: str | None = None,
+    reference_id: str | None = None,
 ) -> dict | None:
     """Insert an event into the ledger.
 
@@ -146,6 +213,7 @@ async def record_event(
         "source": source,
         "idempotency_key": idempotency_key,
         "metadata": metadata,
+        "reference_id": reference_id if reference_id is not None else str(ml_payment_id),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -334,6 +402,9 @@ async def get_payment_statuses(
             q = q.lte("competencia_date", date_to)
 
         rows = q.range(page_start, page_start + page_limit - 1).execute().data or []
+        rows = [r for r in rows
+                if not r["event_type"].startswith("cash_")
+                and not r["event_type"].startswith("expense_")]
         for r in rows:
             pid = int(r["ml_payment_id"])
             if pid not in events_by_pid:
@@ -373,9 +444,95 @@ async def get_dre_summary(
         ).range(page_start, page_start + page_limit - 1).execute()
 
         rows = result.data or []
+        rows = [r for r in rows
+                if not r["event_type"].startswith("cash_")
+                and not r["event_type"].startswith("expense_")]
         for row in rows:
             et = row["event_type"]
             summary[et] = round(summary.get(et, 0) + row["signed_amount"], 2)
+
+        if len(rows) < page_limit:
+            break
+        page_start += page_limit
+
+    return summary
+
+
+async def record_cash_event(
+    seller_slug: str,
+    reference_id: str,
+    event_type: str,
+    signed_amount: float,
+    event_date: str,
+    extrato_type: str,
+    expense_type_abbrev: str = "xx",
+    metadata: dict | None = None,
+) -> dict | None:
+    """Record a cash flow event from an extrato line.
+
+    Idempotency key: {seller}:{ref_id}:{event_type}:{date}:{abbrev}
+    The abbreviation prevents collision when two different transaction types
+    generate the same cash event type for the same ref_id on the same day.
+
+    NOTE: competencia_date is set equal to event_date for cash events.
+    It does NOT represent accrual competencia.
+    """
+    if not event_type.startswith("cash_"):
+        raise ValueError(f"cash_* event type required, got {event_type}")
+
+    idem_key = f"{seller_slug}:{reference_id}:{event_type}:{event_date}:{expense_type_abbrev}"
+
+    try:
+        ml_pid = int(reference_id)
+    except (ValueError, TypeError):
+        ml_pid = 0
+
+    full_metadata = {"extrato_type": extrato_type, "source": "account_statement"}
+    if metadata:
+        full_metadata.update(metadata)
+
+    return await record_event(
+        seller_slug=seller_slug,
+        ml_payment_id=ml_pid,
+        event_type=event_type,
+        signed_amount=signed_amount,
+        competencia_date=event_date,
+        event_date=event_date,
+        source="extrato",
+        metadata=full_metadata,
+        idempotency_key=idem_key,
+        reference_id=reference_id,
+    )
+
+
+async def get_cash_summary(
+    seller_slug: str,
+    date_from: str,
+    date_to: str,
+) -> dict:
+    """Aggregate cash events by type for a date range (event_date).
+
+    Returns dict like: {"cash_release": 12345.67, "cash_expense": -1234.56}
+    Only includes event_type starting with 'cash_'.
+    Paginated to avoid PostgREST row limits.
+    """
+    db = get_db()
+    summary: dict[str, float] = {}
+    page_start = 0
+    page_limit = 1000
+    while True:
+        result = db.table(TABLE).select("event_type, signed_amount").eq(
+            "seller_slug", seller_slug
+        ).gte("event_date", date_from).lte(
+            "event_date", date_to
+        ).range(page_start, page_start + page_limit - 1).execute()
+
+        rows = result.data or []
+        for row in rows:
+            et = row["event_type"]
+            if not et.startswith("cash_"):
+                continue
+            summary[et] = round(summary.get(et, 0) + float(row["signed_amount"]), 2)
 
         if len(rows) < page_limit:
             break
