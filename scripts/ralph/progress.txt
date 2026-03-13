@@ -1,31 +1,22 @@
 ## Codebase Patterns
-- Expense ledger events: expense_captured has ALL metadata fields in its `metadata` dict, expense_classified merges `ca_category`, expense_reviewed merges review fields
-- `_group_expense_events()` + `_build_expense_row()` are the bridge between raw ledger events and mp_expenses-compatible dicts
-- To simulate dual-write data in tests, build expense_captured with full metadata + expense_classified when auto_categorized=True + expense_exported for exported rows
-- `_signed_amount()` in financial_closing.py uses expense_direction to determine sign: expense→negative, income→positive, transfer→depends on expense_type
-- DRE functions (get_dre_summary, get_cash_summary) filter out expense_* and cash_* events respectively — they won't regress from expense read migration
-- Test pattern: mock `_fetch_expense_events` to avoid DB calls, then test ledger helpers directly
+- The 4 expense services (expense_classifier, extrato_ingester, release_report_sync, export) already had event ledger writes (record_expense_event) from Etapa 3 — the mp_expenses writes were the dual-write path being removed
+- When removing a function from a service, always grep test files for imports of that function — tests will fail at collection time with ImportError
+- Test files that test dual-mode behavior (mp_expenses vs ledger) need the mp_expenses-specific tests removed when the code path is removed
+- crud.py still has expenses_source branching (to be cleaned in US-003)
 
 # Ralph Progress Log
-Started: Fri Mar 13 16:10:45 -03 2026
+Started: Fri Mar 13 16:21:40 -03 2026
 ---
 
-## 2026-03-13 - US-004
-- Implemented parity validation test suite (29 tests) comparing mp_expenses vs event ledger responses
-- Files changed:
-  - `testes/test_parity_expenses_source.py` (NEW) — 529 lines, 29 tests across 6 test classes
-- Test coverage:
-  - **TestListExpensesParity** (7 tests): count, payment_ids, amounts, types, directions, categories, descriptions
-  - **TestExpenseStatsParity** (8 tests): total count/amount, by_type, by_direction, by_status, pending_review/auto_categorized counts, with status_filter
-  - **TestExportParity** (7 tests): pending export count, payment_ids, amounts, directions, categories, status_filter, XLSX field completeness
-  - **TestFinancialClosingManualLaneParity** (4 tests): same day count, rows per day, signed amounts per day, payment_ids per day
-  - **TestDREUnchanged** (2 tests): dre_summary excludes expense_* events, cash_summary only includes cash_* events
-  - **TestZeroDifferences** (1 test): comprehensive cross-check of all dimensions reporting any differences
-- Zero unexplained differences found
-- All 529 tests pass (including 29 new)
+## 2026-03-13 - US-001
+- Removed all mp_expenses writes from expense_classifier.py, extrato_ingester.py, release_report_sync.py, export.py
+- Fixed test_extrato_classification.py: removed import of deleted _build_expense_from_extrato and its test class
+- Removed obsolete test_export_mp_expenses_default from test_crud_export_ledger_mode.py
+- Files changed: 4 service/router files + 5 test files
 - **Learnings for future iterations:**
-  - Building ledger events from mp_expenses rows is straightforward: capture→classify→export lifecycle
-  - The key fields that must match between sources: amount, expense_type, expense_direction, ca_category, description, auto_categorized, external_reference, dates
-  - financial_closing._signed_amount uses expense_direction NOT signed_amount from events — so direction field parity is critical
-  - get_dre_summary and get_cash_summary already filter expense_* events, so read migration doesn't affect DRE at all
+  - The mp_expenses writes were already the secondary path — event ledger was primary since Etapa 3
+  - test_extrato_classification.py imported _build_expense_from_extrato which was the mp_expenses-specific builder (now gone)
+  - test_crud_export_ledger_mode.py had a test asserting `table("mp_expenses")` is called in default mode — needed removal
+  - crud.py still has `expenses_source` branching with mp_expenses fallback — US-003 must clean that
+  - 525 tests passing after changes
 ---

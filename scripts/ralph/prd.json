@@ -16,7 +16,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Read app/services/expense_classifier.py, app/services/extrato_ingester.py, app/services/release_report_sync.py, and app/routers/expenses/export.py. Remove all db.table('mp_expenses') calls. The event ledger writes (record_expense_event) were added in Etapa 3 — they should already be there. Verify each function still works end-to-end."
     },
     {
