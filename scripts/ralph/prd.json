@@ -67,7 +67,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Read app/services/release_report_sync.py for payout/cashback/shipping insert locations. Read app/routers/expenses/export.py for the export flow — the batch marking happens around line 181-191. The expense_exported event has signed_amount=0 (it's a lifecycle flag, not a financial amount)."
     },
     {
@@ -82,7 +82,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "This story is about running validation queries, not writing new code. Run the SQL via mcp__supabase__execute_sql. If counts don't match, investigate and fix the dual-write in previous stories."
     }
   ]

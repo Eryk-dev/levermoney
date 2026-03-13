@@ -18,6 +18,7 @@ Started: Fri Mar 13 15:16:22 -03 2026
 - Ledger rows have string `id` (reference_id); convert to int via `int(payment_id.split(':')[0])` for batch persistence (expense_batch_items.expense_id is bigint)
 - Release report dual-write: `row["date"]` for both date_created/date_approved, `f"release_{desc_type}"` for operation_type, `payout_bank_account` for notes
 - Export.py lazy imports (inside conditional blocks) must be patched at source (`app.services.event_ledger.record_expense_event`), not at module level
+- Historical data backfill: INSERT INTO payment_events SELECT ... FROM mp_expenses ON CONFLICT DO NOTHING — safe to re-run, uses same idempotency_key pattern
 - review_expense ledger mode: query payment_events for reference_id, write expense_reviewed event with review fields as metadata
 
 ---
@@ -152,4 +153,22 @@ Started: Fri Mar 13 15:16:22 -03 2026
   - In export.py, the `record_expense_event` import is lazy (inside `if` block) — can't patch at module level, must patch at source (`app.services.event_ledger.record_expense_event`)
   - The `_classify_payout()` and `_classify_credit()` functions return the classification tuple BEFORE the insert, so all values (expense_type, direction, ca_category, auto_cat) are available for the dual-write call
   - 500 tests total passing after changes
+---
+
+## 2026-03-13 - US-005 (Dual-write / prd.json)
+- Validated dual-write consistency across all sellers via SQL queries
+- Backfilled expense_captured events for all 503 existing mp_expenses rows (9 sellers) via SQL INSERT ... ON CONFLICT DO NOTHING
+- Backfilled expense_classified events for all auto_categorized rows
+- Validation results for 141air: COUNT 359=359, SUM 338741.36=338741.36
+- All 9 sellers: counts and sums match perfectly between mp_expenses and expense_captured events
+- DRE unchanged: expense_* events filtered out by get_dre_summary (confirmed by test_get_dre_summary_excludes_cash)
+- Export ZIP unchanged: default expenses_source='mp_expenses' reads from mp_expenses table
+- 500 tests passing
+- Files changed: `scripts/ralph/prd.json` (US-004 + US-005 marked passes: true)
+- **Learnings for future iterations:**
+  - Historical mp_expenses rows need a one-time SQL backfill to create corresponding expense_captured events
+  - Backfill uses same idempotency_key pattern as record_expense_event: `{seller}:{payment_id}:{event_type}` — ON CONFLICT DO NOTHING makes it safe to re-run
+  - signed_amount sign convention: positive for income direction, negative for expense/transfer — matches _expense_signed_amount() helper
+  - The JOIN-based validation query (mp_expenses LEFT JOIN payment_events) catches per-seller discrepancies more effectively than UNION ALL
+  - SUM with DISTINCT is needed in JOIN queries to avoid double-counting when rows have multiple events
 ---
