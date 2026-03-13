@@ -7,10 +7,12 @@ Started: Fri Mar 13 15:16:22 -03 2026
 - expense_captured uses sign "any" (positive=income, negative=expense), other expense events use "zero"
 - All event_ledger queries (get_dre_summary, get_payment_statuses) already filter out `expense_*` events — same as `cash_*`
 - Tests in `testes/test_event_ledger.py` cover pure functions; async tests use `unittest.mock.patch` on `record_event`
-- Full test suite: 411 tests, ~2.2s
+- Full test suite: 452 tests, ~2.5s
 - Dual-write helper pattern: `_dual_write_expense_events()` as async helper, called after mp_expenses upsert, catches `EventRecordError` as warning
 - Metadata for expense_captured must include ALL fields for Fase 3: expense_type, expense_direction, ca_category, auto_categorized, description, amount, date_created, date_approved, business_branch, operation_type, payment_method, external_reference, beneficiary_name, notes
 - Signed amount: positive for income direction, negative for expense/transfer
+- Ledger read helpers: `_fetch_expense_events()` → `_group_expense_events()` → `_build_expense_row()` pipeline reconstructs mp_expenses-compatible rows from event metadata
+- Feature flag pattern for Fase 3: `settings.expenses_source` ('mp_expenses' | 'ledger') — consumers check flag and branch to old or new read path
 
 ---
 
@@ -41,4 +43,45 @@ Started: Fri Mar 13 15:16:22 -03 2026
   - `_classify()` is a pure function (no DB) — easy to test independently
   - For US-003 (extrato_ingester): follow same `_dual_write_expense_events()` pattern, import and reuse `_expense_signed_amount`, `_expense_competencia_date`, `_build_expense_metadata` OR duplicate them locally (since extrato has different data shape)
   - 411 tests total passing after changes
+---
+
+## 2026-03-13 - US-001 (Fase 3 / prd4)
+- Added 3 async read helpers to `event_ledger.py`: `get_expense_list()`, `get_expense_stats()`, `get_pending_exports()`
+- Added 3 internal pure functions: `_fetch_expense_events()`, `_group_expense_events()`, `_build_expense_row()`
+- `_group_expense_events()` groups expense_* events by reference_id, merges metadata from classified/reviewed events
+- `_build_expense_row()` reconstructs mp_expenses-compatible dict from grouped events using `derive_expense_status()`
+- `get_expense_list()`: filters by status/type/direction, sorts by date_created DESC, paginates
+- `get_expense_stats()`: returns same shape as crud.py stats endpoint (seller, total, total_amount, by_type, by_direction, by_status, pending/auto counts)
+- `get_pending_exports()`: excludes expense_exported, filters by status_filter, sorts by date_created ASC
+- Added 32 new tests in `testes/test_expense_read_helpers.py` (8 group, 5 build, 7 list, 4 stats, 8 exports)
+- Files changed: `app/services/event_ledger.py`, `testes/test_expense_read_helpers.py`
+- **Learnings for future iterations:**
+  - All expense data lives in metadata of expense_captured events — reconstruct rows from there
+  - expense_classified metadata merges ca_category; expense_reviewed metadata merges overrides for ca_category/description/notes/etc.
+  - Mock pattern for async helpers: `patch("app.services.event_ledger._fetch_expense_events", new_callable=AsyncMock, return_value=events)`
+  - `_build_expense_row` uses reference_id as both `id` and `payment_id` (surrogate for mp_expenses.id)
+  - 443 tests total passing after changes
+---
+
+## 2026-03-13 - US-002 (Fase 3 / prd4)
+- Added `expenses_source: str = "mp_expenses"` feature flag to `app/config.py`
+- Migrated `financial_closing.py` `_compute_manual_lane()`:
+  - Made function async (was sync, only called from async context)
+  - When `expenses_source == 'ledger'`: calls `get_expense_list()` with limit=1_000_000 instead of querying mp_expenses table
+  - When `expenses_source == 'mp_expenses'`: original behavior unchanged
+  - Updated call site in `compute_seller_financial_closing()` to await
+- Migrated `extrato_coverage_checker.py` `_lookup_expense_ids()`:
+  - When `expenses_source == 'ledger'`: new `_lookup_expense_ids_ledger()` queries `payment_events` WHERE `event_type = 'expense_captured'` matching `ml_payment_id`
+  - When `expenses_source == 'mp_expenses'`: original behavior unchanged
+  - Same batching pattern (chunks of 100) for both paths
+- Added 9 new tests in `testes/test_feature_flag_expenses_source.py`:
+  - 4 tests for `_compute_manual_lane` (default mode, ledger mode, exported status, signed amounts)
+  - 5 tests for `_lookup_expense_ids` (default, ledger, empty sets, batching)
+- Files changed: `app/config.py`, `app/services/financial_closing.py`, `app/services/extrato_coverage_checker.py`, `testes/test_feature_flag_expenses_source.py`
+- **Learnings for future iterations:**
+  - `_compute_manual_lane` was sync but called from async — making it async is safe since only caller is `compute_seller_financial_closing`
+  - Ledger `get_expense_list()` returns string `payment_id` (reference_id), while mp_expenses returns int. `_signed_amount()` and `int()` casts handle both gracefully
+  - `_lookup_expense_ids_ledger` matches on `ml_payment_id` (int) in payment_events, which corresponds to `int(payment_id.split(':')[0])` from `record_expense_event`
+  - The batch_tables logic for imported status tracking is independent of expense source — it always comes from `expense_batches`/`expense_batch_items`
+  - 452 tests total passing after changes
 ---

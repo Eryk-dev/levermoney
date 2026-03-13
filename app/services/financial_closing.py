@@ -9,6 +9,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+from app.config import settings
 from app.db.supabase import get_db
 from app.models.sellers import get_all_active_sellers, get_seller_config
 from app.services.event_ledger import derive_payment_status, get_payment_statuses
@@ -81,22 +82,28 @@ def _paginate(query_builder, page_limit: int = 1000) -> list[dict]:
     return rows
 
 
-def _compute_manual_lane(
+async def _compute_manual_lane(
     db,
     seller_slug: str,
     date_from: str | None,
     date_to: str | None,
 ) -> tuple[list[dict], set[int], str]:
     """Return (days, missing_import_ids, import_source)."""
-    q = db.table("mp_expenses").select(
-        "payment_id, amount, expense_direction, status, date_created, date_approved"
-    ).eq("seller_slug", seller_slug)
-    if date_from:
-        q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
-    if date_to:
-        q = q.lte("date_created", f"{date_to}T23:59:59.999-03:00")
+    if settings.expenses_source == "ledger":
+        from app.services.event_ledger import get_expense_list
+        rows = await get_expense_list(
+            seller_slug, date_from=date_from, date_to=date_to, limit=1_000_000,
+        )
+    else:
+        q = db.table("mp_expenses").select(
+            "payment_id, amount, expense_direction, status, date_created, date_approved"
+        ).eq("seller_slug", seller_slug)
+        if date_from:
+            q = q.gte("date_created", f"{date_from}T00:00:00.000-03:00")
+        if date_to:
+            q = q.lte("date_created", f"{date_to}T23:59:59.999-03:00")
 
-    rows = q.order("date_created", desc=False).execute().data or []
+        rows = q.order("date_created", desc=False).execute().data or []
     by_day: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         by_day[_to_brt_day(row.get("date_approved") or row.get("date_created"))].append(row)
@@ -259,7 +266,7 @@ async def compute_seller_financial_closing(
         return {"seller": seller_slug, "error": "seller_not_found"}
 
     auto = await _compute_auto_lane(db, seller_slug, date_from, date_to)
-    manual_days, manual_missing_ids, import_source = _compute_manual_lane(
+    manual_days, manual_missing_ids, import_source = await _compute_manual_lane(
         db, seller_slug, date_from, date_to
     )
     unresolved_combined = sorted(auto["unresolved_payment_ids_set"] | manual_missing_ids)
