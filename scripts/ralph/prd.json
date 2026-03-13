@@ -59,7 +59,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Read rfcs/plano-execucao/03-fase1-cash-events.md Passo 4 and Passo 7 for exact function signatures. The abbreviation in the idempotency key prevents collision when two different transaction types generate the same cash event type for the same ref_id on the same day."
     },
     {
@@ -80,7 +80,7 @@
         "python3 -m pytest passes (152 existing + 9 new = 161+ tests)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Read testes/test_event_ledger.py for existing test patterns. Tests use conftest.py fixtures and mock Supabase. Follow the same pattern of mocking db calls. The SKIP_TO_CASH_TYPE and CASH_TYPE_MAP dicts should be importable from wherever the ingestion script defines them (or define in event_ledger.py)."
     },
     {
@@ -103,7 +103,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Read rfcs/plano-execucao/03-fase1-cash-events.md Passo 5 and Passo 6 for complete mappings and script flow. Read app/services/extrato_ingester.py lines 88-149 for EXTRATO_CLASSIFICATION_RULES, lines 151-184 for _CHECK_PAYMENTS_FALLBACK and _EXPENSE_TYPE_ABBREV, lines 243-327 for _parse_account_statement(). Extrato CSV is at testes/data/extratos/extrato janeiro 141Air.csv. The script must import and reuse these existing functions, NOT reimplement them. Reference data: initial_balance=4476.23, final_balance=1090.40, net=-3385.83, 690 lines."
     }
   ]
