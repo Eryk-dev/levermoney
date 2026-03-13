@@ -8,6 +8,7 @@ import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
+from app.config import settings
 from app.db.supabase import get_db
 from app.models.sellers import get_all_active_sellers, get_seller_config
 from app.services.release_report_validator import (
@@ -52,7 +53,9 @@ async def _lookup_payment_ids(db, seller_slug: str, source_ids: list[int]) -> se
 
 
 def _lookup_expense_ids(db, seller_slug: str, source_ids: list[int]) -> set[int]:
-    """Look up which source IDs exist in mp_expenses."""
+    """Look up which source IDs exist in mp_expenses (or payment_events when ledger)."""
+    if settings.expenses_source == "ledger":
+        return _lookup_expense_ids_ledger(db, seller_slug, source_ids)
     found: set[int] = set()
     for i in range(0, len(source_ids), 100):
         chunk = source_ids[i:i + 100]
@@ -61,6 +64,21 @@ def _lookup_expense_ids(db, seller_slug: str, source_ids: list[int]) -> set[int]
         ).in_("payment_id", chunk).execute()
         for r in (result.data or []):
             found.add(int(r["payment_id"]))
+    return found
+
+
+def _lookup_expense_ids_ledger(db, seller_slug: str, source_ids: list[int]) -> set[int]:
+    """Look up which source IDs have expense_captured events in payment_events."""
+    found: set[int] = set()
+    for i in range(0, len(source_ids), 100):
+        chunk = source_ids[i:i + 100]
+        result = db.table("payment_events").select("ml_payment_id").eq(
+            "seller_slug", seller_slug
+        ).eq("event_type", "expense_captured").in_(
+            "ml_payment_id", chunk
+        ).execute()
+        for r in (result.data or []):
+            found.add(int(r["ml_payment_id"]))
     return found
 
 

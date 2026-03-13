@@ -19,7 +19,7 @@
         "python3 -m pytest passes (161+ tests)"
       ],
       "priority": 1,
-      "passes": true,
+      "passes": false,
       "notes": "Read rfcs/plano-execucao/04-fase2-dual-write.md for exact function signatures. Read app/services/event_ledger.py for existing patterns. The expense_captured event uses sign 'any' because it can be positive (income) or negative (expense)."
     },
     {
@@ -36,7 +36,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 2,
-      "passes": true,
+      "passes": false,
       "notes": "Read app/services/expense_classifier.py fully. The classify_non_order_payment() function upserts to mp_expenses. Add the dual-write AFTER the successful upsert. CRITICAL: the metadata must contain ALL fields listed — without them, Fase 3 (migrate reads) will not have enough data to reconstruct responses."
     },
     {
@@ -52,7 +52,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "notes": "Read app/services/extrato_ingester.py. The insert to mp_expenses is in the 'Insert new' block around line 950. This is a large function (~360 lines) — be careful to add the dual-write at the correct location. Follow the same metadata pattern as US-002."
     },
     {
@@ -82,7 +82,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 5,
-      "passes": true,
+      "passes": false,
       "notes": "This story is about running validation queries, not writing new code. Run the SQL via mcp__supabase__execute_sql. If counts don't match, investigate and fix the dual-write in previous stories."
     }
   ]

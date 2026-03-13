@@ -18,6 +18,10 @@ from app.services.ml_api import (
     download_release_report,
     list_release_reports,
 )
+from app.services.event_ledger import (
+    EventRecordError,
+    record_expense_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +156,96 @@ def _classify_credit(row: dict) -> tuple[str, str, str, str | None]:
         )
 
     return "other", "income", f"Credito ML (release) - {desc_type} R$ {amount}", None
+
+
+def _release_signed_amount(direction: str, amount: float) -> float:
+    """Return signed amount: positive for income, negative for expense/transfer."""
+    if direction == "income":
+        return abs(amount)
+    return -abs(amount)
+
+
+def _build_release_expense_metadata(
+    row: dict,
+    expense_type: str,
+    direction: str,
+    ca_category: str | None,
+    auto_cat: bool,
+    description: str,
+    amount: float,
+) -> dict:
+    """Build rich metadata dict for expense_captured event from release report row."""
+    return {
+        "expense_type": expense_type,
+        "expense_direction": direction,
+        "ca_category": ca_category,
+        "auto_categorized": auto_cat,
+        "description": description,
+        "amount": amount,
+        "date_created": row["date"],
+        "date_approved": row["date"],
+        "business_branch": None,
+        "operation_type": f"release_{row['description']}",
+        "payment_method": row.get("payment_method") or None,
+        "external_reference": row.get("external_reference") or None,
+        "beneficiary_name": None,
+        "notes": row.get("payout_bank_account") or None,
+    }
+
+
+async def _dual_write_release_expense_events(
+    seller_slug: str,
+    source_id: str,
+    expense_type: str,
+    direction: str,
+    ca_category: str | None,
+    auto_cat: bool,
+    row: dict,
+    description: str,
+    amount: float,
+) -> None:
+    """Write expense_captured (and expense_classified if auto) to event ledger.
+
+    Failures are logged as warnings but never block the mp_expenses insert.
+    """
+    signed = _release_signed_amount(direction, amount)
+    competencia = row["date"][:10]
+    metadata = _build_release_expense_metadata(
+        row, expense_type, direction, ca_category, auto_cat, description, amount,
+    )
+
+    try:
+        await record_expense_event(
+            seller_slug=seller_slug,
+            payment_id=source_id,
+            event_type="expense_captured",
+            signed_amount=signed,
+            competencia_date=competencia,
+            expense_type=expense_type,
+            metadata=metadata,
+        )
+    except EventRecordError:
+        logger.warning(
+            "Dual-write expense_captured failed for %s/%s, continuing",
+            seller_slug, source_id,
+        )
+
+    if auto_cat:
+        try:
+            await record_expense_event(
+                seller_slug=seller_slug,
+                payment_id=source_id,
+                event_type="expense_classified",
+                signed_amount=0,
+                competencia_date=competencia,
+                expense_type=expense_type,
+                metadata={"ca_category": ca_category},
+            )
+        except EventRecordError:
+            logger.warning(
+                "Dual-write expense_classified failed for %s/%s, continuing",
+                seller_slug, source_id,
+            )
 
 
 async def _lookup_existing_ids(db, seller_slug: str, source_ids: list[str]) -> tuple[set, set]:
@@ -369,6 +463,11 @@ async def sync_release_report(
             logger.info(
                 "New expense from release report: %s type=%s dir=%s amount=%.2f",
                 source_id, expense_type, direction, amount,
+            )
+            # Dual-write to event ledger
+            await _dual_write_release_expense_events(
+                seller_slug, source_id, expense_type, direction,
+                ca_category, auto_cat, row, description, amount,
             )
         except Exception as e:
             error_str = str(e)
@@ -629,6 +728,11 @@ async def backfill_release_report(
                 logger.info(
                     "backfill_release_report %s: new %s type=%s dir=%s amount=%.2f",
                     seller_slug, source_id, expense_type, direction, amount,
+                )
+                # Dual-write to event ledger
+                await _dual_write_release_expense_events(
+                    seller_slug, source_id, expense_type, direction,
+                    ca_category, auto_cat, row, description, amount,
                 )
             except Exception as e:
                 error_str = str(e)

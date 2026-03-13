@@ -41,6 +41,11 @@ EVENT_TYPES = {
     # Adjustments (release report validator)
     "adjustment_fee":      "negative",
     "adjustment_shipping": "negative",
+    # Expense lifecycle events (dual-write with mp_expenses)
+    "expense_captured":   "any",    # Despesa/receita identified (signed amount)
+    "expense_classified": "zero",   # Auto-classified (metadata: ca_category)
+    "expense_reviewed":   "zero",   # Reviewed by human (metadata: approved)
+    "expense_exported":   "zero",   # Exported in batch (metadata: batch_id)
     # Cash events — competencia_date = event_date (caixa, NAO competencia real). DRE queries MUST exclude these.
     "cash_release":      "positive",
     "cash_expense":      "negative",
@@ -505,6 +510,67 @@ async def record_cash_event(
     )
 
 
+async def record_expense_event(
+    seller_slug: str,
+    payment_id: str,
+    event_type: str,
+    signed_amount: float,
+    competencia_date: str,
+    expense_type: str,
+    metadata: dict | None = None,
+) -> dict | None:
+    """Record an expense lifecycle event.
+
+    Idempotency key: {seller}:{payment_id}:{event_type} (3 parts).
+    payment_id can be plain ("12345") or composite ("12345:df").
+    ml_payment_id is extracted via int(payment_id.split(':')[0]) with fallback 0.
+    """
+    idem_key = f"{seller_slug}:{payment_id}:{event_type}"
+
+    try:
+        ml_pid = int(payment_id.split(":")[0])
+    except (ValueError, TypeError):
+        ml_pid = 0
+
+    full_metadata = {"expense_type": expense_type}
+    if metadata:
+        full_metadata.update(metadata)
+
+    return await record_event(
+        seller_slug=seller_slug,
+        ml_payment_id=ml_pid,
+        event_type=event_type,
+        signed_amount=signed_amount,
+        competencia_date=competencia_date,
+        event_date=competencia_date,
+        source="expense_lifecycle",
+        metadata=full_metadata,
+        idempotency_key=idem_key,
+        reference_id=payment_id,
+    )
+
+
+def derive_expense_status(event_types: set[str]) -> str:
+    """Derive expense status from its event types.
+
+    Priority order (first match wins):
+        expense_exported   → "exported"
+        expense_reviewed   → "reviewed"
+        expense_classified → "auto_categorized"
+        expense_captured   → "pending_review"
+        (none)             → "unknown"
+    """
+    if "expense_exported" in event_types:
+        return "exported"
+    if "expense_reviewed" in event_types:
+        return "reviewed"
+    if "expense_classified" in event_types:
+        return "auto_categorized"
+    if "expense_captured" in event_types:
+        return "pending_review"
+    return "unknown"
+
+
 async def get_cash_summary(
     seller_slug: str,
     date_from: str,
@@ -539,3 +605,241 @@ async def get_cash_summary(
         page_start += page_limit
 
     return summary
+
+
+# ── Expense read helpers (Fase 3: migrate reads from mp_expenses) ──────
+
+
+async def _fetch_expense_events(
+    seller_slug: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict]:
+    """Fetch all expense_* events for a seller, optionally filtered by competencia_date.
+
+    Returns raw rows from payment_events. Paginated to handle large datasets.
+    """
+    db = get_db()
+    all_rows: list[dict] = []
+    page_start = 0
+    page_limit = 1000
+    while True:
+        q = db.table(TABLE).select(
+            "reference_id, event_type, signed_amount, competencia_date, metadata, created_at"
+        ).eq("seller_slug", seller_slug).in_(
+            "event_type",
+            ["expense_captured", "expense_classified", "expense_reviewed", "expense_exported"],
+        )
+        if date_from:
+            q = q.gte("competencia_date", date_from)
+        if date_to:
+            q = q.lte("competencia_date", date_to)
+
+        result = q.range(page_start, page_start + page_limit - 1).execute()
+        rows = result.data or []
+        all_rows.extend(rows)
+        if len(rows) < page_limit:
+            break
+        page_start += page_limit
+
+    return all_rows
+
+
+def _group_expense_events(
+    rows: list[dict],
+) -> dict[str, dict]:
+    """Group expense events by reference_id.
+
+    Returns {reference_id: {"captured": metadata_dict, "event_types": set, "created_at": str}}.
+    The captured metadata comes from the expense_captured event.
+    expense_classified metadata is merged (ca_category override).
+    expense_reviewed metadata is merged (approved fields).
+    """
+    grouped: dict[str, dict] = {}
+    for row in rows:
+        ref = row["reference_id"]
+        if ref not in grouped:
+            grouped[ref] = {"captured": {}, "event_types": set(), "created_at": None}
+
+        grouped[ref]["event_types"].add(row["event_type"])
+
+        meta = row.get("metadata") or {}
+
+        if row["event_type"] == "expense_captured":
+            grouped[ref]["captured"] = meta
+            grouped[ref]["signed_amount"] = row["signed_amount"]
+            grouped[ref]["competencia_date"] = row["competencia_date"]
+            grouped[ref]["created_at"] = row["created_at"]
+        elif row["event_type"] == "expense_classified":
+            # Merge classification data (ca_category)
+            if meta.get("ca_category"):
+                grouped[ref]["captured"]["ca_category"] = meta["ca_category"]
+        elif row["event_type"] == "expense_reviewed":
+            # Merge review data (category overrides, notes, etc.)
+            for k in ("ca_category", "description", "notes", "beneficiary_name",
+                       "expense_type", "expense_direction"):
+                if meta.get(k) is not None:
+                    grouped[ref]["captured"][k] = meta[k]
+
+    return grouped
+
+
+def _build_expense_row(ref_id: str, group: dict) -> dict:
+    """Build an mp_expenses-compatible dict from grouped expense events."""
+    meta = group["captured"]
+    status = derive_expense_status(group["event_types"])
+    return {
+        "id": ref_id,  # reference_id as surrogate id
+        "payment_id": ref_id,
+        "expense_type": meta.get("expense_type", "unknown"),
+        "expense_direction": meta.get("expense_direction", "expense"),
+        "ca_category": meta.get("ca_category"),
+        "auto_categorized": meta.get("auto_categorized", False),
+        "amount": meta.get("amount", 0),
+        "description": meta.get("description"),
+        "business_branch": meta.get("business_branch"),
+        "operation_type": meta.get("operation_type"),
+        "payment_method": meta.get("payment_method"),
+        "external_reference": meta.get("external_reference"),
+        "febraban_code": meta.get("febraban_code"),
+        "date_created": meta.get("date_created"),
+        "date_approved": meta.get("date_approved"),
+        "beneficiary_name": meta.get("beneficiary_name"),
+        "notes": meta.get("notes"),
+        "status": status,
+        "exported_at": None,
+        "created_at": group.get("created_at"),
+    }
+
+
+async def get_expense_list(
+    seller_slug: str,
+    status: str | None = None,
+    expense_type: str | None = None,
+    direction: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict]:
+    """List expenses from ledger with filters.
+
+    Derives status via derive_expense_status() for each unique reference_id.
+    Returns same response shape as mp_expenses rows for backward compatibility.
+    """
+    raw = await _fetch_expense_events(seller_slug, date_from, date_to)
+    grouped = _group_expense_events(raw)
+
+    rows: list[dict] = []
+    for ref_id, group in grouped.items():
+        if "expense_captured" not in group["event_types"]:
+            continue
+        row = _build_expense_row(ref_id, group)
+
+        # Apply filters
+        if status and row["status"] != status:
+            continue
+        if expense_type and row["expense_type"] != expense_type:
+            continue
+        if direction and row["expense_direction"] != direction:
+            continue
+
+        rows.append(row)
+
+    # Sort by date_created descending (matching crud.py behavior)
+    rows.sort(key=lambda r: r.get("date_created") or "", reverse=True)
+
+    # Pagination
+    return rows[offset:offset + limit]
+
+
+async def get_expense_stats(
+    seller_slug: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    status_filter: list[str] | None = None,
+) -> dict:
+    """Compute expense stats from ledger.
+
+    Returns same shape as current expense_stats endpoint:
+    {seller, total, total_amount, by_type, by_direction, by_status,
+     pending_review_count, auto_categorized_count}.
+    """
+    raw = await _fetch_expense_events(seller_slug, date_from, date_to)
+    grouped = _group_expense_events(raw)
+
+    by_type: dict[str, int] = {}
+    by_direction: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    total_amount = 0.0
+
+    for ref_id, group in grouped.items():
+        if "expense_captured" not in group["event_types"]:
+            continue
+        row = _build_expense_row(ref_id, group)
+
+        # Apply status filter
+        if status_filter and row["status"] not in status_filter:
+            continue
+
+        t = row["expense_type"]
+        d = row["expense_direction"]
+        s = row["status"]
+        amt = float(row.get("amount") or 0)
+
+        by_type[t] = by_type.get(t, 0) + 1
+        by_direction[d] = by_direction.get(d, 0) + 1
+        by_status[s] = by_status.get(s, 0) + 1
+        total_amount += amt
+
+    total = sum(by_status.values())
+    return {
+        "seller": seller_slug,
+        "total": total,
+        "total_amount": round(total_amount, 2),
+        "by_type": by_type,
+        "by_direction": by_direction,
+        "by_status": by_status,
+        "pending_review_count": by_status.get("pending_review", 0),
+        "auto_categorized_count": by_status.get("auto_categorized", 0),
+    }
+
+
+async def get_pending_exports(
+    seller_slug: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    status_filter: list[str] | None = None,
+) -> list[dict]:
+    """Return expense events pending export.
+
+    Logic:
+    - Select all expense_captured events for seller
+    - Exclude those WITH a matching expense_exported event
+    - Enrich with metadata from expense_classified (ca_category, etc.)
+    - Optionally filter by status_filter (e.g. ['pending_review', 'auto_categorized'])
+
+    Returns list of dicts with same fields as mp_expenses rows.
+    """
+    raw = await _fetch_expense_events(seller_slug, date_from, date_to)
+    grouped = _group_expense_events(raw)
+
+    rows: list[dict] = []
+    for ref_id, group in grouped.items():
+        if "expense_captured" not in group["event_types"]:
+            continue
+        # Skip already exported
+        if "expense_exported" in group["event_types"]:
+            continue
+
+        row = _build_expense_row(ref_id, group)
+
+        if status_filter and row["status"] not in status_filter:
+            continue
+
+        rows.append(row)
+
+    # Sort by date_created ascending (matching export.py behavior)
+    rows.sort(key=lambda r: r.get("date_created") or "")
+
+    return rows
