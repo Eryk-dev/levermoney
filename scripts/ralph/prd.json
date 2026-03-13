@@ -1,110 +1,89 @@
 {
   "project": "LeverMoney",
-  "branchName": "ralph/cash-events",
-  "description": "Etapa 2: Cash events no event ledger. Cada linha do extrato vira um evento cash_* imutavel. Permite reconciliacao automatica: sum(cash) == extrato.",
+  "branchName": "ralph/dual-write",
+  "description": "Etapa 3: Expense lifecycle dual-write. Cada despesa grava em mp_expenses E no event ledger via expense_captured/expense_classified/expense_exported events.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Migration 008: reference_id column + indexes",
-      "description": "As a developer, I need the reference_id column and cash event indexes added to payment_events table.",
+      "title": "Expense event types + record_expense_event + derive_expense_status",
+      "description": "As a system, I need 4 new expense lifecycle event types, a helper function to record them, and a status derivation function.",
       "acceptanceCriteria": [
-        "File migrations/008_unified_ledger.sql created",
-        "SQL adds: ALTER TABLE payment_events ADD COLUMN IF NOT EXISTS reference_id TEXT",
-        "SQL backfills: UPDATE payment_events SET reference_id = ml_payment_id::text WHERE reference_id IS NULL",
-        "SQL sets: ALTER TABLE payment_events ALTER COLUMN ml_payment_id SET DEFAULT 0",
-        "SQL creates index: idx_pe_seller_ref ON payment_events (seller_slug, reference_id) WHERE reference_id IS NOT NULL",
-        "SQL creates index: idx_pe_cash_events ON payment_events (seller_slug, event_date) WHERE event_type LIKE 'cash_%'",
-        "Migration applied to Supabase via mcp__supabase__apply_migration",
-        "Verification: SELECT reference_id FROM payment_events LIMIT 5 returns non-null values",
-        "python3 -m pytest passes (152+ tests)"
+        "4 event types added to EVENT_TYPES in app/services/event_ledger.py: expense_captured (any), expense_classified (zero), expense_reviewed (zero), expense_exported (zero)",
+        "Function record_expense_event(seller_slug, payment_id, event_type, signed_amount, competencia_date, expense_type, metadata=None) added",
+        "Idempotency key: {seller}:{payment_id}:{event_type} (3 parts)",
+        "ml_payment_id extracted via int(payment_id.split(':')[0]) with fallback 0",
+        "Metadata always includes expense_type key",
+        "source set to 'expense_lifecycle'",
+        "Function derive_expense_status(event_types: set[str]) -> str added: expense_exported->exported, expense_reviewed->reviewed, expense_classified->auto_categorized, expense_captured->pending_review, else->unknown",
+        "Unit tests for record_expense_event and derive_expense_status added",
+        "python3 -m pytest passes (161+ tests)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Read migrations/006_payment_events.sql for existing schema. Read rfcs/plano-execucao/03-fase1-cash-events.md Passo 1 for exact SQL."
+      "passes": false,
+      "notes": "Read rfcs/plano-execucao/04-fase2-dual-write.md for exact function signatures. Read app/services/event_ledger.py for existing patterns. The expense_captured event uses sign 'any' because it can be positive (income) or negative (expense)."
     },
     {
       "id": "US-002",
-      "title": "Add 6 cash event types + protect existing queries",
-      "description": "As a system, I need 6 new cash_* event types in the ledger, support for 'any' sign validation, reference_id parameter in record_event(), and existing DRE/status queries protected from contamination.",
+      "title": "Dual-write in expense_classifier.py",
+      "description": "As a system, I need expense_classifier.py to write expense_captured (and expense_classified if auto-categorized) to the event ledger after upserting to mp_expenses.",
       "acceptanceCriteria": [
-        "6 event types added to EVENT_TYPES dict in app/services/event_ledger.py: cash_release (positive), cash_expense (negative), cash_income (positive), cash_transfer_out (negative), cash_transfer_in (positive), cash_internal (any)",
-        "Comment added above cash types: '# Cash events — competencia_date = event_date (caixa, NAO competencia real). DRE queries MUST exclude these.'",
-        "validate_event() updated: if expected == 'any': pass (accepts any sign)",
-        "record_event() gains new optional parameter: reference_id: str | None = None",
-        "record_event() includes reference_id in the row dict: reference_id = reference_id if reference_id is not None else str(ml_payment_id)",
-        "get_dre_summary(): after fetching rows, filter out rows where event_type starts with 'cash_' or 'expense_'",
-        "get_payment_statuses(): after fetching rows, filter out rows where event_type starts with 'cash_' or 'expense_'",
-        "python3 -m pytest passes (152+ tests, DRE values unchanged)"
+        "In classify_non_order_payment(), AFTER the upsert to mp_expenses, call record_expense_event with event_type='expense_captured'",
+        "signed_amount: positive for income direction, negative for expense direction",
+        "competencia_date: extracted from date_approved or date_created ([:10] for date only)",
+        "If row is auto_categorized, also call record_expense_event with event_type='expense_classified' and metadata containing ca_category",
+        "Dual-write failure (EventRecordError) is logged as warning but does NOT prevent mp_expenses upsert",
+        "Metadata of expense_captured includes all fields needed for future Fase 3: expense_type, expense_direction, ca_category, auto_categorized, description, amount, date_created, date_approved, business_branch, operation_type, payment_method, external_reference, beneficiary_name, notes",
+        "python3 -m pytest passes"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Read app/services/event_ledger.py fully. The EVENT_TYPES dict is near the top. validate_event() checks sign constraints. get_dre_summary() is around line 350 — it queries by competencia_date without filtering event_type. get_payment_statuses() is around line 313. CRITICAL: cash events use competencia_date = event_date, so without the filter they would contaminate DRE results."
+      "passes": false,
+      "notes": "Read app/services/expense_classifier.py fully. The classify_non_order_payment() function upserts to mp_expenses. Add the dual-write AFTER the successful upsert. CRITICAL: the metadata must contain ALL fields listed — without them, Fase 3 (migrate reads) will not have enough data to reconstruct responses."
     },
     {
       "id": "US-003",
-      "title": "record_cash_event() and get_cash_summary() functions",
-      "description": "As a system, I need functions to record cash events with correct idempotency key (including abbreviation) and query cash summaries by date range.",
+      "title": "Dual-write in extrato_ingester.py",
+      "description": "As a system, I need extrato_ingester.py to write expense_captured to the event ledger after inserting to mp_expenses.",
       "acceptanceCriteria": [
-        "Function record_cash_event(seller_slug, reference_id, event_type, signed_amount, event_date, extrato_type, expense_type_abbrev='xx', metadata=None) added to event_ledger.py",
-        "Validates event_type starts with 'cash_' (raises ValueError otherwise)",
-        "Idempotency key format: {seller}:{ref_id}:{event_type}:{date}:{abbrev} (5 parts)",
-        "ml_payment_id set via int(reference_id) with fallback to 0",
-        "competencia_date set equal to event_date (documented in docstring)",
-        "source set to 'extrato'",
-        "Metadata includes extrato_type and source='account_statement'",
-        "Function get_cash_summary(seller_slug, date_from, date_to) added",
-        "get_cash_summary uses .range() pagination (page_limit=1000)",
-        "get_cash_summary returns dict like {cash_release: 12345.67, cash_expense: -1234.56}",
-        "get_cash_summary filters only event_type starting with 'cash_'",
+        "In ingest_extrato_for_seller(), AFTER the 'Insert new' block that upserts to mp_expenses, call record_expense_event with event_type='expense_captured'",
+        "Same signed_amount, competencia_date, and metadata pattern as expense_classifier dual-write",
+        "If auto_categorized, also write expense_classified event",
+        "Dual-write failure logged as warning, does NOT block mp_expenses insert",
+        "Also apply same dual-write in ingest_extrato_from_csv() if it inserts to mp_expenses",
         "python3 -m pytest passes"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Read rfcs/plano-execucao/03-fase1-cash-events.md Passo 4 and Passo 7 for exact function signatures. The abbreviation in the idempotency key prevents collision when two different transaction types generate the same cash event type for the same ref_id on the same day."
+      "passes": false,
+      "notes": "Read app/services/extrato_ingester.py. The insert to mp_expenses is in the 'Insert new' block around line 950. This is a large function (~360 lines) — be careful to add the dual-write at the correct location. Follow the same metadata pattern as US-002."
     },
     {
       "id": "US-004",
-      "title": "Cash events test suite",
-      "description": "As a developer, I need comprehensive tests for cash event types, idempotency, and query protection.",
+      "title": "Dual-write in release_report_sync.py + export.py",
+      "description": "As a system, I need release_report_sync.py to write expense_captured for payouts/cashback/shipping, and export.py to write expense_exported after marking rows as exported.",
       "acceptanceCriteria": [
-        "File testes/test_cash_events.py created with 9 tests",
-        "test_cash_event_types_exist: all 6 cash types in EVENT_TYPES",
-        "test_validate_cash_any_sign: cash_internal accepts both positive and negative",
-        "test_record_cash_event_idempotency_includes_date: same ref_id different dates produce different idem keys",
-        "test_record_cash_event_idempotency_includes_abbrev: same ref_id same date different abbrev produce different idem keys",
-        "test_no_collision_different_types_same_ref: two expense types with same ref_id/day do not collide",
-        "test_get_dre_summary_excludes_cash: get_dre_summary does not return cash events",
-        "test_get_payment_statuses_excludes_cash: get_payment_statuses does not return cash events",
-        "test_get_cash_summary: correct aggregation by type",
-        "test_skip_mapping_not_all_internal: verifies PIX enviado is NOT cash_internal",
-        "python3 -m pytest passes (152 existing + 9 new = 161+ tests)"
+        "In release_report_sync.py sync_release_report(), AFTER inserting payouts/cashback/shipping to mp_expenses, call record_expense_event with event_type='expense_captured'",
+        "Same metadata pattern as previous dual-writes",
+        "In app/routers/expenses/export.py, AFTER marking rows as 'exported' in mp_expenses, loop through rows and call record_expense_event with event_type='expense_exported', signed_amount=0, metadata containing batch_id",
+        "Both dual-writes: failure logged as warning, does NOT block main operation",
+        "python3 -m pytest passes"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Read testes/test_event_ledger.py for existing test patterns. Tests use conftest.py fixtures and mock Supabase. Follow the same pattern of mocking db calls. The SKIP_TO_CASH_TYPE and CASH_TYPE_MAP dicts should be importable from wherever the ingestion script defines them (or define in event_ledger.py)."
+      "passes": false,
+      "notes": "Read app/services/release_report_sync.py for payout/cashback/shipping insert locations. Read app/routers/expenses/export.py for the export flow — the batch marking happens around line 181-191. The expense_exported event has signed_amount=0 (it's a lifecycle flag, not a financial amount)."
     },
     {
       "id": "US-005",
-      "title": "Extrato ingestion script for cash events",
-      "description": "As an operator, I need a script that reads the extrato CSV and creates cash events in the ledger with correct type mappings and validates the reconciliation invariant.",
+      "title": "Validate dual-write consistency",
+      "description": "As an operator, I need to verify that every mp_expense has a corresponding expense_captured event in the ledger.",
       "acceptanceCriteria": [
-        "Script testes/ingest_extrato_to_ledger.py created",
-        "Accepts CLI args: --seller 141air --month jan2026 [--dry-run]",
-        "CASH_TYPE_MAP has 17 entries (NO deposito_avulso or cashback — these are dead mappings)",
-        "SKIP_TO_CASH_TYPE has 13 entries with per-rule mapping: PIX/transferencia/pagamento -> cash_transfer_out, compra -> cash_expense, transferencia de saldo/reservado/renda -> cash_internal",
-        "SKIP_TO_CASH_TYPE includes accented keys: transferência enviada, transferência de saldo",
-        "SKIP_ABBREV has 13 entries matching SKIP_TO_CASH_TYPE keys",
-        "For _CHECK_PAYMENTS: if ref_id in payment_events -> cash_release with abbrev 'cr'",
-        "Dry-run mode: counts and validates without writing, prints total lines and count per cash event type and SUM",
-        "Real run for 141air jan2026: creates 690 cash events (verify via SQL: SELECT COUNT(*) FROM payment_events WHERE seller_slug = '141air' AND event_type LIKE 'cash_%')",
-        "Sum verification: SELECT ROUND(SUM(signed_amount)::numeric, 2) FROM payment_events WHERE seller_slug = '141air' AND event_type LIKE 'cash_%' returns -3385.83",
-        "Re-run is idempotent: reports '0 newly ingested, 690 already exist'",
-        "DRE unchanged: SELECT event_type, ROUND(SUM(signed_amount)::numeric, 2) FROM payment_events WHERE seller_slug = '141air' AND event_type NOT LIKE 'cash_%' AND event_type NOT LIKE 'expense_%' AND competencia_date BETWEEN '2026-01-01' AND '2026-01-31' GROUP BY event_type returns same values as before ingestion",
+        "Validation SQL query works: SELECT COUNT(*) FROM mp_expenses WHERE seller_slug = '141air' equals SELECT COUNT(*) FROM payment_events WHERE seller_slug = '141air' AND event_type = 'expense_captured'",
+        "Sum comparison: SUM(amount) from mp_expenses matches SUM(ABS(signed_amount)) from expense_captured for same seller",
+        "DRE unchanged: get_dre_summary for 141air jan2026 returns same values as before dual-write",
+        "Export ZIP: generates same content as before (still reads from mp_expenses)",
         "python3 -m pytest passes"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Read rfcs/plano-execucao/03-fase1-cash-events.md Passo 5 and Passo 6 for complete mappings and script flow. Read app/services/extrato_ingester.py lines 88-149 for EXTRATO_CLASSIFICATION_RULES, lines 151-184 for _CHECK_PAYMENTS_FALLBACK and _EXPENSE_TYPE_ABBREV, lines 243-327 for _parse_account_statement(). Extrato CSV is at testes/data/extratos/extrato janeiro 141Air.csv. The script must import and reuse these existing functions, NOT reimplement them. Reference data: initial_balance=4476.23, final_balance=1090.40, net=-3385.83, 690 lines."
+      "passes": false,
+      "notes": "This story is about running validation queries, not writing new code. Run the SQL via mcp__supabase__execute_sql. If counts don't match, investigate and fix the dual-write in previous stories."
     }
   ]
 }
