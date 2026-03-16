@@ -148,7 +148,7 @@
         "Typecheck passes (cd dashboard && npx tsc --noEmit)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Pattern: closely follow dashboard/src/components/ExpensesExportTab.tsx for card grid layout (it uses activeSellers sorted alphabetically, Map<string, State> for per-seller state, Set<string> for expandedSlugs). CSS Modules only (no Tailwind). Design tokens in dashboard/src/index.css: --success (#10b981), --attention (#d97706), --danger (#ef4444). File input: accept='.csv,text/csv', multiple=true. Use the useExtrato hook from US-007. Filter sellers by checking if they appear in the sellersStatus response (only dashboard_ca sellers will be there)."
     },
     {
@@ -163,7 +163,7 @@
         "Typecheck passes (cd dashboard && npx tsc --noEmit)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Key file: dashboard/src/components/AdminPanel.tsx. It currently has tab switching logic between 'sellers' and 'expenses'. Add 'extratos' as a third tab value. Import ExtratoTab from ./ExtratoTab. Follow the exact same conditional rendering pattern used for ExpensesExportTab. The tab buttons are in the header area of AdminPanel."
     }
   ]

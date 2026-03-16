@@ -15,6 +15,9 @@ Started: Mon Mar 16 07:54:09 -03 2026
 - GDrive background upload pattern: `asyncio.create_task(asyncio.to_thread(sync_fn, ...))` — never block response
 - `gdrive_client.py` has two upload functions: `upload_expenses_zip()` (DESPESAS) and `upload_extrato_csv()` (EXTRATOS)
 - Multi-file upload endpoint: `POST /admin/sellers/{slug}/extrato/upload` — auto-detects months from CSV content
+- Hidden file input pattern for card upload buttons: `<input ref={...} style=display:none multiple>` + `button.onClick → ref.click()`
+- ExtratoTab uses `useExtrato` hook (not inline fetch) — follows same separation as ExpensesExportTab/useExpenses
+- AdminPanel already had ExtratoTab wired in from US-007 commit — always check existing state before implementing
 
 ---
 
@@ -115,4 +118,35 @@ Started: Mon Mar 16 07:54:09 -03 2026
   - For multipart uploads, do NOT set Content-Type header — browser sets boundary automatically
   - Upload endpoint error responses may have nested `detail.message` or flat `detail` string — handle both
   - The `/admin/extrato/uploads/{seller_slug}` endpoint returns envelope `{ seller, count, data }` — extract `data`
+---
+
+## 2026-03-16 - US-008
+- Rewrote `ExtratoTab.tsx` from form-based layout to seller cards grid pattern (matching `ExpensesExportTab`)
+- Rewrote `ExtratoTab.module.css` with card grid, month chips, coverage badges, collapsible history
+- Component now uses `useExtrato` hook (loadSellersStatus, uploadExtratos, loadUploadHistory)
+- Grid shows only dashboard_ca sellers (from `/admin/extrato/sellers-status` endpoint)
+- Each card shows: seller name, ca_start_date, coverage_status badge (complete/partial/missing), month chips (green OK / red missing)
+- Cards with `extrato_missing=true` show "sem extrato" warning badge
+- Upload button per card opens hidden file input (multiple CSVs accepted)
+- Upload result shows inline stats (files, lines ingested, months processed, gdrive status)
+- Collapsible upload history per seller (lazy loaded on expand, same toggle pattern as ExpensesExportTab)
+- Complete cards (coverage_status=complete) are dimmed (opacity: 0.65)
+- Files changed: `dashboard/src/components/ExtratoTab.tsx`, `dashboard/src/components/ExtratoTab.module.css`
+- TypeScript typecheck passes, 554 pytest tests pass
+- **Learnings for future iterations:**
+  - `useExtrato` hook returns typed data from the API — no need for inline fetch calls
+  - Hidden file input + button click pattern: `<input style=display:none>` + `ref.click()` in button onClick
+  - `fileInputRefs` uses `Map<string, HTMLInputElement>` via `useRef` for per-card file inputs
+  - Coverage status API already filters to dashboard_ca sellers — no need to filter on frontend
+  - `ExtratoSellerStatus.months_uploaded` can be checked with `.includes(month)` for month chip coloring
+---
+
+## 2026-03-16 - US-009
+- Verified AdminPanel.tsx already has Extratos tab wired in (import, tab state, button, render)
+- All acceptance criteria already met from prior US-007 commit
+- Marked as passes: true (no code changes needed)
+- Files changed: none (already complete)
+- TypeScript typecheck passes, 554 pytest tests pass
+- **Learnings for future iterations:**
+  - Always verify existing state before implementing — US-009 was already done as a side effect of US-007
 ---
