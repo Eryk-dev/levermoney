@@ -174,6 +174,7 @@ class ActivateSellerRequest(BaseModel):
     ca_conta_bancaria: str | None = None
     ca_centro_custo_variavel: str | None = None
     ca_start_date: str | None = None  # YYYY-MM-DD, must be 1st of month
+    skip_extrato: bool = False
 
 
 @router.post("/sellers/{slug}/activate", dependencies=[Depends(require_admin)])
@@ -243,6 +244,7 @@ async def activate_seller_v2(slug: str, req: ActivateSellerRequest):
         update_data["ca_centro_custo_variavel"] = req.ca_centro_custo_variavel
         update_data["ca_start_date"] = req.ca_start_date
         update_data["ca_backfill_status"] = "pending"
+        update_data["extrato_missing"] = req.skip_extrato
 
     db.table("sellers").update(update_data).eq("slug", slug).execute()
     logger.info("activate_seller_v2 %s: mode=%s", slug, req.integration_mode)
@@ -297,6 +299,7 @@ class UpgradeToCaRequest(BaseModel):
     ca_conta_bancaria: str
     ca_centro_custo_variavel: str
     ca_start_date: str  # YYYY-MM-DD, must be 1st of month
+    skip_extrato: bool = False
 
 
 @router.post("/sellers/{slug}/upgrade-to-ca", dependencies=[Depends(require_admin)])
@@ -346,6 +349,7 @@ async def upgrade_seller_to_ca(slug: str, req: UpgradeToCaRequest):
         "ca_centro_custo_variavel": req.ca_centro_custo_variavel,
         "ca_start_date": req.ca_start_date,
         "ca_backfill_status": "pending",
+        "extrato_missing": req.skip_extrato,
     }
     db.table("sellers").update(update_data).eq("slug", slug).execute()
     logger.info("upgrade_seller_to_ca %s: ca_start_date=%s", slug, req.ca_start_date)
