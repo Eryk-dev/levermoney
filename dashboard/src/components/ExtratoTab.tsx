@@ -27,7 +27,7 @@ function formatMonth(month: string): string {
 
 // ── Component ───────────────────────────────────────────────────
 
-export function ExtratoTab({ sellers, onLogout }: ExtratoTabProps) {
+export function ExtratoTab({ onLogout }: ExtratoTabProps) {
   const { loadSellersStatus, uploadExtratos, loadUploadHistory } = useExtrato({ onUnauthorized: onLogout });
 
   // Coverage status for all sellers
