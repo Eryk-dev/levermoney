@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { API_BASE } from '../lib/supabase';
+import { useExtrato } from '../hooks/useExtrato';
+import type { ExtratoSellerStatus, ExtratoUploadResult, ExtratoUploadRecord } from '../hooks/useExtrato';
 import styles from './ExtratoTab.module.css';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -16,49 +17,7 @@ interface ExtratoTabProps {
   onLogout: () => void;
 }
 
-interface UploadResult {
-  upload_id: number;
-  seller_slug: string;
-  month: string;
-  filename: string;
-  status: string;
-  lines_total: number;
-  lines_ingested: number;
-  lines_skipped: number;
-  lines_already_covered: number;
-  amount_updated: number;
-  initial_balance: number | null;
-  final_balance: number | null;
-  gaps_found: Record<string, number>;
-}
-
-interface UploadRecord {
-  id: number;
-  filename: string | null;
-  month: string;
-  status: string;
-  lines_total: number | null;
-  lines_ingested: number | null;
-  lines_skipped: number | null;
-  lines_already_covered: number | null;
-  initial_balance: number | null;
-  final_balance: number | null;
-  error_message: string | null;
-  uploaded_at: string;
-}
-
 // ── Helpers ──────────────────────────────────────────────────────
-
-function formatBRL(value: number): string {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function getCurrentMonth(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  return `${y}-${m}`;
-}
 
 function formatMonth(month: string): string {
   const [y, m] = month.split('-');
@@ -69,330 +28,324 @@ function formatMonth(month: string): string {
 // ── Component ───────────────────────────────────────────────────
 
 export function ExtratoTab({ sellers, onLogout }: ExtratoTabProps) {
-  const token = sessionStorage.getItem('lever-admin-token');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { loadSellersStatus, uploadExtratos, loadUploadHistory } = useExtrato({ onUnauthorized: onLogout });
 
-  // Upload form state
-  const [selectedSeller, setSelectedSeller] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Coverage status for all sellers
+  const [sellersStatus, setSellersStatus] = useState<ExtratoSellerStatus[]>([]);
+  const [loadingStatus, setLoadingStatus] = useState(true);
 
-  // History state
-  const [historySeller, setHistorySeller] = useState('');
-  const [history, setHistory] = useState<UploadRecord[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  // Per-seller upload state
+  const [uploadingSlug, setUploadingSlug] = useState<string | null>(null);
+  const [uploadResults, setUploadResults] = useState<Map<string, ExtratoUploadResult>>(new Map());
+  const [uploadErrors, setUploadErrors] = useState<Map<string, string>>(new Map());
 
-  const activeSellers = useMemo(
+  // Per-seller history (collapsible)
+  const [expandedSlugs, setExpandedSlugs] = useState<Set<string>>(new Set());
+  const [sellerHistory, setSellerHistory] = useState<Map<string, ExtratoUploadRecord[]>>(new Map());
+  const [loadingHistory, setLoadingHistory] = useState<Set<string>>(new Set());
+
+  // File input refs (one per seller card)
+  const fileInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+
+  // Sorted sellers from status endpoint (already filtered to dashboard_ca)
+  const sortedSellers = useMemo(
     () =>
-      sellers
-        .filter((s) => s.active)
-        .sort((a, b) =>
-          (a.dashboard_empresa || a.name).localeCompare(b.dashboard_empresa || b.name),
+      [...sellersStatus].sort((a, b) =>
+        (a.dashboard_empresa || a.name || a.slug).localeCompare(
+          b.dashboard_empresa || b.name || b.slug,
         ),
-    [sellers],
+      ),
+    [sellersStatus],
   );
 
-  // Set default seller when sellers load
+  // Load coverage status on mount
   useEffect(() => {
-    if (activeSellers.length > 0 && !selectedSeller) {
-      setSelectedSeller(activeSellers[0].slug);
-    }
-  }, [activeSellers, selectedSeller]);
+    let cancelled = false;
 
-  // Load history when seller changes
-  const loadHistory = useCallback(
-    async (slug: string) => {
-      if (!slug || !token) return;
-      setLoadingHistory(true);
+    const fetchStatus = async () => {
+      setLoadingStatus(true);
+      const data = await loadSellersStatus();
+      if (cancelled) return;
+      if (data) setSellersStatus(data);
+      setLoadingStatus(false);
+    };
+
+    void fetchStatus();
+    return () => { cancelled = true; };
+  }, [loadSellersStatus]);
+
+  // Reload status for all sellers
+  const reloadStatus = useCallback(async () => {
+    const data = await loadSellersStatus();
+    if (data) setSellersStatus(data);
+  }, [loadSellersStatus]);
+
+  // Upload handler for a single seller
+  const handleUpload = useCallback(
+    async (slug: string, files: FileList) => {
+      setUploadingSlug(slug);
+      setUploadErrors((prev) => { const n = new Map(prev); n.delete(slug); return n; });
+
       try {
-        const res = await fetch(
-          `${API_BASE}/admin/extrato/uploads/${encodeURIComponent(slug)}?limit=20`,
-          {
-            headers: { 'X-Admin-Token': token },
-            cache: 'no-store',
-          },
-        );
-        if (res.status === 401) {
-          onLogout();
-          return;
-        }
-        if (res.ok) {
-          const payload = await res.json();
-          setHistory(payload.data || []);
+        const result = await uploadExtratos(slug, Array.from(files));
+        if (result) {
+          setUploadResults((prev) => {
+            const n = new Map(prev);
+            n.set(slug, result);
+            return n;
+          });
+          // Reload coverage status
+          await reloadStatus();
+          // Reload history if expanded
+          if (expandedSlugs.has(slug)) {
+            const hist = await loadUploadHistory(slug);
+            if (hist) {
+              setSellerHistory((prev) => { const n = new Map(prev); n.set(slug, hist); return n; });
+            }
+          }
         }
       } catch (e) {
-        console.error('Failed to load extrato history:', e);
+        setUploadErrors((prev) => {
+          const n = new Map(prev);
+          n.set(slug, e instanceof Error ? e.message : 'Erro de conexao');
+          return n;
+        });
       } finally {
-        setLoadingHistory(false);
+        setUploadingSlug(null);
+        // Reset file input
+        const input = fileInputRefs.current.get(slug);
+        if (input) input.value = '';
       }
     },
-    [token, onLogout],
+    [uploadExtratos, reloadStatus, expandedSlugs, loadUploadHistory],
   );
 
-  useEffect(() => {
-    if (historySeller) {
-      void loadHistory(historySeller);
-    } else {
-      setHistory([]);
-    }
-  }, [historySeller, loadHistory]);
-
-  // Set default history seller
-  useEffect(() => {
-    if (activeSellers.length > 0 && !historySeller) {
-      setHistorySeller(activeSellers[0].slug);
-    }
-  }, [activeSellers, historySeller]);
-
-  // Upload handler
-  const handleUpload = useCallback(async () => {
-    if (!selectedFile || !selectedSeller || !selectedMonth || !token) return;
-
-    setUploading(true);
-    setUploadResult(null);
-    setUploadError(null);
-
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('seller_slug', selectedSeller);
-    formData.append('month', selectedMonth);
-
-    try {
-      const res = await fetch(`${API_BASE}/admin/extrato/upload`, {
-        method: 'POST',
-        headers: { 'X-Admin-Token': token },
-        body: formData,
+  // Toggle history section for a seller
+  const toggleHistory = useCallback(
+    (slug: string) => {
+      setExpandedSlugs((prev) => {
+        const next = new Set(prev);
+        if (next.has(slug)) {
+          next.delete(slug);
+        } else {
+          next.add(slug);
+          // Lazy load history on first expand
+          setLoadingHistory((lb) => { const n = new Set(lb); n.add(slug); return n; });
+          void loadUploadHistory(slug).then((hist) => {
+            if (hist) {
+              setSellerHistory((p) => { const n = new Map(p); n.set(slug, hist); return n; });
+            }
+            setLoadingHistory((lb) => { const n = new Set(lb); n.delete(slug); return n; });
+          });
+        }
+        return next;
       });
-
-      if (res.status === 401) {
-        onLogout();
-        return;
-      }
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setUploadError(data.detail || `Erro ${res.status}`);
-        return;
-      }
-
-      setUploadResult(data);
-      setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-
-      // Reload history if viewing the same seller
-      if (historySeller === selectedSeller) {
-        void loadHistory(historySeller);
-      }
-    } catch (e) {
-      setUploadError(e instanceof Error ? e.message : 'Erro de conexao');
-    } finally {
-      setUploading(false);
-    }
-  }, [selectedFile, selectedSeller, selectedMonth, token, onLogout, historySeller, loadHistory]);
+    },
+    [loadUploadHistory],
+  );
 
   return (
     <div className={styles.wrapper}>
-      {/* Upload section */}
-      <section className={styles.section}>
-        <h3 className={styles.sectionTitle}>Upload de Extrato</h3>
+      {/* Loading state */}
+      {loadingStatus && (
+        <div className={styles.loading}>Carregando status de extratos...</div>
+      )}
 
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>
-            Seller
-            <select
-              className={styles.formSelect}
-              value={selectedSeller}
-              onChange={(e) => setSelectedSeller(e.target.value)}
-              disabled={uploading}
-            >
-              {activeSellers.map((s) => (
-                <option key={s.slug} value={s.slug}>
-                  {s.dashboard_empresa || s.name}
-                </option>
-              ))}
-            </select>
-          </label>
+      {/* Empty state */}
+      {!loadingStatus && sortedSellers.length === 0 && (
+        <div className={styles.loading}>Nenhum seller com integracao Conta Azul encontrado.</div>
+      )}
 
-          <label className={styles.formLabel}>
-            Mes (YYYY-MM)
-            <input
-              type="month"
-              className={styles.formInput}
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              disabled={uploading}
-            />
-          </label>
-        </div>
+      {/* Seller cards grid */}
+      {!loadingStatus && sortedSellers.length > 0 && (
+        <div className={styles.sellerGrid}>
+          {sortedSellers.map((seller) => {
+            const isUploading = uploadingSlug === seller.slug;
+            const result = uploadResults.get(seller.slug);
+            const error = uploadErrors.get(seller.slug);
 
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>
-            Arquivo CSV
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              className={styles.formInput}
-              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-              disabled={uploading}
-            />
-          </label>
-        </div>
-
-        {selectedFile && (
-          <div className={styles.fileInfo}>
-            {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
-          </div>
-        )}
-
-        <button
-          className={styles.uploadBtn}
-          disabled={!selectedFile || !selectedSeller || !selectedMonth || uploading}
-          onClick={() => void handleUpload()}
-        >
-          {uploading ? 'Enviando...' : 'Upload'}
-        </button>
-
-        {/* Upload result */}
-        {uploadResult && (
-          <div className={styles.resultBox}>
-            <div className={styles.resultHeader}>
-              <span className={styles.statusBadge} data-status="completed">
-                completed
-              </span>
-              <span className={styles.resultFilename}>{uploadResult.filename}</span>
-              <span className={styles.resultMonth}>{formatMonth(uploadResult.month)}</span>
-            </div>
-            <div className={styles.resultStats}>
-              <div className={styles.statItem}>
-                <span className={styles.statLabel}>Total linhas</span>
-                <span className={styles.statValue}>{uploadResult.lines_total}</span>
-              </div>
-              <div className={styles.statItem}>
-                <span className={styles.statLabel}>Novos gaps</span>
-                <span className={`${styles.statValue} ${uploadResult.lines_ingested > 0 ? styles.statValueHighlight : ''}`}>
-                  {uploadResult.lines_ingested}
-                </span>
-              </div>
-              <div className={styles.statItem}>
-                <span className={styles.statLabel}>Ja cobertos</span>
-                <span className={styles.statValue}>{uploadResult.lines_already_covered}</span>
-              </div>
-              <div className={styles.statItem}>
-                <span className={styles.statLabel}>Internos (skip)</span>
-                <span className={styles.statValue}>{uploadResult.lines_skipped}</span>
-              </div>
-            </div>
-            {uploadResult.initial_balance != null && (
-              <div className={styles.balanceRow}>
-                Saldo: {formatBRL(uploadResult.initial_balance)} → {formatBRL(uploadResult.final_balance ?? 0)}
-              </div>
-            )}
-            {Object.keys(uploadResult.gaps_found).length > 0 && (
-              <div className={styles.gapsRow}>
-                {Object.entries(uploadResult.gaps_found).map(([type, count]) => (
-                  <span key={type} className={styles.gapChip}>
-                    {type}: {count}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Upload error */}
-        {uploadError && (
-          <div className={styles.errorBox}>{uploadError}</div>
-        )}
-      </section>
-
-      {/* History section */}
-      <section className={styles.section}>
-        <h3 className={styles.sectionTitle}>Historico de Uploads</h3>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>
-            Seller
-            <select
-              className={styles.formSelect}
-              value={historySeller}
-              onChange={(e) => setHistorySeller(e.target.value)}
-            >
-              {activeSellers.map((s) => (
-                <option key={s.slug} value={s.slug}>
-                  {s.dashboard_empresa || s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            className={styles.refreshBtn}
-            onClick={() => void loadHistory(historySeller)}
-            disabled={loadingHistory || !historySeller}
-          >
-            Atualizar
-          </button>
-        </div>
-
-        {loadingHistory && (
-          <div className={styles.loading}>Carregando historico...</div>
-        )}
-
-        {!loadingHistory && history.length === 0 && historySeller && (
-          <div className={styles.loading}>Nenhum upload encontrado.</div>
-        )}
-
-        {!loadingHistory && history.length > 0 && (
-          <div className={styles.tableWrap}>
-            <table className={styles.historyTable}>
-              <thead>
-                <tr>
-                  <th>Mes</th>
-                  <th>Arquivo</th>
-                  <th>Status</th>
-                  <th>Total</th>
-                  <th>Novos</th>
-                  <th>Cobertos</th>
-                  <th>Saldo Inicial</th>
-                  <th>Data Upload</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((row) => (
-                  <tr key={row.id}>
-                    <td>{formatMonth(row.month)}</td>
-                    <td className={styles.filenameCell} title={row.filename || ''}>
-                      {row.filename ? (row.filename.length > 25 ? row.filename.slice(0, 22) + '...' : row.filename) : '—'}
-                    </td>
-                    <td>
-                      <span className={styles.statusBadge} data-status={row.status}>
-                        {row.status}
+            return (
+              <div
+                key={seller.slug}
+                className={`${styles.sellerCard} ${seller.coverage_status === 'complete' ? styles.sellerCardComplete : ''}`}
+              >
+                {/* Header: name + badges */}
+                <div className={styles.sellerHeader}>
+                  <h3 className={styles.sellerName}>
+                    {seller.dashboard_empresa || seller.name || seller.slug}
+                  </h3>
+                  <div className={styles.badgeRow}>
+                    <span
+                      className={`${styles.badge} ${
+                        seller.coverage_status === 'complete'
+                          ? styles.badgeComplete
+                          : seller.coverage_status === 'partial'
+                            ? styles.badgePartial
+                            : styles.badgeMissing
+                      }`}
+                    >
+                      {seller.coverage_status === 'complete'
+                        ? 'completo'
+                        : seller.coverage_status === 'partial'
+                          ? 'parcial'
+                          : 'faltante'}
+                    </span>
+                    {seller.extrato_missing && (
+                      <span className={`${styles.badge} ${styles.badgeWarning}`}>
+                        sem extrato
                       </span>
-                    </td>
-                    <td>{row.lines_total ?? '—'}</td>
-                    <td>{row.lines_ingested ?? '—'}</td>
-                    <td>{row.lines_already_covered ?? '—'}</td>
-                    <td>{row.initial_balance != null ? formatBRL(row.initial_balance) : '—'}</td>
-                    <td>
-                      {new Date(row.uploaded_at).toLocaleString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                    )}
+                  </div>
+                </div>
+
+                {/* ca_start_date */}
+                {seller.ca_start_date && (
+                  <div className={styles.statItem}>
+                    <span className={styles.statLabel}>CA desde</span>
+                    <span className={styles.statValue}>{seller.ca_start_date}</span>
+                  </div>
+                )}
+
+                {/* Months grid */}
+                <div className={styles.monthsGrid}>
+                  {seller.months_needed.map((month) => {
+                    const isUploaded = seller.months_uploaded.includes(month);
+                    return (
+                      <span
+                        key={month}
+                        className={`${styles.monthChip} ${isUploaded ? styles.monthOk : styles.monthMissing}`}
+                      >
+                        {formatMonth(month)}
+                      </span>
+                    );
+                  })}
+                </div>
+
+                {/* Upload button */}
+                <div className={styles.uploadRow}>
+                  <input
+                    ref={(el) => {
+                      if (el) fileInputRefs.current.set(seller.slug, el);
+                    }}
+                    type="file"
+                    accept=".csv,text/csv"
+                    multiple
+                    className={styles.fileInput}
+                    disabled={isUploading || uploadingSlug !== null}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        void handleUpload(seller.slug, e.target.files);
+                      }
+                    }}
+                  />
+                  <button
+                    className={styles.uploadBtn}
+                    disabled={isUploading || uploadingSlug !== null}
+                    onClick={() => {
+                      const input = fileInputRefs.current.get(seller.slug);
+                      if (input) input.click();
+                    }}
+                  >
+                    {isUploading ? 'Enviando...' : 'Upload CSVs'}
+                  </button>
+                </div>
+
+                {/* Upload result */}
+                {result && (
+                  <div className={styles.resultBox}>
+                    <span className={`${styles.badge} ${styles.badgeComplete}`}>
+                      {result.total_files} arquivo(s)
+                    </span>
+                    <span className={styles.resultDetail}>
+                      {result.total_ingested} linhas ingeridas, {result.months_processed.length} mes(es)
+                    </span>
+                    {result.gdrive_status && result.gdrive_status !== 'skipped' && (
+                      <span className={`${styles.badge} ${styles.badgeGdrive}`}>
+                        gdrive: {result.gdrive_status}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Upload error */}
+                {error && (
+                  <div className={styles.errorBox}>{error}</div>
+                )}
+
+                {/* History (collapsible) */}
+                <div className={styles.historySection}>
+                  <button
+                    className={styles.historyToggle}
+                    onClick={() => toggleHistory(seller.slug)}
+                  >
+                    <span
+                      className={`${styles.chevron} ${expandedSlugs.has(seller.slug) ? styles.chevronOpen : ''}`}
+                    >
+                      &#9656;
+                    </span>
+                    Historico
+                  </button>
+
+                  {expandedSlugs.has(seller.slug) && (
+                    <div className={styles.historyContent}>
+                      {loadingHistory.has(seller.slug) ? (
+                        <div className={styles.loading}>Carregando...</div>
+                      ) : (() => {
+                        const records = sellerHistory.get(seller.slug);
+                        if (!records || records.length === 0) {
+                          return <div className={styles.loading}>Nenhum upload encontrado.</div>;
+                        }
+                        return (
+                          <table className={styles.historyTable}>
+                            <thead>
+                              <tr>
+                                <th>Mes</th>
+                                <th>Arquivo</th>
+                                <th>Linhas</th>
+                                <th>Status</th>
+                                <th>Data</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {records.map((rec) => (
+                                <tr key={rec.id}>
+                                  <td>{formatMonth(rec.month)}</td>
+                                  <td className={styles.filenameCell} title={rec.filename || ''}>
+                                    {rec.filename
+                                      ? rec.filename.length > 20
+                                        ? rec.filename.slice(0, 17) + '...'
+                                        : rec.filename
+                                      : '\u2014'}
+                                  </td>
+                                  <td>{rec.lines_ingested ?? '\u2014'}</td>
+                                  <td>
+                                    <span className={styles.statusBadge} data-status={rec.status}>
+                                      {rec.status}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {new Date(rec.uploaded_at).toLocaleString('pt-BR', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

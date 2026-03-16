@@ -1,9 +1,13 @@
 """
-Extrato endpoints: coverage, ingest, ingestion-status, CSV upload.
+Extrato endpoints: coverage, ingest, ingestion-status, CSV upload (single + multi).
 """
+import asyncio
 import json
 import logging
 import re
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
+from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
@@ -15,11 +19,15 @@ from app.services.extrato_coverage_checker import (
     get_last_coverage_result,
 )
 from app.services.extrato_ingester import (
+    _months_range,
+    _parse_account_statement,
     get_last_ingestion_result,
     ingest_extrato_all_sellers,
     ingest_extrato_for_seller,
     ingest_extrato_from_csv,
+    validate_extrato_coverage,
 )
+from app.services.gdrive_client import upload_extrato_csv
 from ._deps import require_admin
 
 logger = logging.getLogger(__name__)
@@ -63,6 +71,97 @@ async def extrato_coverage_all(
 async def extrato_coverage_status():
     """Return the result of the last coverage check run."""
     return get_last_coverage_result()
+
+
+# ── Sellers Extrato Status ───────────────────────────────────
+
+
+@router.get("/extrato/sellers-status", dependencies=[Depends(require_admin)])
+async def extrato_sellers_status():
+    """Return extrato coverage status for all active dashboard_ca sellers."""
+    db = get_db()
+
+    # Fetch all active dashboard_ca sellers
+    sellers_resp = (
+        db.table("sellers")
+        .select(
+            "slug, name, dashboard_empresa, ca_start_date, "
+            "extrato_missing, extrato_uploaded_at, integration_mode, active"
+        )
+        .eq("integration_mode", "dashboard_ca")
+        .eq("active", True)
+        .execute()
+    )
+    sellers = sellers_resp.data or []
+
+    if not sellers:
+        return []
+
+    # Fetch all completed uploads
+    uploads_resp = (
+        db.table("extrato_uploads")
+        .select("seller_slug, month")
+        .eq("status", "completed")
+        .execute()
+    )
+    # Group months by seller_slug
+    uploads_by_seller: dict[str, set[str]] = defaultdict(set)
+    for row in uploads_resp.data or []:
+        uploads_by_seller[row["seller_slug"]].add(row["month"])
+
+    # Current month (BRT)
+    now_brt = datetime.now(timezone(timedelta(hours=-3)))
+    current_month_end = date(now_brt.year, now_brt.month, 1)
+
+    result = []
+    for s in sellers:
+        ca_start = s.get("ca_start_date")
+        if not ca_start:
+            result.append({
+                "slug": s["slug"],
+                "name": s.get("name"),
+                "dashboard_empresa": s.get("dashboard_empresa"),
+                "ca_start_date": None,
+                "extrato_missing": s.get("extrato_missing") or False,
+                "extrato_uploaded_at": s.get("extrato_uploaded_at"),
+                "months_needed": [],
+                "months_uploaded": [],
+                "months_missing": [],
+                "coverage_status": "missing",
+            })
+            continue
+
+        # Normalize ca_start_date
+        ca_start_str = str(ca_start)[:10]
+        start_date = date.fromisoformat(ca_start_str)
+        months_needed = _months_range(start_date, current_month_end)
+
+        slug = s["slug"]
+        months_uploaded = sorted(uploads_by_seller.get(slug, set()))
+        uploaded_set = set(months_uploaded)
+        months_missing = [m for m in months_needed if m not in uploaded_set]
+
+        if not months_missing:
+            coverage_status = "complete"
+        elif len(months_uploaded) > 0:
+            coverage_status = "partial"
+        else:
+            coverage_status = "missing"
+
+        result.append({
+            "slug": slug,
+            "name": s.get("name"),
+            "dashboard_empresa": s.get("dashboard_empresa"),
+            "ca_start_date": ca_start_str,
+            "extrato_missing": s.get("extrato_missing") or False,
+            "extrato_uploaded_at": s.get("extrato_uploaded_at"),
+            "months_needed": months_needed,
+            "months_uploaded": months_uploaded,
+            "months_missing": months_missing,
+            "coverage_status": coverage_status,
+        })
+
+    return result
 
 
 # ── Extrato Ingester ─────────────────────────────────────────
@@ -116,10 +215,232 @@ async def extrato_ingestion_status():
     return get_last_ingestion_result()
 
 
-# ── Extrato Upload ──────────────────────────────────────────
+# ── Multi-file Extrato Upload ─────────────────────────────────
+
+_MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
+def _decode_csv_bytes(raw_bytes: bytes) -> str:
+    """Decode CSV bytes with utf-8-sig then latin-1 fallback."""
+    try:
+        return raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return raw_bytes.decode("latin-1")
+
+
+@router.post("/sellers/{slug}/extrato/upload", dependencies=[Depends(require_admin)])
+async def upload_extrato_multi(
+    slug: str,
+    files: List[UploadFile] = File(...),
+):
+    """Upload multiple extrato CSVs for a seller with coverage validation.
+
+    Auto-detects months from CSV content. Validates full coverage from
+    ca_start_date to yesterday. Ingests gap lines and backs up to GDrive.
+    """
+    db = get_db()
+    seller = get_seller_config(db, slug)
+    if not seller:
+        raise HTTPException(status_code=404, detail=f"Seller '{slug}' not found")
+
+    if seller.get("integration_mode") != "dashboard_ca":
+        raise HTTPException(
+            status_code=422,
+            detail="Seller integration_mode must be 'dashboard_ca' for extrato upload",
+        )
+
+    ca_start_date = seller.get("ca_start_date")
+    if not ca_start_date:
+        raise HTTPException(
+            status_code=422,
+            detail="Seller has no ca_start_date configured",
+        )
+    # Normalize to string if it's a date object
+    ca_start_date = str(ca_start_date)[:10]
+
+    # --- Read and decode all files ---
+    csv_texts: list[str] = []
+    csv_bytes_list: list[bytes] = []
+    filenames: list[str] = []
+
+    for f in files:
+        raw_bytes = await f.read()
+        if len(raw_bytes) > _MAX_FILE_SIZE:
+            size_mb = len(raw_bytes) / (1024 * 1024)
+            raise HTTPException(
+                status_code=413,
+                detail=f"File '{f.filename}' too large: {size_mb:.1f}MB exceeds 5MB limit",
+            )
+        csv_text = _decode_csv_bytes(raw_bytes)
+        csv_texts.append(csv_text)
+        csv_bytes_list.append(raw_bytes)
+        filenames.append(f.filename or "unknown.csv")
+
+    # --- Validate coverage ---
+    coverage = validate_extrato_coverage(csv_texts, ca_start_date)
+    if not coverage["valid"]:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": f"Coverage validation failed: {coverage['error']}",
+                "covered_months": coverage["covered_months"],
+                "missing_months": coverage["missing_months"],
+                "gaps": coverage["gaps"],
+                "min_date": coverage["min_date"],
+                "max_date": coverage["max_date"],
+            },
+        )
+
+    # --- Detect months per CSV ---
+    # Build mapping: month -> (csv_text, csv_bytes, filename)
+    # For each CSV, parse transactions and find months it covers.
+    # If multiple CSVs cover the same month, first one wins (ingester deduplicates).
+    month_to_csv: dict[str, tuple[str, bytes, str]] = {}
+
+    for csv_text, raw_bytes, fname in zip(csv_texts, csv_bytes_list, filenames):
+        _summary, transactions = _parse_account_statement(csv_text)
+        months_in_csv: set[str] = set()
+        for tx in transactions:
+            months_in_csv.add(tx["date"][:7])
+
+        for month in sorted(months_in_csv):
+            if month not in month_to_csv:
+                month_to_csv[month] = (csv_text, raw_bytes, fname)
+
+    # Only process months within the needed range
+    needed_months = set(coverage["covered_months"])
+    months_to_process = sorted(m for m in month_to_csv if m in needed_months)
+
+    # --- Ingest each month ---
+    results_per_month: list[dict] = []
+    total_ingested = 0
+    total_errors = 0
+    total_lines = 0
+
+    for month in months_to_process:
+        csv_text, raw_bytes, fname = month_to_csv[month]
+
+        # Upsert extrato_uploads record
+        upload_row = {
+            "seller_slug": slug,
+            "month": month,
+            "filename": fname,
+            "status": "processing",
+            "error_message": None,
+            "lines_total": None,
+            "lines_ingested": None,
+            "lines_skipped": None,
+            "lines_already_covered": None,
+            "initial_balance": None,
+            "final_balance": None,
+            "summary": None,
+        }
+        upsert_resp = (
+            db.table("extrato_uploads")
+            .upsert(upload_row, on_conflict="seller_slug,month")
+            .execute()
+        )
+        upload_id = upsert_resp.data[0]["id"] if upsert_resp.data else None
+
+        try:
+            result = await ingest_extrato_from_csv(slug, csv_text, month)
+        except Exception as exc:
+            if upload_id:
+                db.table("extrato_uploads").update({
+                    "status": "failed",
+                    "error_message": str(exc)[:500],
+                }).eq("id", upload_id).execute()
+            logger.error(
+                "multi-upload ingest failed for %s month=%s: %s",
+                slug, month, exc, exc_info=True,
+            )
+            results_per_month.append({
+                "month": month,
+                "filename": fname,
+                "status": "failed",
+                "error": str(exc)[:200],
+            })
+            total_errors += 1
+            continue
+
+        # Update upload record
+        summary = result.get("summary") or {}
+        update_data = {
+            "status": "completed",
+            "lines_total": result.get("total_lines", 0),
+            "lines_ingested": result.get("newly_ingested", 0),
+            "lines_skipped": result.get("skipped_internal", 0),
+            "lines_already_covered": result.get("already_covered", 0),
+            "initial_balance": summary.get("initial_balance"),
+            "final_balance": summary.get("final_balance"),
+            "summary": json.dumps(result.get("by_type", {})),
+        }
+        if upload_id:
+            db.table("extrato_uploads").update(update_data).eq("id", upload_id).execute()
+
+        month_lines = result.get("total_lines", 0)
+        month_ingested = result.get("newly_ingested", 0)
+        total_lines += month_lines
+        total_ingested += month_ingested
+
+        results_per_month.append({
+            "month": month,
+            "filename": fname,
+            "status": "completed",
+            "lines_total": month_lines,
+            "lines_ingested": month_ingested,
+            "lines_skipped": result.get("skipped_internal", 0),
+            "lines_already_covered": result.get("already_covered", 0),
+        })
+
+    # --- Update seller flags ---
+    now_iso = datetime.now(timezone(timedelta(hours=-3))).isoformat()
+    db.table("sellers").update({
+        "extrato_missing": False,
+        "extrato_uploaded_at": now_iso,
+    }).eq("slug", slug).execute()
+
+    # --- GDrive backup (background) ---
+    gdrive_status = "skipped"
+    for month in months_to_process:
+        csv_text, raw_bytes, fname = month_to_csv[month]
+        gdrive_filename = f"{month}.csv"
+
+        async def _upload_to_gdrive(
+            _slug: str = slug,
+            _seller: dict = seller,
+            _bytes: bytes = raw_bytes,
+            _month: str = month,
+            _fname: str = gdrive_filename,
+        ) -> None:
+            try:
+                await asyncio.to_thread(
+                    upload_extrato_csv, _slug, _seller, _bytes, _month, _fname,
+                )
+            except Exception as exc:
+                logger.error(
+                    "gdrive extrato upload failed for %s month=%s: %s",
+                    _slug, _month, exc, exc_info=True,
+                )
+
+        asyncio.create_task(_upload_to_gdrive())
+        gdrive_status = "queued"
+
+    return {
+        "seller_slug": slug,
+        "total_files": len(files),
+        "total_lines": total_lines,
+        "total_ingested": total_ingested,
+        "total_errors": total_errors,
+        "months_processed": months_to_process,
+        "gdrive_status": gdrive_status,
+        "results": results_per_month,
+    }
+
+
+# ── Extrato Upload (single file, legacy) ────────────────────
 
 _MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
-_MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 @router.post("/extrato/upload", dependencies=[Depends(require_admin)])

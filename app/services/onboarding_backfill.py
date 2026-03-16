@@ -446,6 +446,63 @@ async def _execute_backfill(
             exc,
         )
 
+    # --- 6c. Check extrato upload status --------------------------------------
+    # The actual ingestion of extrato CSVs happens at upload time (US-003),
+    # NOT during backfill.  This step just checks status and logs.
+    try:
+        uploads_rows = (
+            db.table("extrato_uploads")
+            .select("month")
+            .eq("seller_slug", seller_slug)
+            .eq("status", "completed")
+            .execute()
+        )
+        completed_months = [r["month"] for r in (uploads_rows.data or [])]
+
+        if completed_months:
+            progress["extrato_status"] = "covered"
+            logger.info(
+                "OnboardingBackfill %s: extrato already ingested via upload, "
+                "%d months covered",
+                seller_slug,
+                len(completed_months),
+            )
+        else:
+            # Check seller's extrato_missing flag
+            seller_flags = (
+                db.table("sellers")
+                .select("extrato_missing")
+                .eq("slug", seller_slug)
+                .limit(1)
+                .execute()
+            )
+            extrato_missing = (
+                (seller_flags.data[0].get("extrato_missing") or False)
+                if seller_flags.data
+                else False
+            )
+
+            if extrato_missing:
+                progress["extrato_status"] = "missing"
+                logger.info(
+                    "OnboardingBackfill %s: extrato ingestion skipped "
+                    "(extrato_missing=true)",
+                    seller_slug,
+                )
+            else:
+                progress["extrato_status"] = "pending"
+                logger.warning(
+                    "OnboardingBackfill %s: no extrato uploaded yet, "
+                    "coverage may be incomplete",
+                    seller_slug,
+                )
+    except Exception as exc:
+        logger.warning(
+            "OnboardingBackfill %s: extrato status check failed (non-fatal): %s",
+            seller_slug,
+            exc,
+        )
+
     # --- 7. Trigger baixas for parcelas with vencimento <= today ----------------
     # Decision 22 from ONBOARDING-V2-PLANO.md: create baixas immediately for
     # money_release_date <= today so that at the end of backfill all vencidas

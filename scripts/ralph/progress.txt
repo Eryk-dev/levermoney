@@ -1,80 +1,152 @@
-## Codebase Patterns
-- The 4 expense services (expense_classifier, extrato_ingester, release_report_sync, export) already had event ledger writes (record_expense_event) from Etapa 3 — the mp_expenses writes were the dual-write path being removed
-- When removing a function from a service, always grep test files for imports of that function — tests will fail at collection time with ImportError
-- Test files that test dual-mode behavior (mp_expenses vs ledger) need the mp_expenses-specific tests removed when the code path is removed
-- When removing a feature flag, also remove all `patch("module.settings")` mocks in tests that set the flag — the patch target no longer exists and will cause AttributeError
-- daily_sync.py already used payment_events for expense dedup before US-003 — always verify before changing
-- For standalone migration scripts: use PROJECT_ROOT sys.path insert, asyncio.run, argparse pattern from backfill_events.py
-- Pre-fetch existing idempotency keys in bulk rather than checking per-record (much faster for large datasets)
-
 # Ralph Progress Log
-Started: Fri Mar 13 16:21:40 -03 2026
+Started: Mon Mar 16 07:54:09 -03 2026
 ---
 
-## 2026-03-13 - US-001
-- Removed all mp_expenses writes from expense_classifier.py, extrato_ingester.py, release_report_sync.py, export.py
-- Fixed test_extrato_classification.py: removed import of deleted _build_expense_from_extrato and its test class
-- Removed obsolete test_export_mp_expenses_default from test_crud_export_ledger_mode.py
-- Files changed: 4 service/router files + 5 test files
-- **Learnings for future iterations:**
-  - The mp_expenses writes were already the secondary path — event ledger was primary since Etapa 3
-  - test_extrato_classification.py imported _build_expense_from_extrato which was the mp_expenses-specific builder (now gone)
-  - test_crud_export_ledger_mode.py had a test asserting `table("mp_expenses")` is called in default mode — needed removal
-  - crud.py still has `expenses_source` branching with mp_expenses fallback — US-003 must clean that
-  - 525 tests passing after changes
+## Codebase Patterns
+- Migrations use `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` for idempotency
+- Migration files follow pattern `NNN_description.sql` in migrations/
+- Test suite: 554 tests, all offline, ~2s via `python3 -m pytest`
+- Frontend hooks follow `useExpenses.ts` pattern: TOKEN_KEY='lever-admin-token', authHeaders with X-Admin-Token, handleUnauthorized on 401
+- Envelope responses (e.g. `{ seller, count, data }`) must extract `.data` in hooks
+- Upload endpoints use `FormData` with `formData.append('files', file)` for multipart (no Content-Type header — browser sets it)
+- `validate_extrato_coverage()` and `_months_range()` are public helpers in `extrato_ingester.py` for CSV coverage validation
+- Extrato CSV dates: DD-MM-YYYY in file, YYYY-MM-DD after parsing by `_parse_account_statement()`
+- Test fixtures for extrato: `sample_extrato_csv` in conftest.py, real files in `testes/data/extratos/`
+- GDrive background upload pattern: `asyncio.create_task(asyncio.to_thread(sync_fn, ...))` — never block response
+- `gdrive_client.py` has two upload functions: `upload_expenses_zip()` (DESPESAS) and `upload_extrato_csv()` (EXTRATOS)
+- Multi-file upload endpoint: `POST /admin/sellers/{slug}/extrato/upload` — auto-detects months from CSV content
+- Hidden file input pattern for card upload buttons: `<input ref={...} style=display:none multiple>` + `button.onClick → ref.click()`
+- ExtratoTab uses `useExtrato` hook (not inline fetch) — follows same separation as ExpensesExportTab/useExpenses
+- AdminPanel already had ExtratoTab wired in from US-007 commit — always check existing state before implementing
+
 ---
 
-## 2026-03-13 - US-002
-- Created migration script `testes/migrate_mp_expenses_to_ledger.py`
-- Script migrates historical mp_expenses records to event ledger events
-- For each mp_expense without matching expense_captured: creates expense_captured event with full metadata
-- If auto_categorized: also creates expense_classified event
-- If status == 'exported': creates expense_exported event with batch_id='legacy_migration'
-- If status == 'manually_categorized': creates expense_reviewed event
-- Script is idempotent (re-run creates 0 new events via ON CONFLICT DO NOTHING)
-- Includes validation: compares mp_expenses count vs expense_captured count per seller
-- Supports --seller, --all, --dry-run, --validate-only flags
-- Files changed: 1 new file (testes/migrate_mp_expenses_to_ledger.py)
+## 2026-03-16 - US-001
+- Created migration 010_extrato_missing.sql
+- Adds `extrato_missing BOOLEAN DEFAULT FALSE` and `extrato_uploaded_at TIMESTAMPTZ NULL` to sellers table
+- Files changed: migrations/010_extrato_missing.sql
 - **Learnings for future iterations:**
-  - Follow backfill_events.py pattern for standalone scripts: PROJECT_ROOT insertion, asyncio.run, argparse
-  - Signed amount convention: positive=income, negative=expense/transfer (same as _expense_signed_amount in classifier)
-  - Bulk pre-fetch existing idempotency keys is much faster than checking one-by-one per expense
-  - mp_expenses.payment_id is text (can be composite like "12345:df"), pass as-is to record_expense_event
-  - 525 tests passing after changes
+  - Reference migration 007_extrato_uploads.sql for style/patterns
+  - The extrato_uploads table already exists (migration 007) — sellers columns are separate
+  - 520 tests pass with no changes needed
 ---
 
-## 2026-03-13 - US-003
-- onboarding_backfill.py: replaced mp_expenses dedup with payment_events WHERE event_type='expense_captured'
-- daily_sync.py: already used payment_events for dedup (no change needed)
-- Removed expenses_source feature flag from config.py
-- Removed all conditional branches in crud.py, financial_closing.py, extrato_coverage_checker.py, expenses/closing.py
-- Merged _lookup_expense_ids + _lookup_expense_ids_ledger into single function in extrato_coverage_checker.py
-- Updated docstrings in admin routers (extrato.py, release_report.py, sellers.py) and event_ledger.py
-- Fixed test files: removed settings.expenses_source mocks, deleted mp_expenses-mode tests
-- Verified: grep -r 'mp_expenses' app/ --include='*.py' returns ZERO results
-- Files changed: 10 app files + 2 test files
+## 2026-03-16 - US-002
+- Implemented `validate_extrato_coverage(csv_texts, ca_start_date)` in `app/services/extrato_ingester.py`
+- Added `_months_range(start, end)` helper for YYYY-MM range generation
+- Added `_coverage_error(msg)` factory for failed validation results
+- 16 new tests in `testes/test_extrato_classification.py` covering: valid single/multi CSV, overlapping CSVs, missing start month, internal gaps, empty CSV, invalid header, bad date format, real CSV files
+- Files changed: `app/services/extrato_ingester.py`, `testes/test_extrato_classification.py`
+- 534 tests pass (was 520)
 - **Learnings for future iterations:**
-  - daily_sync.py was already clean — always read the file before assuming it needs changes
-  - When removing a feature flag, the `patch("module.settings")` in tests breaks because the module no longer imports settings — must remove the patch entirely
-  - expenses/closing.py had NO feature flag branching, it queried mp_expenses directly — needed full rewrite to use get_expense_list
-  - extrato_coverage_checker.py had two parallel functions (_lookup_expense_ids and _lookup_expense_ids_ledger) — merged into one
-  - 520 tests passing (5 tests removed that tested deleted mp_expenses code paths)
+  - `_parse_account_statement()` returns `({}, [])` for completely invalid CSV — check `summary` dict for INITIAL_BALANCE validation
+  - Dates in CSV are DD-MM-YYYY, dates in transaction dicts are YYYY-MM-DD (already converted by parser)
+  - `BRT` timezone constant already defined at module level in extrato_ingester.py
+  - The `_make_csv()` test helper pattern is useful — build minimal CSVs with exact date control
+  - `date` import was added alongside `datetime` from the `datetime` module for type annotations
 ---
 
-## 2026-03-13 - US-004
-- Created `migrations/009_deprecate_mp_expenses.sql`
-- SQL renames mp_expenses → mp_expenses_deprecated
-- Creates compatibility view mp_expenses reading from payment_events WHERE event_type = 'expense_captured'
-- View maps all metadata JSONB fields to original column names (payment_id, amount, expense_type, etc.)
-- Status derived via CASE WHEN EXISTS subqueries (expense_exported → exported, expense_reviewed → manually_categorized, expense_classified → auto_categorized, else pending_review)
-- Additional columns mapped vs RFC: febraban_code, source, raw_payment
-- Migration applied to Supabase via apply_migration
-- Verification: SELECT COUNT(*) FROM mp_expenses returns 503 (matches mp_expenses_deprecated count)
-- Updated docs/TABELAS.md to reflect the view
-- Files changed: migrations/009_deprecate_mp_expenses.sql (new), docs/TABELAS.md
+## 2026-03-16 - US-003
+- Implemented multi-file extrato upload endpoint `POST /admin/sellers/{slug}/extrato/upload` in `app/routers/admin/extrato.py`
+- Added `upload_extrato_csv()` GDrive helper in `app/services/gdrive_client.py` (hierarchy: ROOT/EXTRATOS/{EMPRESA}/{YYYY-MM}.csv)
+- 13 new tests in `testes/test_extrato_multi_upload.py` covering: seller validation, integration_mode check, file size limit, coverage validation failure, successful multi-file upload, seller flag updates, extrato_uploads upsert, multiple CSVs across months, GDrive queueing, ingestion error resilience
+- Files changed: `app/routers/admin/extrato.py`, `app/services/gdrive_client.py`, `testes/test_extrato_multi_upload.py`
+- 547 tests pass (was 534)
 - **Learnings for future iterations:**
-  - Use `apply_migration` (not `execute_sql`) for DDL operations in Supabase MCP
-  - The view includes extra columns (febraban_code, source, raw_payment) beyond what the RFC template had — always check the actual table schema in docs/TABELAS.md
-  - reference_id (added in migration 008) is the correct column to map to payment_id, not ml_payment_id
-  - 520 tests passing (no test changes needed — app code has zero mp_expenses references)
+  - `_parse_account_statement()` can be imported from extrato_ingester even though it has underscore prefix — used for month detection from CSV content
+  - GDrive upload for extrato uses `asyncio.create_task(asyncio.to_thread(...))` pattern (same as expenses export)
+  - Multi-file endpoint auto-detects months by parsing all CSVs and building a month→csv mapping; first CSV wins for overlapping months (ingester deduplicates)
+  - Mock chain pattern for Supabase: `mock_table.upsert.return_value = mock_table` chains for `.upsert().execute()` etc.
+  - `_decode_csv_bytes()` extracted as reusable helper for utf-8-sig/latin-1 decoding
+  - Seller's `ca_start_date` may be a date object from Supabase — normalize with `str(...)[:10]`
+---
+
+## 2026-03-16 - US-004
+- Added `skip_extrato: bool = False` to `ActivateSellerRequest` and `UpgradeToCaRequest`
+- `activate_seller_v2` sets `extrato_missing = req.skip_extrato` when `integration_mode=dashboard_ca`
+- `upgrade_seller_to_ca` sets `extrato_missing = req.skip_extrato` in update payload
+- No changes to backfill trigger — backfill still starts immediately regardless
+- Files changed: `app/routers/admin/sellers.py`
+- 547 tests pass (no new tests needed — pure data-pass-through change)
+- **Learnings for future iterations:**
+  - `ActivateSellerRequest` is at line 168, `activate_seller_v2` at line 179, `UpgradeToCaRequest` at line 297, `upgrade_seller_to_ca` at line 303
+  - Both endpoints build an `update_data` dict that gets written to the sellers table — just add fields there
+  - The backfill is triggered unconditionally for dashboard_ca via `asyncio.create_task(run_onboarding_backfill(slug))` — do NOT gate it on extrato status
+---
+
+## 2026-03-16 - US-005
+- Added step 6c in `_execute_backfill()` between release report backfill (step 6b) and baixas (step 7)
+- Queries `extrato_uploads` table for completed uploads, then checks `sellers.extrato_missing` flag
+- Sets `progress["extrato_status"]` to `"covered"`, `"missing"`, or `"pending"`
+- Non-fatal: exceptions are caught and logged as warnings without aborting backfill
+- Files changed: `app/services/onboarding_backfill.py`
+- 547 tests pass (no new tests needed — logging-only step with no behavioral change)
+- **Learnings for future iterations:**
+  - Step 6c is purely informational — it does NOT trigger extrato ingestion (that happens at upload time via US-003)
+  - The `extrato_uploads` table uses `status=completed` as the filter for successful uploads
+  - `seller.extrato_missing` may be `None` from DB — use `or False` to normalize
+  - New progress keys (like `extrato_status`) are safely added — the final log in `run_onboarding_backfill` uses `.get()` with defaults
+---
+
+## 2026-03-16 - US-006
+- Implemented `GET /admin/extrato/sellers-status` endpoint in `app/routers/admin/extrato.py`
+- Returns list of active dashboard_ca sellers with months_needed, months_uploaded, months_missing, coverage_status
+- Uses `_months_range()` from extrato_ingester for month list generation
+- Aggregates completed uploads from `extrato_uploads` table grouped by seller_slug
+- 7 new tests in `testes/test_extrato_sellers_status.py` covering: empty sellers, no ca_start_date, full/partial/missing coverage, multiple sellers, date object normalization
+- Files changed: `app/routers/admin/extrato.py`, `testes/test_extrato_sellers_status.py`
+- 554 tests pass (was 547)
+- **Learnings for future iterations:**
+  - `_months_range()` is importable from `extrato_ingester` and takes `date` objects (not strings)
+  - `datetime` mock pattern: mock `datetime.now()` but allow `datetime()` constructor via `mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)`
+  - For mock DB dispatching by table name, use `db.table = table_dispatch` with a closure that counts calls
+  - `ca_start_date` from Supabase can be a date object — always normalize with `str(...)[:10]` then `date.fromisoformat()`
+---
+
+## 2026-03-16 - US-007
+- Created `dashboard/src/hooks/useExtrato.ts` with 3 exported types and 3 API functions
+- Types: `ExtratoSellerStatus`, `ExtratoUploadResult`, `ExtratoUploadRecord`
+- Functions: `loadSellersStatus()`, `uploadExtratos(sellerSlug, files)`, `loadUploadHistory(sellerSlug)`
+- Follows exact pattern from `useExpenses.ts`: TOKEN_KEY, authHeaders, handleUnauthorized on 401
+- `uploadExtratos` uses FormData for multipart upload, re-throws errors for caller to handle
+- `loadUploadHistory` extracts `.data` from envelope response `{ seller, count, data }`
+- Files changed: `dashboard/src/hooks/useExtrato.ts`
+- TypeScript typecheck passes, 554 pytest tests pass
+- **Learnings for future iterations:**
+  - `useExpenses.ts` is the canonical pattern for admin API hooks — copy structure exactly
+  - TOKEN_KEY is `'lever-admin-token'` (same across all admin hooks)
+  - For multipart uploads, do NOT set Content-Type header — browser sets boundary automatically
+  - Upload endpoint error responses may have nested `detail.message` or flat `detail` string — handle both
+  - The `/admin/extrato/uploads/{seller_slug}` endpoint returns envelope `{ seller, count, data }` — extract `data`
+---
+
+## 2026-03-16 - US-008
+- Rewrote `ExtratoTab.tsx` from form-based layout to seller cards grid pattern (matching `ExpensesExportTab`)
+- Rewrote `ExtratoTab.module.css` with card grid, month chips, coverage badges, collapsible history
+- Component now uses `useExtrato` hook (loadSellersStatus, uploadExtratos, loadUploadHistory)
+- Grid shows only dashboard_ca sellers (from `/admin/extrato/sellers-status` endpoint)
+- Each card shows: seller name, ca_start_date, coverage_status badge (complete/partial/missing), month chips (green OK / red missing)
+- Cards with `extrato_missing=true` show "sem extrato" warning badge
+- Upload button per card opens hidden file input (multiple CSVs accepted)
+- Upload result shows inline stats (files, lines ingested, months processed, gdrive status)
+- Collapsible upload history per seller (lazy loaded on expand, same toggle pattern as ExpensesExportTab)
+- Complete cards (coverage_status=complete) are dimmed (opacity: 0.65)
+- Files changed: `dashboard/src/components/ExtratoTab.tsx`, `dashboard/src/components/ExtratoTab.module.css`
+- TypeScript typecheck passes, 554 pytest tests pass
+- **Learnings for future iterations:**
+  - `useExtrato` hook returns typed data from the API — no need for inline fetch calls
+  - Hidden file input + button click pattern: `<input style=display:none>` + `ref.click()` in button onClick
+  - `fileInputRefs` uses `Map<string, HTMLInputElement>` via `useRef` for per-card file inputs
+  - Coverage status API already filters to dashboard_ca sellers — no need to filter on frontend
+  - `ExtratoSellerStatus.months_uploaded` can be checked with `.includes(month)` for month chip coloring
+---
+
+## 2026-03-16 - US-009
+- Verified AdminPanel.tsx already has Extratos tab wired in (import, tab state, button, render)
+- All acceptance criteria already met from prior US-007 commit
+- Marked as passes: true (no code changes needed)
+- Files changed: none (already complete)
+- TypeScript typecheck passes, 554 pytest tests pass
+- **Learnings for future iterations:**
+  - Always verify existing state before implementing — US-009 was already done as a side effect of US-007
 ---

@@ -19,6 +19,8 @@ from app.services.extrato_ingester import (
     _EXPENSE_TYPE_ABBREV,
     _DESCRIPTION_TEMPLATES,
     _CA_CATEGORY_CODE_MAP,
+    validate_extrato_coverage,
+    _months_range,
 )
 
 
@@ -471,3 +473,143 @@ class TestRealExtratoFullCoverage:
 
         assert not unclassified, \
             f"Unclassified extrato lines found:\n" + "\n".join(unclassified)
+
+
+# ===========================================================================
+# _months_range
+# ===========================================================================
+
+class TestMonthsRange:
+    def test_single_month(self):
+        from datetime import date
+        result = _months_range(date(2026, 1, 1), date(2026, 1, 31))
+        assert result == ["2026-01"]
+
+    def test_multi_month(self):
+        from datetime import date
+        result = _months_range(date(2026, 1, 15), date(2026, 3, 10))
+        assert result == ["2026-01", "2026-02", "2026-03"]
+
+    def test_cross_year(self):
+        from datetime import date
+        result = _months_range(date(2025, 11, 1), date(2026, 2, 28))
+        assert result == ["2025-11", "2025-12", "2026-01", "2026-02"]
+
+    def test_same_day(self):
+        from datetime import date
+        result = _months_range(date(2026, 3, 15), date(2026, 3, 15))
+        assert result == ["2026-03"]
+
+
+# ===========================================================================
+# validate_extrato_coverage
+# ===========================================================================
+
+class TestValidateExtratoCoverage:
+    """Tests for the multi-CSV coverage validation function."""
+
+    def _make_csv(self, dates: list[str]) -> str:
+        """Build a minimal extrato CSV with transactions on given dates (YYYY-MM-DD)."""
+        lines = [
+            "INITIAL_BALANCE;CREDITS;DEBITS;FINAL_BALANCE",
+            "100,00;200,00;-50,00;250,00",
+            "",
+            "RELEASE_DATE;TRANSACTION_TYPE;REFERENCE_ID;TRANSACTION_NET_AMOUNT;PARTIAL_BALANCE",
+        ]
+        for d in dates:
+            # Convert YYYY-MM-DD to DD-MM-YYYY for CSV format
+            parts = d.split("-")
+            csv_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+            lines.append(f"{csv_date};Liberação de dinheiro;123456;100,00;200,00")
+        return "\n".join(lines)
+
+    def test_valid_single_csv_full_coverage(self):
+        """Single CSV covering all needed months → valid."""
+        csv = self._make_csv(["2026-01-05", "2026-01-20", "2026-02-10", "2026-02-25", "2026-03-01", "2026-03-15"])
+        result = validate_extrato_coverage([csv], "2026-01-01")
+        assert result["valid"] is True
+        assert result["error"] is None
+        assert "2026-01" in result["covered_months"]
+        assert "2026-02" in result["covered_months"]
+        assert result["missing_months"] == []
+        assert result["min_date"] == "2026-01-05"
+        assert result["max_date"] == "2026-03-15"
+
+    def test_valid_multiple_csvs(self):
+        """Two CSVs together covering the full period → valid."""
+        csv_jan = self._make_csv(["2026-01-05", "2026-01-20"])
+        csv_feb = self._make_csv(["2026-02-10", "2026-02-25", "2026-03-15"])
+        result = validate_extrato_coverage([csv_jan, csv_feb], "2026-01-01")
+        assert result["valid"] is True
+        assert set(result["covered_months"]) >= {"2026-01", "2026-02", "2026-03"}
+
+    def test_overlapping_csvs_accepted(self):
+        """Overlapping CSVs (same month in both) are accepted."""
+        csv1 = self._make_csv(["2026-01-05", "2026-02-10", "2026-03-15"])
+        csv2 = self._make_csv(["2026-01-20", "2026-02-15", "2026-03-10"])
+        result = validate_extrato_coverage([csv1, csv2], "2026-01-01")
+        assert result["valid"] is True
+
+    def test_missing_start_month(self):
+        """CSV starts after ca_start_date → invalid."""
+        csv = self._make_csv(["2026-02-10", "2026-03-15"])
+        result = validate_extrato_coverage([csv], "2026-01-01")
+        assert result["valid"] is False
+        assert "2026-01" in result["error"]
+
+    def test_internal_gap(self):
+        """Jan + Mar without Feb → reports gap."""
+        csv = self._make_csv(["2026-01-10", "2026-03-15"])
+        result = validate_extrato_coverage([csv], "2026-01-01")
+        assert result["valid"] is False
+        assert "2026-02" in result["missing_months"]
+        assert len(result["gaps"]) >= 1
+        assert result["gaps"][0]["start"] == "2026-02-01"
+        assert result["gaps"][0]["end"] == "2026-02-28"
+
+    def test_empty_csv_list(self):
+        """Empty file list → error."""
+        result = validate_extrato_coverage([], "2026-01-01")
+        assert result["valid"] is False
+        assert result["error"] is not None
+
+    def test_invalid_csv_no_header(self):
+        """CSV without INITIAL_BALANCE header → error."""
+        bad_csv = "col1;col2\nval1;val2\n"
+        result = validate_extrato_coverage([bad_csv], "2026-01-01")
+        assert result["valid"] is False
+        assert "INITIAL_BALANCE" in result["error"]
+
+    def test_invalid_ca_start_date_format(self):
+        """Bad ca_start_date format → error."""
+        csv = self._make_csv(["2026-01-05", "2026-03-15"])
+        result = validate_extrato_coverage([csv], "not-a-date")
+        assert result["valid"] is False
+        assert "Invalid ca_start_date" in result["error"]
+
+    def test_gaps_have_correct_structure(self):
+        """Each gap entry has start and end keys."""
+        csv = self._make_csv(["2026-01-10", "2026-04-15"])
+        result = validate_extrato_coverage([csv], "2026-01-01")
+        # Missing Feb and Mar
+        assert result["valid"] is False
+        for gap in result["gaps"]:
+            assert "start" in gap
+            assert "end" in gap
+
+    def test_real_csvs_jan_feb(self):
+        """Real CSV files covering jan+feb should pass for ca_start_date=2026-01-01."""
+        from pathlib import Path
+        extrato_dir = Path(__file__).parent / "data" / "extratos"
+        jan = extrato_dir / "extrato janeiro 141Air.csv"
+        feb = extrato_dir / "extrato fevereiro 141Air.csv"
+        if not jan.exists() or not feb.exists():
+            pytest.skip("Real extrato files not available")
+
+        csv_jan = jan.read_text(encoding="utf-8-sig")
+        csv_feb = feb.read_text(encoding="utf-8-sig")
+        result = validate_extrato_coverage([csv_jan, csv_feb], "2026-01-01")
+        assert "2026-01" in result["covered_months"]
+        assert "2026-02" in result["covered_months"]
+        assert result["min_date"] is not None
+        assert result["max_date"] is not None

@@ -253,19 +253,12 @@ async def _run_nightly_pipeline():
     except Exception as e:
         logger.error("NightlyPipeline: fee validation failed: %s", e, exc_info=True)
 
-    # 4. Ingest account_statement lines (fills gaps not covered by Payments API)
-    try:
-        from app.services.extrato_ingester import ingest_extrato_all_sellers
-        lookback_days = 3
-        ingestion_results = await ingest_extrato_all_sellers(lookback_days=lookback_days)
-        total_ingested = sum(r.get("newly_ingested", 0) for r in ingestion_results)
-        logger.info(
-            "NightlyPipeline: extrato ingestion complete (%d sellers, %d new lines)",
-            len(ingestion_results),
-            total_ingested,
-        )
-    except Exception as e:
-        logger.error("NightlyPipeline: extrato ingestion failed: %s", e, exc_info=True)
+    # 4. Extrato ingester — DISABLED (parser expects account_statement CSV format
+    #    but _get_or_create_report downloads release_report which has a different
+    #    format: DATE;SOURCE_ID;... vs RELEASE_DATE;TRANSACTION_TYPE;...).
+    #    The parser finds no RELEASE_DATE header and returns zero transactions.
+    #    Needs rewrite to either parse release_report format or download the
+    #    actual account_statement CSV.
 
     # 5. Baixas — runs immediately after sync steps (no separate schedule).
     #    Onboarding backfill also triggers baixas inline (step 7) via _trigger_baixas().
