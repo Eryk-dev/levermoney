@@ -1,111 +1,74 @@
 {
   "project": "LeverMoney",
-  "branchName": "ralph/v3-validation-tests",
-  "description": "Testes de validacao v3 com dados reais 141Air janeiro e fevereiro 2026. Garantir que o event ledger (26 event types) produz os mesmos resultados que o sistema anterior para despesas, cash events e DRE.",
+  "branchName": "ralph/deprecar-mp-expenses",
+  "description": "Etapa 5: Deprecar mp_expenses. Parar dual-write, migrar dados historicos, remover todas as referencias, criar view de compatibilidade.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Expense classifier end-to-end test with real non-order payments",
-      "description": "As a developer, I need to validate that classify_non_order_payment() produces correct expense_captured and expense_classified events using real 141air payment data.",
+      "title": "Stop dual-write: remove mp_expenses writes from all services",
+      "description": "As a system, I need expense_classifier.py, extrato_ingester.py, release_report_sync.py and export.py to STOP writing to mp_expenses and write ONLY to the event ledger.",
       "acceptanceCriteria": [
-        "File testes/test_v3_validation_141air.py created",
-        "Test loads real payments from testes/data/cache_jan2026/141air_payments.json",
-        "Filters non-order payments (no order_id, or order_id but filtered by processor rules)",
-        "For each non-order payment: calls classify_non_order_payment() with mocked DB",
-        "Verifies record_expense_event() was called with event_type='expense_captured' for each",
-        "Verifies signed_amount sign: negative for 'expense' direction, positive for 'income'",
-        "Verifies competencia_date extracted from date_approved (not date_created)",
-        "Verifies metadata contains all required fields: expense_type, expense_direction, ca_category, auto_categorized, description, amount",
-        "If auto_categorized: verifies expense_classified event also recorded",
-        "Counts match: total non-order payments == total expense_captured calls",
-        "Same test repeated with testes/data/cache_fev2026/141air_payments.json",
+        "expense_classifier.py: removed upsert to mp_expenses. Only calls record_expense_event()",
+        "extrato_ingester.py: removed all upsert/insert to mp_expenses (multiple locations). Only calls record_expense_event()",
+        "release_report_sync.py: removed insert to mp_expenses for payouts/cashback/shipping. Only calls record_expense_event()",
+        "expenses/export.py: removed update of status in mp_expenses. Only writes expense_exported events",
+        "No import of mp_expenses table name remains in these 4 files",
         "python3 -m pytest passes"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": "Read app/services/expense_classifier.py fully to understand classify_non_order_payment(). Read testes/test_dre_reconciliation.py for fixture patterns (loading cache, filtering). The non-order filter is: payments where order_id is None or empty, PLUS payments excluded by processor filters (marketplace_shipment, collector_id match, etc). Read testes/test_expense_classifier_dual_write.py for the mock pattern (mock db.table, mock record_expense_event). IMPORTANT: after Etapa 5, there is NO dual-write — classify_non_order_payment only calls record_expense_event, NOT db.table('mp_expenses')."
+      "passes": true,
+      "notes": "Read app/services/expense_classifier.py, app/services/extrato_ingester.py, app/services/release_report_sync.py, and app/routers/expenses/export.py. Remove all db.table('mp_expenses') calls. The event ledger writes (record_expense_event) were added in Etapa 3 — they should already be there. Verify each function still works end-to-end."
     },
     {
       "id": "US-002",
-      "title": "Extrato ingestion validation test with real CSV — jan + fev 141Air",
-      "description": "As a developer, I need to validate that extrato classification produces correct results from real 141Air extrato CSVs for both January and February 2026.",
+      "title": "Migrate historical mp_expenses to event ledger",
+      "description": "As a system, I need all existing mp_expenses records that don't have a corresponding expense_captured event to be migrated to the event ledger.",
       "acceptanceCriteria": [
-        "Test class TestExtratoIngestionJan2026 in test_v3_validation_141air.py",
-        "Parses real extrato CSV: testes/data/extratos/extrato janeiro 141Air.csv",
-        "Uses _parse_account_statement() and _classify_extrato_line() from extrato_ingester.py",
-        "For lines classified as expenses (not skip, not _CHECK_PAYMENTS): verifies the classification produces valid expense_type and ca_category",
-        "Counts: total lines parsed == 690 (January 141Air known count)",
-        "Classification breakdown matches known distribution: ~50 skips, ~330 payment_events, ~310 expenses",
-        "Verifies _EXPENSE_TYPE_ABBREV has an entry for every expense_type that appears in real data",
-        "Verifies _CA_CATEGORY_CODE_MAP has an entry for every ca_category that appears in real data",
-        "Same validation for February CSV: testes/data/extratos/extrato fevereiro 141Air.csv",
-        "February line count validated",
-        "Zero unclassified lines in both months (every line gets a classification or is a skip)",
+        "Script testes/migrate_mp_expenses_to_ledger.py created",
+        "For each mp_expense without matching expense_captured: creates expense_captured event with full metadata",
+        "If auto_categorized: also creates expense_classified event",
+        "If status == 'exported': also creates expense_exported event with batch_id='legacy_migration'",
+        "If status == 'manually_categorized': also creates expense_reviewed event",
+        "Script is idempotent (re-run creates 0 new events)",
+        "Validation: SELECT seller_slug, COUNT(*) FROM mp_expenses GROUP BY seller_slug matches SELECT seller_slug, COUNT(*) FROM payment_events WHERE event_type = 'expense_captured' GROUP BY seller_slug",
         "python3 -m pytest passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": "Read app/services/extrato_ingester.py — key functions: _parse_account_statement() (line ~250), _classify_extrato_line() (line ~335), EXTRATO_CLASSIFICATION_RULES (line ~88), _CHECK_PAYMENTS (line ~151), _EXPENSE_TYPE_ABBREV (line ~163). Read testes/test_extrato_classification.py for the existing pattern — it already tests classification. The test should be OFFLINE — no Supabase calls, just parsing + classification logic."
+      "passes": true,
+      "notes": "Read rfcs/plano-execucao/06-fase4-deprecar-mp-expenses.md Etapa 2 for script structure. The idempotency key {seller}:{payment_id}:expense_captured prevents duplicates. Use pagination when reading mp_expenses (may have thousands of rows). The signed_amount must follow convention: positive for income, negative for expense."
     },
     {
       "id": "US-003",
-      "title": "DRE integrity: v3 event types produce identical DRE to v2 reference",
-      "description": "As a developer, I need to confirm that the v3 event ledger with 26 event types produces the exact same DRE totals as the v2 reference values, with cash and expense events properly excluded.",
+      "title": "Migrate dedup + remove all mp_expenses references",
+      "description": "As a system, I need daily_sync.py and onboarding_backfill.py to use the event ledger for expense dedup, the feature flag removed, and zero mp_expenses references remaining.",
       "acceptanceCriteria": [
-        "Test class TestDREIntegrityV3 in test_v3_validation_141air.py",
-        "Processes all 141air jan2026 payments through processor math (_extract_processor_charges, _to_float, _to_brt_date)",
-        "Simulates event creation for all 16 payment event types + 6 cash + 4 expense",
-        "Validates all events via validate_event() — no validation errors for any of the 26 types",
-        "Builds DRE from simulated events grouping by event_type",
-        "EXPLICITLY verifies cash_* and expense_* events are EXCLUDED from DRE calculation (simulates get_dre_summary filter)",
-        "January reference values match exactly: receita_bruta=179572.25, comissao=23085.97, frete=8946.37, devolucoes=45375.41, resultado=109555.37",
-        "Same validation for February with known fev2026 reference values from test_dre_reconciliation_fev2026.py",
-        "Verifies EVENT_TYPES dict has exactly 26 entries",
+        "daily_sync.py: expense dedup uses payment_events WHERE event_type = 'expense_captured' instead of mp_expenses",
+        "onboarding_backfill.py: expense dedup uses payment_events WHERE event_type = 'expense_captured' instead of mp_expenses",
+        "Feature flag expenses_source removed from app/config.py",
+        "All conditional branches (if expenses_source == 'mp_expenses') removed from all consumers",
+        "Verification: grep -r 'mp_expenses' app/ --include='*.py' returns ZERO results",
         "python3 -m pytest passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "Read testes/test_dre_reconciliation.py for January reference values and fixture pattern. Read testes/test_dre_reconciliation_fev2026.py for February. Read app/services/event_ledger.py get_dre_summary() to see the filter that excludes cash_* and expense_* events. The CRITICAL v3 guarantee is: adding 10 new event types (4 expense + 6 cash) does NOT change DRE numbers. This test proves that."
+      "passes": true,
+      "notes": "Read app/services/daily_sync.py — it builds an already_done_expenses set from mp_expenses. Change to query payment_events WHERE event_type = 'expense_captured'. Read app/services/onboarding_backfill.py — same pattern. Then grep -r mp_expenses app/ to find and remove ALL remaining references."
     },
     {
       "id": "US-004",
-      "title": "Cash event mapping completeness with real extrato — sum invariant",
-      "description": "As a developer, I need to validate that every extrato line maps to a cash event type and that the sum of all cash event amounts equals the extrato net movement.",
+      "title": "Migration 009: deprecate mp_expenses table",
+      "description": "As a DBA, I need to rename mp_expenses to mp_expenses_deprecated and create a compatibility view.",
       "acceptanceCriteria": [
-        "Test class TestCashEventMapping in test_v3_validation_141air.py",
-        "Loads and parses January 141Air extrato CSV (690 lines)",
-        "For each line: determines the cash event type using the same classification logic as ingest_extrato_to_ledger.py (CASH_TYPE_MAP, SKIP_TO_CASH_TYPE)",
-        "Every line produces exactly one cash event type (no unmapped lines)",
-        "Cash event type distribution has no zeros — every mapped type appears at least once",
-        "Sum invariant: sum of all 690 signed amounts == -3385.83 (known January net: 4476.23 initial - 1090.40 final)",
-        "No cash event type is 'unknown' or None",
-        "Same validation for February extrato CSV with February's known initial/final balance",
+        "File migrations/009_deprecate_mp_expenses.sql created",
+        "SQL renames: ALTER TABLE mp_expenses RENAME TO mp_expenses_deprecated",
+        "SQL creates view: CREATE VIEW mp_expenses AS SELECT ... FROM payment_events WHERE event_type = 'expense_captured'",
+        "View maps metadata JSONB fields to expected columns: payment_id, amount, expense_type, expense_direction, ca_category, auto_categorized, description, status (derived via CASE WHEN EXISTS subqueries)",
+        "Migration applied to Supabase",
+        "Verification: SELECT COUNT(*) FROM mp_expenses returns data via the view",
         "python3 -m pytest passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "Read testes/ingest_extrato_to_ledger.py for CASH_TYPE_MAP, SKIP_TO_CASH_TYPE, SKIP_ABBREV — these are the authoritative mappings. Read app/services/extrato_ingester.py for _parse_account_statement() and _classify_extrato_line(). The sum invariant is the KEY test: initial_balance + sum(all_amounts) must equal final_balance. For January: 4476.23 + (-3385.83) = 1090.40. Import and reuse the mappings from ingest_extrato_to_ledger.py, do NOT reimplement."
-    },
-    {
-      "id": "US-005",
-      "title": "Event ledger contract tests: idempotency keys, metadata, filters",
-      "description": "As a developer, I need to validate record_expense_event(), record_cash_event(), and derive_expense_status() contracts with representative real-world inputs.",
-      "acceptanceCriteria": [
-        "Test class TestEventLedgerContracts in test_v3_validation_141air.py",
-        "Tests record_expense_event() idempotency key format: {seller}:{payment_id}:{event_type} (3 parts)",
-        "Tests record_cash_event() idempotency key format: {seller}:{ref_id}:{event_type}:{date}:{abbrev} (5 parts)",
-        "Tests record_cash_event() rejects event_type not starting with 'cash_'",
-        "Tests record_cash_event() sets competencia_date == event_date",
-        "Tests derive_expense_status() all 5 cases: empty->unknown, captured->pending_review, classified->auto_categorized, reviewed->reviewed, exported->exported",
-        "Tests derive_expense_status() priority: exported wins over reviewed wins over classified",
-        "Tests validate_event() accepts all 26 event types with correct sign constraints",
-        "Tests validate_event() rejects wrong signs: positive amount for negative-only type, etc",
-        "All tests use mocked Supabase (offline)",
-        "python3 -m pytest passes"
-      ],
-      "priority": 5,
-      "passes": false,
-      "notes": "Read app/services/event_ledger.py for: record_expense_event(), record_cash_event(), derive_expense_status(), validate_event(), EVENT_TYPES dict. Read testes/test_event_ledger.py and testes/test_cash_events.py for existing mock patterns. Some of these tests may overlap with existing ones — check first and only add what's MISSING. If a test already exists in another file, add a comment referencing it instead of duplicating."
+      "passes": true,
+      "notes": "Read rfcs/plano-execucao/06-fase4-deprecar-mp-expenses.md Etapa 4 for the full SQL including the CASE WHEN EXISTS pattern for status derivation. The view serves as a safety net — if any query escaped the grep cleanup, it still works. After 1 month without errors, the deprecated table can be dropped manually."
     }
   ]
 }
