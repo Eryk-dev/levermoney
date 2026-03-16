@@ -71,7 +71,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Key file: app/routers/admin/sellers.py. ActivateSellerRequest is at line 168. activate_seller_v2 is at line 179. upgrade_seller_to_ca is around line 295. The backfill is triggered via asyncio.create_task(run_onboarding_backfill(slug)) — do NOT change this. The extrato upload happens separately via US-003 endpoint (before or after activation)."
     },
     {
@@ -89,7 +89,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Key file: app/services/onboarding_backfill.py. The _execute_backfill() function is at line 266. Release report backfill is step 6b (lines 421-447). Baixas is step 7 (lines 449-469). Insert the new step between them. The actual ingestion of extrato CSVs happens at upload time (US-003), NOT during backfill. The backfill step just checks status and logs."
     },
     {
@@ -108,7 +108,7 @@
         "python3 -m pytest passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Key file: app/routers/admin/extrato.py. To list sellers: db.table('sellers').select('slug, name, dashboard_empresa, ca_start_date, extrato_missing, extrato_uploaded_at, integration_mode, active').eq('integration_mode', 'dashboard_ca').eq('active', True). For months_needed: generate YYYY-MM list from ca_start_date to current month. For months_uploaded: db.table('extrato_uploads').select('seller_slug, month').eq('status', 'completed') then group by seller_slug."
     },
     {
@@ -126,7 +126,7 @@
         "Typecheck passes (cd dashboard && npx tsc --noEmit)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Pattern: follow dashboard/src/hooks/useExpenses.ts exactly for structure. It receives { onUnauthorized } and uses fetch() with X-Admin-Token header. The admin API base URL pattern: in production use relative URLs (/admin/...), in dev use the same origin. ExtratoSellerStatus type should have: slug, name, dashboard_empresa, ca_start_date, extrato_missing, extrato_uploaded_at, months_needed, months_uploaded, months_missing, coverage_status. ExtratoUploadRecord type: id, seller_slug, month, filename, status, lines_total, lines_ingested, lines_skipped, lines_already_covered, initial_balance, final_balance, uploaded_at."
     },
     {
