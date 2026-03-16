@@ -32,7 +32,7 @@ import calendar
 import logging
 import unicodedata
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from app.db.supabase import get_db
@@ -327,6 +327,144 @@ def _parse_account_statement(csv_text: str) -> tuple[dict, list[dict]]:
 
     logger.debug("Parsed account_statement: summary=%s transactions=%d", summary, len(transactions))
     return summary, transactions
+
+
+# ---------------------------------------------------------------------------
+# Coverage validation (multi-CSV upload)
+# ---------------------------------------------------------------------------
+
+
+def validate_extrato_coverage(
+    csv_texts: list[str],
+    ca_start_date: str,
+) -> dict:
+    """Validate whether multiple extrato CSVs cover the full period.
+
+    Checks that the union of all CSV transaction dates covers every month
+    from *ca_start_date* through yesterday (BRT).
+
+    Args:
+        csv_texts: Raw text of each uploaded CSV file.
+        ca_start_date: Seller's CA start date as ``YYYY-MM-DD``.
+
+    Returns:
+        Dict with keys:
+          - valid (bool)
+          - covered_months (list[str])  — ``YYYY-MM`` with at least one tx
+          - missing_months (list[str])  — ``YYYY-MM`` required but absent
+          - gaps (list[dict])           — each ``{start, end}`` gap range
+          - min_date (str|None)
+          - max_date (str|None)
+          - error (str|None)
+    """
+    # --- parse all CSVs --------------------------------------------------
+    all_dates: set[str] = set()
+    has_initial_balance = False
+
+    for i, csv_text in enumerate(csv_texts):
+        summary, transactions = _parse_account_statement(csv_text)
+        if summary:
+            has_initial_balance = True
+        if not summary and not transactions:
+            return _coverage_error(f"CSV #{i + 1}: could not parse — missing INITIAL_BALANCE header")
+        for tx in transactions:
+            all_dates.add(tx["date"])
+
+    if not has_initial_balance:
+        return _coverage_error("No CSV contains the INITIAL_BALANCE header")
+
+    if not all_dates:
+        return _coverage_error("No transaction lines found in any CSV")
+
+    # --- date boundaries -------------------------------------------------
+    try:
+        start_dt = datetime.strptime(ca_start_date, "%Y-%m-%d").date()
+    except ValueError:
+        return _coverage_error(f"Invalid ca_start_date format: {ca_start_date}")
+
+    yesterday = (datetime.now(BRT) - timedelta(days=1)).date()
+
+    sorted_dates = sorted(all_dates)
+    min_date = sorted_dates[0]
+    max_date = sorted_dates[-1]
+
+    min_dt = datetime.strptime(min_date, "%Y-%m-%d").date()
+    max_dt = datetime.strptime(max_date, "%Y-%m-%d").date()
+
+    # --- compute months --------------------------------------------------
+    covered_months_set: set[str] = set()
+    for d in all_dates:
+        covered_months_set.add(d[:7])  # YYYY-MM
+
+    needed_months = _months_range(start_dt, yesterday)
+    covered_months = sorted(m for m in needed_months if m in covered_months_set)
+    missing_months = sorted(m for m in needed_months if m not in covered_months_set)
+
+    # --- detect gaps -----------------------------------------------------
+    gaps: list[dict] = []
+    for m in missing_months:
+        year, month = int(m[:4]), int(m[5:7])
+        gap_start = f"{m}-01"
+        last_day = calendar.monthrange(year, month)[1]
+        gap_end = f"{m}-{last_day:02d}"
+        gaps.append({"start": gap_start, "end": gap_end})
+
+    # --- boundary checks -------------------------------------------------
+    error: str | None = None
+    start_month = f"{start_dt.year}-{start_dt.month:02d}"
+    yesterday_month = f"{yesterday.year}-{yesterday.month:02d}"
+
+    if start_month not in covered_months_set:
+        error = (
+            f"Extrato starts at {min_date} but ca_start_date is {ca_start_date} "
+            f"— month {start_month} has no coverage"
+        )
+    elif yesterday_month not in covered_months_set:
+        error = (
+            f"Extrato ends at {max_date} but yesterday is {yesterday.isoformat()} "
+            f"— month {yesterday_month} has no coverage"
+        )
+    elif missing_months:
+        error = f"Internal gap: missing months {', '.join(missing_months)}"
+
+    valid = error is None
+
+    return {
+        "valid": valid,
+        "covered_months": covered_months,
+        "missing_months": missing_months,
+        "gaps": gaps,
+        "min_date": min_date,
+        "max_date": max_date,
+        "error": error,
+    }
+
+
+def _coverage_error(msg: str) -> dict:
+    """Return a failed validation result with the given error message."""
+    return {
+        "valid": False,
+        "covered_months": [],
+        "missing_months": [],
+        "gaps": [],
+        "min_date": None,
+        "max_date": None,
+        "error": msg,
+    }
+
+
+def _months_range(start: date, end: date) -> list[str]:
+    """Generate a list of YYYY-MM strings from *start* to *end* inclusive."""
+    result: list[str] = []
+    year, month = start.year, start.month
+    end_year, end_month = end.year, end.month
+    while (year, month) <= (end_year, end_month):
+        result.append(f"{year}-{month:02d}")
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+    return result
 
 
 # ---------------------------------------------------------------------------
