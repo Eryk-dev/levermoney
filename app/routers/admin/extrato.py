@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -19,6 +19,7 @@ from app.services.extrato_coverage_checker import (
     get_last_coverage_result,
 )
 from app.services.extrato_ingester import (
+    _months_range,
     _parse_account_statement,
     get_last_ingestion_result,
     ingest_extrato_all_sellers,
@@ -70,6 +71,97 @@ async def extrato_coverage_all(
 async def extrato_coverage_status():
     """Return the result of the last coverage check run."""
     return get_last_coverage_result()
+
+
+# ── Sellers Extrato Status ───────────────────────────────────
+
+
+@router.get("/extrato/sellers-status", dependencies=[Depends(require_admin)])
+async def extrato_sellers_status():
+    """Return extrato coverage status for all active dashboard_ca sellers."""
+    db = get_db()
+
+    # Fetch all active dashboard_ca sellers
+    sellers_resp = (
+        db.table("sellers")
+        .select(
+            "slug, name, dashboard_empresa, ca_start_date, "
+            "extrato_missing, extrato_uploaded_at, integration_mode, active"
+        )
+        .eq("integration_mode", "dashboard_ca")
+        .eq("active", True)
+        .execute()
+    )
+    sellers = sellers_resp.data or []
+
+    if not sellers:
+        return []
+
+    # Fetch all completed uploads
+    uploads_resp = (
+        db.table("extrato_uploads")
+        .select("seller_slug, month")
+        .eq("status", "completed")
+        .execute()
+    )
+    # Group months by seller_slug
+    uploads_by_seller: dict[str, set[str]] = defaultdict(set)
+    for row in uploads_resp.data or []:
+        uploads_by_seller[row["seller_slug"]].add(row["month"])
+
+    # Current month (BRT)
+    now_brt = datetime.now(timezone(timedelta(hours=-3)))
+    current_month_end = date(now_brt.year, now_brt.month, 1)
+
+    result = []
+    for s in sellers:
+        ca_start = s.get("ca_start_date")
+        if not ca_start:
+            result.append({
+                "slug": s["slug"],
+                "name": s.get("name"),
+                "dashboard_empresa": s.get("dashboard_empresa"),
+                "ca_start_date": None,
+                "extrato_missing": s.get("extrato_missing") or False,
+                "extrato_uploaded_at": s.get("extrato_uploaded_at"),
+                "months_needed": [],
+                "months_uploaded": [],
+                "months_missing": [],
+                "coverage_status": "missing",
+            })
+            continue
+
+        # Normalize ca_start_date
+        ca_start_str = str(ca_start)[:10]
+        start_date = date.fromisoformat(ca_start_str)
+        months_needed = _months_range(start_date, current_month_end)
+
+        slug = s["slug"]
+        months_uploaded = sorted(uploads_by_seller.get(slug, set()))
+        uploaded_set = set(months_uploaded)
+        months_missing = [m for m in months_needed if m not in uploaded_set]
+
+        if not months_missing:
+            coverage_status = "complete"
+        elif len(months_uploaded) > 0:
+            coverage_status = "partial"
+        else:
+            coverage_status = "missing"
+
+        result.append({
+            "slug": slug,
+            "name": s.get("name"),
+            "dashboard_empresa": s.get("dashboard_empresa"),
+            "ca_start_date": ca_start_str,
+            "extrato_missing": s.get("extrato_missing") or False,
+            "extrato_uploaded_at": s.get("extrato_uploaded_at"),
+            "months_needed": months_needed,
+            "months_uploaded": months_uploaded,
+            "months_missing": months_missing,
+            "coverage_status": coverage_status,
+        })
+
+    return result
 
 
 # ── Extrato Ingester ─────────────────────────────────────────
