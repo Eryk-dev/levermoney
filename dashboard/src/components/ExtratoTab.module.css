@@ -6,77 +6,144 @@
   gap: var(--space-4);
 }
 
-.section {
-  background: var(--paper);
-  border: 1px solid var(--border, rgba(0,0,0,0.1));
+/* ── Seller cards grid ──────────────────────────────── */
+
+.sellerGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-3);
+}
+
+.sellerCard {
+  background: var(--surface);
   border-radius: var(--space-2);
   padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  border: 1px solid var(--border, rgba(0,0,0,0.08));
 }
 
-.sectionTitle {
-  margin: 0;
-  font-size: var(--text-base);
-  font-weight: 600;
+.sellerCardComplete {
+  opacity: 0.65;
 }
 
-/* ── Form ─────────────────────────────────────────────── */
-
-.formRow {
-  display: flex;
-  gap: var(--space-3);
-  align-items: flex-end;
-  flex-wrap: wrap;
-}
-
-.formLabel {
+.sellerHeader {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  flex: 1;
-  min-width: 160px;
 }
 
-.formSelect {
-  padding: var(--space-2);
-  border: 1px solid var(--border, rgba(0,0,0,0.12));
-  border-radius: var(--space-1);
+.sellerName {
+  margin: 0;
   font-size: var(--text-sm);
-  background: var(--paper);
-  color: var(--ink);
-  width: 100%;
-}
-
-.formInput {
-  padding: var(--space-2);
-  border: 1px solid var(--border, rgba(0,0,0,0.12));
-  border-radius: var(--space-1);
-  font-size: var(--text-sm);
-  background: var(--paper);
+  font-weight: 600;
   color: var(--ink);
 }
 
-.formInput:disabled,
-.formSelect:disabled {
-  background: var(--surface);
-  color: var(--ink-muted);
+.badgeRow {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
 }
 
-.fileInfo {
+/* ── Badges ──────────────────────────────────────────── */
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.badgeComplete {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badgePartial {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badgeMissing {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badgeWarning {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badgeGdrive {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* ── Stat items ──────────────────────────────────────── */
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.statLabel {
   font-size: var(--text-xs);
   color: var(--ink-muted);
 }
 
-/* ── Buttons ──────────────────────────────────────────── */
+.statValue {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Months grid ─────────────────────────────────────── */
+
+.monthsGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.monthChip {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: var(--space-1);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.monthOk {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.monthMissing {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ── Upload ──────────────────────────────────────────── */
+
+.uploadRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fileInput {
+  display: none;
+}
 
 .uploadBtn {
-  align-self: flex-start;
-  padding: var(--space-2) var(--space-4);
-  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
   font-weight: 600;
   border: none;
   border-radius: var(--space-1);
@@ -95,146 +162,67 @@
   cursor: default;
 }
 
-.refreshBtn {
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  border: 1px solid var(--border, rgba(0,0,0,0.12));
-  border-radius: var(--space-1);
-  background: transparent;
-  color: var(--ink);
-  cursor: pointer;
-  align-self: flex-end;
-}
-
-.refreshBtn:hover:not(:disabled) {
-  background: var(--surface);
-}
-
-.refreshBtn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* ── Result box ───────────────────────────────────────── */
+/* ── Result box ──────────────────────────────────────── */
 
 .resultBox {
-  background: var(--surface);
-  border: 1px solid var(--border, rgba(0,0,0,0.08));
-  border-radius: var(--space-2);
-  padding: var(--space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.resultHeader {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
-}
-
-.resultFilename {
   font-size: var(--text-xs);
-  color: var(--ink-muted);
-  font-family: monospace;
 }
 
-.resultMonth {
-  font-size: var(--text-xs);
-  font-weight: 600;
-}
-
-.resultStats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.statItem {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.statLabel {
+.resultDetail {
   font-size: var(--text-xs);
   color: var(--ink-muted);
 }
 
-.statValue {
-  font-size: var(--text-base);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.statValueHighlight {
-  color: #065f46;
-}
-
-.balanceRow {
-  font-size: var(--text-xs);
-  color: var(--ink-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.gapsRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-.gapChip {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 9999px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-/* ── Error box ────────────────────────────────────────── */
+/* ── Error box ───────────────────────────────────────── */
 
 .errorBox {
   background: #fee2e2;
   color: #991b1b;
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border-radius: var(--space-1);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
 }
 
-/* ── Status badge ─────────────────────────────────────── */
+/* ── History (collapsible) ───────────────────────────── */
 
-.statusBadge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 9999px;
+.historySection {
+  border-top: 1px solid var(--border, rgba(0,0,0,0.08));
+  padding-top: var(--space-2);
+}
+
+.historyToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: none;
+  border: none;
+  padding: var(--space-1) 0;
   font-size: var(--text-xs);
   font-weight: 600;
-  text-transform: lowercase;
+  color: var(--ink-muted);
+  cursor: pointer;
 }
 
-.statusBadge[data-status="completed"] {
-  background: #d1fae5;
-  color: #065f46;
+.historyToggle:hover {
+  color: var(--ink);
 }
 
-.statusBadge[data-status="processing"] {
-  background: #dbeafe;
-  color: #1e40af;
+.chevron {
+  display: inline-block;
+  transition: transform 0.15s;
+  font-size: 10px;
 }
 
-.statusBadge[data-status="failed"],
-.statusBadge[data-status="error"] {
-  background: #fee2e2;
-  color: #991b1b;
+.chevronOpen {
+  transform: rotate(90deg);
 }
 
-/* ── History table ────────────────────────────────────── */
-
-.tableWrap {
+.historyContent {
+  margin-top: var(--space-2);
   overflow-x: auto;
 }
 
@@ -262,14 +250,41 @@
 }
 
 .filenameCell {
-  max-width: 180px;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: monospace;
   font-size: var(--text-xs);
 }
 
-/* ── Loading ──────────────────────────────────────────── */
+/* ── Status badge ────────────────────────────────────── */
+
+.statusBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.statusBadge[data-status="completed"] {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.statusBadge[data-status="processing"] {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.statusBadge[data-status="failed"],
+.statusBadge[data-status="error"] {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ── Loading ─────────────────────────────────────────── */
 
 .loading {
   font-size: var(--text-xs);
