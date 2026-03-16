@@ -1,80 +1,56 @@
-## Codebase Patterns
-- The 4 expense services (expense_classifier, extrato_ingester, release_report_sync, export) already had event ledger writes (record_expense_event) from Etapa 3 — the mp_expenses writes were the dual-write path being removed
-- When removing a function from a service, always grep test files for imports of that function — tests will fail at collection time with ImportError
-- Test files that test dual-mode behavior (mp_expenses vs ledger) need the mp_expenses-specific tests removed when the code path is removed
-- When removing a feature flag, also remove all `patch("module.settings")` mocks in tests that set the flag — the patch target no longer exists and will cause AttributeError
-- daily_sync.py already used payment_events for expense dedup before US-003 — always verify before changing
-- For standalone migration scripts: use PROJECT_ROOT sys.path insert, asyncio.run, argparse pattern from backfill_events.py
-- Pre-fetch existing idempotency keys in bulk rather than checking per-record (much faster for large datasets)
-
 # Ralph Progress Log
-Started: Fri Mar 13 16:21:40 -03 2026
+Started: Mon Mar 16 07:54:09 -03 2026
 ---
 
-## 2026-03-13 - US-001
-- Removed all mp_expenses writes from expense_classifier.py, extrato_ingester.py, release_report_sync.py, export.py
-- Fixed test_extrato_classification.py: removed import of deleted _build_expense_from_extrato and its test class
-- Removed obsolete test_export_mp_expenses_default from test_crud_export_ledger_mode.py
-- Files changed: 4 service/router files + 5 test files
-- **Learnings for future iterations:**
-  - The mp_expenses writes were already the secondary path — event ledger was primary since Etapa 3
-  - test_extrato_classification.py imported _build_expense_from_extrato which was the mp_expenses-specific builder (now gone)
-  - test_crud_export_ledger_mode.py had a test asserting `table("mp_expenses")` is called in default mode — needed removal
-  - crud.py still has `expenses_source` branching with mp_expenses fallback — US-003 must clean that
-  - 525 tests passing after changes
+## Codebase Patterns
+- Migrations use `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` for idempotency
+- Migration files follow pattern `NNN_description.sql` in migrations/
+- Test suite: 547 tests, all offline, ~2s via `python3 -m pytest`
+- `validate_extrato_coverage()` and `_months_range()` are public helpers in `extrato_ingester.py` for CSV coverage validation
+- Extrato CSV dates: DD-MM-YYYY in file, YYYY-MM-DD after parsing by `_parse_account_statement()`
+- Test fixtures for extrato: `sample_extrato_csv` in conftest.py, real files in `testes/data/extratos/`
+- GDrive background upload pattern: `asyncio.create_task(asyncio.to_thread(sync_fn, ...))` — never block response
+- `gdrive_client.py` has two upload functions: `upload_expenses_zip()` (DESPESAS) and `upload_extrato_csv()` (EXTRATOS)
+- Multi-file upload endpoint: `POST /admin/sellers/{slug}/extrato/upload` — auto-detects months from CSV content
+
 ---
 
-## 2026-03-13 - US-002
-- Created migration script `testes/migrate_mp_expenses_to_ledger.py`
-- Script migrates historical mp_expenses records to event ledger events
-- For each mp_expense without matching expense_captured: creates expense_captured event with full metadata
-- If auto_categorized: also creates expense_classified event
-- If status == 'exported': creates expense_exported event with batch_id='legacy_migration'
-- If status == 'manually_categorized': creates expense_reviewed event
-- Script is idempotent (re-run creates 0 new events via ON CONFLICT DO NOTHING)
-- Includes validation: compares mp_expenses count vs expense_captured count per seller
-- Supports --seller, --all, --dry-run, --validate-only flags
-- Files changed: 1 new file (testes/migrate_mp_expenses_to_ledger.py)
+## 2026-03-16 - US-001
+- Created migration 010_extrato_missing.sql
+- Adds `extrato_missing BOOLEAN DEFAULT FALSE` and `extrato_uploaded_at TIMESTAMPTZ NULL` to sellers table
+- Files changed: migrations/010_extrato_missing.sql
 - **Learnings for future iterations:**
-  - Follow backfill_events.py pattern for standalone scripts: PROJECT_ROOT insertion, asyncio.run, argparse
-  - Signed amount convention: positive=income, negative=expense/transfer (same as _expense_signed_amount in classifier)
-  - Bulk pre-fetch existing idempotency keys is much faster than checking one-by-one per expense
-  - mp_expenses.payment_id is text (can be composite like "12345:df"), pass as-is to record_expense_event
-  - 525 tests passing after changes
+  - Reference migration 007_extrato_uploads.sql for style/patterns
+  - The extrato_uploads table already exists (migration 007) — sellers columns are separate
+  - 520 tests pass with no changes needed
 ---
 
-## 2026-03-13 - US-003
-- onboarding_backfill.py: replaced mp_expenses dedup with payment_events WHERE event_type='expense_captured'
-- daily_sync.py: already used payment_events for dedup (no change needed)
-- Removed expenses_source feature flag from config.py
-- Removed all conditional branches in crud.py, financial_closing.py, extrato_coverage_checker.py, expenses/closing.py
-- Merged _lookup_expense_ids + _lookup_expense_ids_ledger into single function in extrato_coverage_checker.py
-- Updated docstrings in admin routers (extrato.py, release_report.py, sellers.py) and event_ledger.py
-- Fixed test files: removed settings.expenses_source mocks, deleted mp_expenses-mode tests
-- Verified: grep -r 'mp_expenses' app/ --include='*.py' returns ZERO results
-- Files changed: 10 app files + 2 test files
+## 2026-03-16 - US-002
+- Implemented `validate_extrato_coverage(csv_texts, ca_start_date)` in `app/services/extrato_ingester.py`
+- Added `_months_range(start, end)` helper for YYYY-MM range generation
+- Added `_coverage_error(msg)` factory for failed validation results
+- 16 new tests in `testes/test_extrato_classification.py` covering: valid single/multi CSV, overlapping CSVs, missing start month, internal gaps, empty CSV, invalid header, bad date format, real CSV files
+- Files changed: `app/services/extrato_ingester.py`, `testes/test_extrato_classification.py`
+- 534 tests pass (was 520)
 - **Learnings for future iterations:**
-  - daily_sync.py was already clean — always read the file before assuming it needs changes
-  - When removing a feature flag, the `patch("module.settings")` in tests breaks because the module no longer imports settings — must remove the patch entirely
-  - expenses/closing.py had NO feature flag branching, it queried mp_expenses directly — needed full rewrite to use get_expense_list
-  - extrato_coverage_checker.py had two parallel functions (_lookup_expense_ids and _lookup_expense_ids_ledger) — merged into one
-  - 520 tests passing (5 tests removed that tested deleted mp_expenses code paths)
+  - `_parse_account_statement()` returns `({}, [])` for completely invalid CSV — check `summary` dict for INITIAL_BALANCE validation
+  - Dates in CSV are DD-MM-YYYY, dates in transaction dicts are YYYY-MM-DD (already converted by parser)
+  - `BRT` timezone constant already defined at module level in extrato_ingester.py
+  - The `_make_csv()` test helper pattern is useful — build minimal CSVs with exact date control
+  - `date` import was added alongside `datetime` from the `datetime` module for type annotations
 ---
 
-## 2026-03-13 - US-004
-- Created `migrations/009_deprecate_mp_expenses.sql`
-- SQL renames mp_expenses → mp_expenses_deprecated
-- Creates compatibility view mp_expenses reading from payment_events WHERE event_type = 'expense_captured'
-- View maps all metadata JSONB fields to original column names (payment_id, amount, expense_type, etc.)
-- Status derived via CASE WHEN EXISTS subqueries (expense_exported → exported, expense_reviewed → manually_categorized, expense_classified → auto_categorized, else pending_review)
-- Additional columns mapped vs RFC: febraban_code, source, raw_payment
-- Migration applied to Supabase via apply_migration
-- Verification: SELECT COUNT(*) FROM mp_expenses returns 503 (matches mp_expenses_deprecated count)
-- Updated docs/TABELAS.md to reflect the view
-- Files changed: migrations/009_deprecate_mp_expenses.sql (new), docs/TABELAS.md
+## 2026-03-16 - US-003
+- Implemented multi-file extrato upload endpoint `POST /admin/sellers/{slug}/extrato/upload` in `app/routers/admin/extrato.py`
+- Added `upload_extrato_csv()` GDrive helper in `app/services/gdrive_client.py` (hierarchy: ROOT/EXTRATOS/{EMPRESA}/{YYYY-MM}.csv)
+- 13 new tests in `testes/test_extrato_multi_upload.py` covering: seller validation, integration_mode check, file size limit, coverage validation failure, successful multi-file upload, seller flag updates, extrato_uploads upsert, multiple CSVs across months, GDrive queueing, ingestion error resilience
+- Files changed: `app/routers/admin/extrato.py`, `app/services/gdrive_client.py`, `testes/test_extrato_multi_upload.py`
+- 547 tests pass (was 534)
 - **Learnings for future iterations:**
-  - Use `apply_migration` (not `execute_sql`) for DDL operations in Supabase MCP
-  - The view includes extra columns (febraban_code, source, raw_payment) beyond what the RFC template had — always check the actual table schema in docs/TABELAS.md
-  - reference_id (added in migration 008) is the correct column to map to payment_id, not ml_payment_id
-  - 520 tests passing (no test changes needed — app code has zero mp_expenses references)
+  - `_parse_account_statement()` can be imported from extrato_ingester even though it has underscore prefix — used for month detection from CSV content
+  - GDrive upload for extrato uses `asyncio.create_task(asyncio.to_thread(...))` pattern (same as expenses export)
+  - Multi-file endpoint auto-detects months by parsing all CSVs and building a month→csv mapping; first CSV wins for overlapping months (ingester deduplicates)
+  - Mock chain pattern for Supabase: `mock_table.upsert.return_value = mock_table` chains for `.upsert().execute()` etc.
+  - `_decode_csv_bytes()` extracted as reusable helper for utf-8-sig/latin-1 decoding
+  - Seller's `ca_start_date` may be a date object from Supabase — normalize with `str(...)[:10]`
 ---
