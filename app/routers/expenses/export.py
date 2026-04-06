@@ -2,6 +2,7 @@
 Expenses export endpoints: XLSX/ZIP export, batches list, and confirm-import.
 """
 import asyncio
+import hashlib
 import io
 import logging
 import zipfile
@@ -141,12 +142,15 @@ async def export_expenses(
         date_to=date_to,
         status_filter=statuses,
     )
-    # Convert string ids to int for batch persistence compatibility
+    # Convert string ids to unique bigint for batch persistence (expense_batch_items.expense_id)
     for r in rows:
+        pid = str(r.get("payment_id") or "0")
         try:
-            r["id"] = int(str(r.get("payment_id", "0")).split(":")[0])
+            # Plain numeric payment_id → use directly
+            r["id"] = int(pid)
         except (ValueError, TypeError):
-            r["id"] = 0
+            # Composite key (e.g. "12345678:po") → deterministic hash to avoid collisions
+            r["id"] = int(hashlib.sha256(pid.encode()).hexdigest()[:15], 16)
 
     batch_id = f"exp_{uuid4().hex[:24]}"
 

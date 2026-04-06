@@ -283,9 +283,16 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     };
   }, []);
 
-  // Load stats for all active sellers on mount
+  // Stable refs to avoid useEffect re-trigger on parent re-render
+  const loadStatsRef = useRef(loadStats);
+  loadStatsRef.current = loadStats;
+  const activeSellersRef = useRef(activeSellers);
+  activeSellersRef.current = activeSellers;
+
+  // Load stats for all active sellers on mount only
   useEffect(() => {
-    if (activeSellers.length === 0) {
+    const currentSellers = activeSellersRef.current;
+    if (currentSellers.length === 0) {
       setLoadingStats(false);
       return;
     }
@@ -295,8 +302,8 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     const fetchAll = async () => {
       setLoadingStats(true);
       const results = await Promise.all(
-        activeSellers.map(async (s) => {
-          const stats = await loadStats(
+        currentSellers.map(async (s) => {
+          const stats = await loadStatsRef.current(
             s.slug,
             undefined,
             undefined,
@@ -320,7 +327,7 @@ export function ExpensesExportTab({ sellers, onLogout }: ExpensesExportTabProps)
     return () => {
       cancelled = true;
     };
-  }, [activeSellers, loadStats]);
+  }, []);
 
   return (
     <div className={styles.wrapper}>

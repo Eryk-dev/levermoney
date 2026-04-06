@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { API_BASE } from '../lib/supabase';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -51,20 +51,19 @@ interface UseExpensesOptions {
 }
 
 export function useExpenses({ onUnauthorized }: UseExpensesOptions = {}) {
-  const getToken = useCallback((): string | null => {
-    return sessionStorage.getItem(TOKEN_KEY);
-  }, []);
+  const onUnauthorizedRef = useRef(onUnauthorized);
+  onUnauthorizedRef.current = onUnauthorized;
 
   const authHeaders = useCallback((): Record<string, string> => {
     const h: Record<string, string> = {};
-    const t = getToken();
+    const t = sessionStorage.getItem(TOKEN_KEY);
     if (t) h['X-Admin-Token'] = t;
     return h;
-  }, [getToken]);
+  }, []);
 
   const handleUnauthorized = useCallback(() => {
-    if (onUnauthorized) onUnauthorized();
-  }, [onUnauthorized]);
+    onUnauthorizedRef.current?.();
+  }, []);
 
   // ── loadStats ────────────────────────────────────────────────
 

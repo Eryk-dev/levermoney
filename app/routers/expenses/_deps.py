@@ -202,11 +202,18 @@ def _persist_batch_metadata(
 
     items = []
     for row in rows:
+        # payment_id column is bigint: extract numeric prefix, fallback to None
+        raw_pid = str(row.get("payment_id") or "")
+        try:
+            ml_pid = int(raw_pid.split(":")[0])
+        except (ValueError, TypeError):
+            ml_pid = None
+
         items.append({
             "batch_id": batch_id,
             "seller_slug": seller_slug,
             "expense_id": row.get("id"),
-            "payment_id": row.get("payment_id"),
+            "payment_id": ml_pid,
             "expense_date": _to_brt_iso_date(row.get("date_approved") or row.get("date_created")),
             "expense_direction": row.get("expense_direction"),
             "amount_signed": _signed_amount(row, seller_ml_id),

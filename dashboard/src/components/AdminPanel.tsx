@@ -224,6 +224,9 @@ export function AdminPanel({
   loadSellers,
 }: AdminPanelProps) {
   const [adminTab, setAdminTab] = useState<'sellers' | 'expenses' | 'extratos'>('sellers');
+
+  // Memoize filtered sellers to avoid creating new array references on every render
+  const activeSellersForTabs = useMemo(() => sellers.filter(s => s.active), [sellers]);
   const [syncing, setSyncing] = useState(false);
   const [configForm, setConfigForm] = useState<ConfigForm | null>(null);
 
@@ -569,14 +572,14 @@ export function AdminPanel({
 
       {adminTab === 'expenses' && (
         <ExpensesExportTab
-          sellers={sellers.filter(s => s.active)}
+          sellers={activeSellersForTabs}
           onLogout={onLogout}
         />
       )}
 
       {adminTab === 'extratos' && (
         <ExtratoTab
-          sellers={sellers.filter(s => s.active)}
+          sellers={activeSellersForTabs}
           onLogout={onLogout}
         />
       )}

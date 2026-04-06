@@ -58,13 +58,17 @@ export function ExtratoTab({ onLogout }: ExtratoTabProps) {
     [sellersStatus],
   );
 
-  // Load coverage status on mount
+  // Stable ref for loadSellersStatus (avoids useEffect re-trigger on parent re-render)
+  const loadSellersStatusRef = useRef(loadSellersStatus);
+  loadSellersStatusRef.current = loadSellersStatus;
+
+  // Load coverage status on mount only
   useEffect(() => {
     let cancelled = false;
 
     const fetchStatus = async () => {
       setLoadingStatus(true);
-      const data = await loadSellersStatus();
+      const data = await loadSellersStatusRef.current();
       if (cancelled) return;
       if (data) setSellersStatus(data);
       setLoadingStatus(false);
@@ -72,13 +76,17 @@ export function ExtratoTab({ onLogout }: ExtratoTabProps) {
 
     void fetchStatus();
     return () => { cancelled = true; };
-  }, [loadSellersStatus]);
+  }, []);
 
   // Reload status for all sellers
   const reloadStatus = useCallback(async () => {
-    const data = await loadSellersStatus();
+    const data = await loadSellersStatusRef.current();
     if (data) setSellersStatus(data);
-  }, [loadSellersStatus]);
+  }, []);
+
+  // Stable ref for expandedSlugs (avoids handleUpload recreation on toggle)
+  const expandedSlugsRef = useRef(expandedSlugs);
+  expandedSlugsRef.current = expandedSlugs;
 
   // Upload handler for a single seller
   const handleUpload = useCallback(
@@ -97,7 +105,7 @@ export function ExtratoTab({ onLogout }: ExtratoTabProps) {
           // Reload coverage status
           await reloadStatus();
           // Reload history if expanded
-          if (expandedSlugs.has(slug)) {
+          if (expandedSlugsRef.current.has(slug)) {
             const hist = await loadUploadHistory(slug);
             if (hist) {
               setSellerHistory((prev) => { const n = new Map(prev); n.set(slug, hist); return n; });
@@ -117,7 +125,7 @@ export function ExtratoTab({ onLogout }: ExtratoTabProps) {
         if (input) input.value = '';
       }
     },
-    [uploadExtratos, reloadStatus, expandedSlugs, loadUploadHistory],
+    [uploadExtratos, reloadStatus, loadUploadHistory],
   );
 
   // Toggle history section for a seller
