@@ -94,6 +94,20 @@ export interface UpgradeToCAConfig {
   ca_start_date: string; // YYYY-MM-01
 }
 
+export interface UpgradeToCAResult {
+  status: string;
+  backfill_triggered: boolean;
+  extrato?: {
+    total_files: number;
+    total_lines: number;
+    total_ingested: number;
+    total_errors: number;
+    months_processed: string[];
+    results: Array<{ month: string; filename: string; status: string; lines_ingested?: number; error?: string }>;
+  };
+  error?: string;
+}
+
 const TOKEN_KEY = 'lever-admin-token';
 
 export function useAdmin() {
@@ -341,27 +355,39 @@ export function useAdmin() {
   const upgradeToCA = useCallback(async (
     slug: string,
     config: UpgradeToCAConfig,
-  ): Promise<{ status: string; backfill_triggered: boolean }> => {
+    files: File[],
+  ): Promise<UpgradeToCAResult> => {
     if (!token) return { status: 'error', backfill_triggered: false };
     try {
+      const formData = new FormData();
+      formData.append('ca_conta_bancaria', config.ca_conta_bancaria);
+      formData.append('ca_centro_custo_variavel', config.ca_centro_custo_variavel);
+      formData.append('ca_start_date', config.ca_start_date);
+      for (const file of files) {
+        formData.append('files', file);
+      }
       const res = await fetch(`${API_BASE}/admin/sellers/${slug}/upgrade-to-ca`, {
         method: 'POST',
-        headers: headers(),
-        body: JSON.stringify(config),
+        headers: { 'X-Admin-Token': token },
+        body: formData,
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         console.error('Failed to upgrade seller to CA:', errData);
-        return { status: 'error', backfill_triggered: false };
+        // Return error detail for coverage validation failures (422)
+        const errorMsg = typeof errData.detail === 'object'
+          ? errData.detail.message || JSON.stringify(errData.detail)
+          : errData.detail || 'Unknown error';
+        return { status: 'error', backfill_triggered: false, error: errorMsg };
       }
       const data = await res.json();
       await loadSellers();
       return data;
     } catch (e) {
       console.error('Failed to upgrade seller to CA:', e);
-      return { status: 'error', backfill_triggered: false };
+      return { status: 'error', backfill_triggered: false, error: String(e) };
     }
-  }, [token, headers, loadSellers]);
+  }, [token, loadSellers]);
 
   const getBackfillStatus = useCallback(async (slug: string): Promise<BackfillStatus> => {
     if (!token) {

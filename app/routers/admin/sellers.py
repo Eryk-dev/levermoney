@@ -5,16 +5,20 @@ disconnect, reconnect, activate, upgrade, backfill.
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.config import settings
 from app.db.supabase import get_db
+from app.models.sellers import get_seller_config
 from app.services.onboarding_backfill import (
     get_backfill_status,
     retry_backfill,
     run_onboarding_backfill,
 )
+from .extrato import _decode_csv_bytes, _MAX_FILE_SIZE, process_extrato_files
 from ._deps import require_admin
 
 logger = logging.getLogger(__name__)
@@ -295,35 +299,38 @@ async def activate_seller_v2(slug: str, req: ActivateSellerRequest):
     return {"status": "ok", "backfill_triggered": backfill_triggered}
 
 
-class UpgradeToCaRequest(BaseModel):
-    ca_conta_bancaria: str
-    ca_centro_custo_variavel: str
-    ca_start_date: str  # YYYY-MM-DD, must be 1st of month
-    skip_extrato: bool = False
-
-
 @router.post("/sellers/{slug}/upgrade-to-ca", dependencies=[Depends(require_admin)])
-async def upgrade_seller_to_ca(slug: str, req: UpgradeToCaRequest):
+async def upgrade_seller_to_ca(
+    slug: str,
+    ca_conta_bancaria: str = Form(...),
+    ca_centro_custo_variavel: str = Form(...),
+    ca_start_date: str = Form(...),
+    files: List[UploadFile] = File(...),
+):
     """Upgrade an active dashboard_only seller to dashboard_ca integration.
 
-    Validates that the seller is active and currently in dashboard_only mode.
-    Sets CA config fields and launches the onboarding backfill in the background.
+    Accepts multipart/form-data with CA config fields and extrato CSV files.
+    Extrato is mandatory: CSVs must cover the full period from ca_start_date
+    to yesterday. Each file is processed separately per month.
 
-    Returns {"status": "ok", "backfill_triggered": true}.
+    Flow: validate config → validate CSV coverage → update seller to
+    dashboard_ca → ingest extratos → launch backfill in background.
+
+    Returns {"status": "ok", "backfill_triggered": true, "extrato": {...}}.
     """
     # Validate ca_start_date is the 1st of a month
     try:
         from datetime import date as _date
-        _parsed = _date.fromisoformat(req.ca_start_date)
+        _parsed = _date.fromisoformat(ca_start_date)
         if _parsed.day != 1:
             raise HTTPException(
                 status_code=400,
-                detail=f"ca_start_date must be the 1st of a month, got {req.ca_start_date}",
+                detail=f"ca_start_date must be the 1st of a month, got {ca_start_date}",
             )
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"ca_start_date is not a valid date: {req.ca_start_date}",
+            detail=f"ca_start_date is not a valid date: {ca_start_date}",
         )
 
     db = get_db()
@@ -343,21 +350,116 @@ async def upgrade_seller_to_ca(slug: str, req: UpgradeToCaRequest):
             detail=f"Seller '{slug}' is already in dashboard_ca mode",
         )
 
+    # --- Read and decode CSV files ---
+    files_data: list[tuple[str, bytes, str]] = []
+    for f in files:
+        raw_bytes = await f.read()
+        if len(raw_bytes) > _MAX_FILE_SIZE:
+            size_mb = len(raw_bytes) / (1024 * 1024)
+            raise HTTPException(
+                status_code=413,
+                detail=f"File '{f.filename}' too large: {size_mb:.1f}MB exceeds 5MB limit",
+            )
+        csv_text = _decode_csv_bytes(raw_bytes)
+        files_data.append((csv_text, raw_bytes, f.filename or "unknown.csv"))
+
+    # --- Validate coverage + ingest ---
+    # process_extrato_files raises HTTPException 422 on coverage failure.
+    # Update seller to dashboard_ca FIRST so that extrato ingestion works
+    # (it needs integration_mode=dashboard_ca for event ledger context).
     update_data = {
         "integration_mode": "dashboard_ca",
-        "ca_conta_bancaria": req.ca_conta_bancaria,
-        "ca_centro_custo_variavel": req.ca_centro_custo_variavel,
-        "ca_start_date": req.ca_start_date,
+        "ca_conta_bancaria": ca_conta_bancaria,
+        "ca_centro_custo_variavel": ca_centro_custo_variavel,
+        "ca_start_date": ca_start_date,
         "ca_backfill_status": "pending",
-        "extrato_missing": req.skip_extrato,
+        "extrato_missing": False,
     }
     db.table("sellers").update(update_data).eq("slug", slug).execute()
-    logger.info("upgrade_seller_to_ca %s: ca_start_date=%s", slug, req.ca_start_date)
+    logger.info("upgrade_seller_to_ca %s: ca_start_date=%s", slug, ca_start_date)
 
+    try:
+        # Re-read seller after update (process_extrato_files needs current state)
+        seller = get_seller_config(db, slug)
+        extrato_result = await process_extrato_files(
+            db, slug, seller, files_data, ca_start_date,
+        )
+    except HTTPException:
+        # Coverage validation failed — rollback seller to dashboard_only
+        db.table("sellers").update({
+            "integration_mode": "dashboard_only",
+            "ca_conta_bancaria": None,
+            "ca_centro_custo_variavel": None,
+            "ca_start_date": None,
+            "ca_backfill_status": None,
+            "extrato_missing": False,
+        }).eq("slug", slug).execute()
+        logger.warning(
+            "upgrade_seller_to_ca %s: rolled back to dashboard_only (extrato validation failed)",
+            slug,
+        )
+        raise
+    except Exception as exc:
+        # Unexpected error — also rollback
+        db.table("sellers").update({
+            "integration_mode": "dashboard_only",
+            "ca_conta_bancaria": None,
+            "ca_centro_custo_variavel": None,
+            "ca_start_date": None,
+            "ca_backfill_status": None,
+            "extrato_missing": False,
+        }).eq("slug", slug).execute()
+        logger.error(
+            "upgrade_seller_to_ca %s: rolled back to dashboard_only (unexpected error): %s",
+            slug, exc, exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail=f"Extrato processing failed: {exc}")
+
+    # --- Launch backfill ---
     asyncio.create_task(run_onboarding_backfill(slug))
     logger.info("upgrade_seller_to_ca %s: onboarding backfill task launched", slug)
 
-    return {"status": "ok", "backfill_triggered": True}
+    return {
+        "status": "ok",
+        "backfill_triggered": True,
+        "extrato": extrato_result,
+    }
+
+
+@router.post("/sellers/{slug}/disconnect-ca", dependencies=[Depends(require_admin)])
+async def disconnect_seller_ca(slug: str):
+    """Disconnect a seller from Conta Azul, reverting to dashboard_only mode.
+
+    Clears all CA config fields but preserves historical data (payment_events,
+    extrato_uploads, etc.).
+    """
+    db = get_db()
+    result = db.table("sellers").select("slug, integration_mode, active").eq("slug", slug).limit(1).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"Seller '{slug}' not found")
+
+    seller = result.data[0]
+    if seller.get("integration_mode") != "dashboard_ca":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Seller '{slug}' is not in dashboard_ca mode",
+        )
+
+    db.table("sellers").update({
+        "integration_mode": "dashboard_only",
+        "ca_conta_bancaria": None,
+        "ca_centro_custo_variavel": None,
+        "ca_start_date": None,
+        "ca_backfill_status": None,
+        "ca_backfill_started_at": None,
+        "ca_backfill_completed_at": None,
+        "ca_backfill_progress": None,
+        "extrato_missing": False,
+        "extrato_uploaded_at": None,
+    }).eq("slug", slug).execute()
+    logger.info("disconnect_seller_ca %s: reverted to dashboard_only", slug)
+
+    return {"status": "ok", "slug": slug, "integration_mode": "dashboard_only"}
 
 
 @router.get("/sellers/{slug}/backfill-status", dependencies=[Depends(require_admin)])

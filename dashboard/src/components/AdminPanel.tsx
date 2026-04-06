@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { formatBRL } from '../utils/dataParser';
 import { LogOut, RefreshCw, Check, X, Zap, Settings, Copy, ArrowUpCircle, RotateCcw } from 'lucide-react';
-import type { CaAccount, CaCostCenter, ActivateSellerConfig, UpgradeToCAConfig, BackfillStatus } from '../hooks/useAdmin';
+import type { CaAccount, CaCostCenter, ActivateSellerConfig, UpgradeToCAConfig, UpgradeToCAResult, BackfillStatus } from '../hooks/useAdmin';
 import type { RevenueLine } from '../types';
 import { ExpensesExportTab } from './ExpensesExportTab';
 import { ExtratoTab } from './ExtratoTab';
@@ -75,7 +75,7 @@ interface AdminPanelProps {
   // V3 onboarding
   getInstallLink: () => Promise<{ url: string }>;
   activateSeller: (slug: string, config: ActivateSellerConfig) => Promise<{ status: string; backfill_triggered: boolean }>;
-  upgradeToCA: (slug: string, config: UpgradeToCAConfig) => Promise<{ status: string; backfill_triggered: boolean }>;
+  upgradeToCA: (slug: string, config: UpgradeToCAConfig, files: File[]) => Promise<UpgradeToCAResult>;
   getBackfillStatus: (slug: string) => Promise<BackfillStatus>;
   retryBackfill: (slug: string) => Promise<{ status: string }>;
   loadSellers: () => Promise<void>;
@@ -119,6 +119,8 @@ interface UpgradeForm {
   ca_start_month: number; // 1-12
   ca_conta_bancaria: string;
   ca_centro_custo_variavel: string;
+  files: File[];
+  uploadError: string | null;
 }
 
 // ── Month picker helpers ──────────────────────────────────────
@@ -496,20 +498,30 @@ export function AdminPanel({
       ca_start_month: currentMonth,
       ca_conta_bancaria: s.ca_conta_bancaria || '',
       ca_centro_custo_variavel: s.ca_centro_custo_variavel || '',
+      files: [],
+      uploadError: null,
     });
   };
+
+  const upgradeFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpgradeSubmit = async () => {
     if (!upgradeForm) return;
     if (!upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel) return;
+    if (upgradeForm.files.length === 0) return;
     setUpgrading(true);
+    setUpgradeForm(prev => prev ? { ...prev, uploadError: null } : null);
     try {
       const config: UpgradeToCAConfig = {
         ca_conta_bancaria: upgradeForm.ca_conta_bancaria,
         ca_centro_custo_variavel: upgradeForm.ca_centro_custo_variavel,
         ca_start_date: buildStartDate(upgradeForm.ca_start_year, upgradeForm.ca_start_month),
       };
-      await upgradeToCA(upgradeForm.sellerSlug, config);
+      const result = await upgradeToCA(upgradeForm.sellerSlug, config, upgradeForm.files);
+      if (result.status === 'error') {
+        setUpgradeForm(prev => prev ? { ...prev, uploadError: result.error || 'Erro desconhecido' } : null);
+        return;
+      }
       setUpgradeForm(null);
     } finally {
       setUpgrading(false);
@@ -1037,7 +1049,7 @@ export function AdminPanel({
           <div className={styles.modalContent}>
             <h3>Upgrade para CA: {upgradeForm.sellerName}</h3>
             <p className={styles.upgradeNote}>
-              O backfill sera iniciado automaticamente apos salvar. Ele buscara todos os pagamentos com <em>money_release_date</em> a partir da data de inicio escolhida.
+              O backfill sera iniciado automaticamente apos salvar. Os extratos CSV devem cobrir todo o periodo desde a data de inicio ate ontem.
             </p>
 
             <label className={styles.formLabel}>
@@ -1046,7 +1058,7 @@ export function AdminPanel({
                 <select
                   className={styles.formSelect}
                   value={upgradeForm.ca_start_month}
-                  onChange={e => setUpgradeForm({ ...upgradeForm, ca_start_month: Number(e.target.value) })}
+                  onChange={e => setUpgradeForm({ ...upgradeForm, ca_start_month: Number(e.target.value), uploadError: null })}
                 >
                   {MONTH_NAMES.map((name, i) => (
                     <option key={i + 1} value={i + 1}>{name}</option>
@@ -1055,7 +1067,7 @@ export function AdminPanel({
                 <select
                   className={styles.formSelectYear}
                   value={upgradeForm.ca_start_year}
-                  onChange={e => setUpgradeForm({ ...upgradeForm, ca_start_year: Number(e.target.value) })}
+                  onChange={e => setUpgradeForm({ ...upgradeForm, ca_start_year: Number(e.target.value), uploadError: null })}
                 >
                   {generateYearOptions(currentYear).map((y) => (
                     <option key={y} value={y}>{y}</option>
@@ -1099,14 +1111,66 @@ export function AdminPanel({
               </select>
             </label>
 
+            <div className={styles.formLabel}>
+              Extratos CSV (Dinheiro em Conta - MP)
+              <input
+                ref={upgradeFileInputRef}
+                type="file"
+                accept=".csv"
+                multiple
+                style={{ display: 'none' }}
+                onChange={e => {
+                  const selected = e.target.files ? Array.from(e.target.files) : [];
+                  setUpgradeForm(prev => prev ? { ...prev, files: [...prev.files, ...selected], uploadError: null } : null);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                className={styles.editBtn}
+                onClick={() => upgradeFileInputRef.current?.click()}
+                style={{ marginTop: 6, marginBottom: 4 }}
+              >
+                Selecionar arquivos CSV...
+              </button>
+              {upgradeForm.files.length > 0 && (
+                <div style={{ fontSize: 13, marginTop: 4 }}>
+                  {upgradeForm.files.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <span>{f.name} ({(f.size / 1024).toFixed(0)} KB)</span>
+                      <button
+                        type="button"
+                        style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontSize: 14 }}
+                        onClick={() => setUpgradeForm(prev => prev ? { ...prev, files: prev.files.filter((_, j) => j !== i), uploadError: null } : null)}
+                        title="Remover"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {upgradeForm.files.length === 0 && (
+                <span style={{ fontSize: 12, color: '#d97706', marginTop: 2, display: 'block' }}>
+                  Obrigatorio: selecione os extratos que cobrem de {buildStartDate(upgradeForm.ca_start_year, upgradeForm.ca_start_month)} ate ontem.
+                </span>
+              )}
+            </div>
+
+            {upgradeForm.uploadError && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 12px', marginTop: 8, fontSize: 13, color: '#b91c1c' }}>
+                {upgradeForm.uploadError}
+              </div>
+            )}
+
             <div className={styles.modalActions}>
               <button
                 type="button"
                 className={styles.approveBtn}
                 onClick={handleUpgradeSubmit}
-                disabled={upgrading || !upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel}
+                disabled={upgrading || !upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel || upgradeForm.files.length === 0}
               >
-                {upgrading ? 'Salvando...' : 'Salvar e Iniciar Backfill'}
+                {upgrading ? 'Processando extrato...' : 'Upload Extrato e Iniciar Backfill'}
               </button>
               <button
                 type="button"

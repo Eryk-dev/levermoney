@@ -228,53 +228,33 @@ def _decode_csv_bytes(raw_bytes: bytes) -> str:
         return raw_bytes.decode("latin-1")
 
 
-@router.post("/sellers/{slug}/extrato/upload", dependencies=[Depends(require_admin)])
-async def upload_extrato_multi(
+async def process_extrato_files(
+    db,
     slug: str,
-    files: List[UploadFile] = File(...),
-):
-    """Upload multiple extrato CSVs for a seller with coverage validation.
+    seller: dict,
+    files_data: list[tuple[str, bytes, str]],
+    ca_start_date: str,
+) -> dict:
+    """Shared logic for processing extrato CSV uploads.
 
-    Auto-detects months from CSV content. Validates full coverage from
-    ca_start_date to yesterday. Ingests gap lines and backs up to GDrive.
+    Validates coverage, ingests gap lines per month, updates extrato_uploads,
+    updates seller flags, and starts GDrive backup in background.
+
+    Args:
+        db: Supabase client.
+        slug: Seller slug.
+        seller: Seller dict from DB.
+        files_data: List of (csv_text, raw_bytes, filename) tuples.
+        ca_start_date: YYYY-MM-DD string (must be 1st of month).
+
+    Returns:
+        Dict with total_files, total_lines, total_ingested, total_errors,
+        months_processed, gdrive_status, results (per-month details).
+
+    Raises:
+        HTTPException 422 on coverage validation failure.
     """
-    db = get_db()
-    seller = get_seller_config(db, slug)
-    if not seller:
-        raise HTTPException(status_code=404, detail=f"Seller '{slug}' not found")
-
-    if seller.get("integration_mode") != "dashboard_ca":
-        raise HTTPException(
-            status_code=422,
-            detail="Seller integration_mode must be 'dashboard_ca' for extrato upload",
-        )
-
-    ca_start_date = seller.get("ca_start_date")
-    if not ca_start_date:
-        raise HTTPException(
-            status_code=422,
-            detail="Seller has no ca_start_date configured",
-        )
-    # Normalize to string if it's a date object
-    ca_start_date = str(ca_start_date)[:10]
-
-    # --- Read and decode all files ---
-    csv_texts: list[str] = []
-    csv_bytes_list: list[bytes] = []
-    filenames: list[str] = []
-
-    for f in files:
-        raw_bytes = await f.read()
-        if len(raw_bytes) > _MAX_FILE_SIZE:
-            size_mb = len(raw_bytes) / (1024 * 1024)
-            raise HTTPException(
-                status_code=413,
-                detail=f"File '{f.filename}' too large: {size_mb:.1f}MB exceeds 5MB limit",
-            )
-        csv_text = _decode_csv_bytes(raw_bytes)
-        csv_texts.append(csv_text)
-        csv_bytes_list.append(raw_bytes)
-        filenames.append(f.filename or "unknown.csv")
+    csv_texts = [fd[0] for fd in files_data]
 
     # --- Validate coverage ---
     coverage = validate_extrato_coverage(csv_texts, ca_start_date)
@@ -292,12 +272,9 @@ async def upload_extrato_multi(
         )
 
     # --- Detect months per CSV ---
-    # Build mapping: month -> (csv_text, csv_bytes, filename)
-    # For each CSV, parse transactions and find months it covers.
-    # If multiple CSVs cover the same month, first one wins (ingester deduplicates).
     month_to_csv: dict[str, tuple[str, bytes, str]] = {}
 
-    for csv_text, raw_bytes, fname in zip(csv_texts, csv_bytes_list, filenames):
+    for csv_text, raw_bytes, fname in files_data:
         _summary, transactions = _parse_account_statement(csv_text)
         months_in_csv: set[str] = set()
         for tx in transactions:
@@ -320,7 +297,6 @@ async def upload_extrato_multi(
     for month in months_to_process:
         csv_text, raw_bytes, fname = month_to_csv[month]
 
-        # Upsert extrato_uploads record
         upload_row = {
             "seller_slug": slug,
             "month": month,
@@ -363,7 +339,6 @@ async def upload_extrato_multi(
             total_errors += 1
             continue
 
-        # Update upload record
         summary = result.get("summary") or {}
         update_data = {
             "status": "completed",
@@ -427,8 +402,7 @@ async def upload_extrato_multi(
         gdrive_status = "queued"
 
     return {
-        "seller_slug": slug,
-        "total_files": len(files),
+        "total_files": len(files_data),
         "total_lines": total_lines,
         "total_ingested": total_ingested,
         "total_errors": total_errors,
@@ -436,6 +410,52 @@ async def upload_extrato_multi(
         "gdrive_status": gdrive_status,
         "results": results_per_month,
     }
+
+
+@router.post("/sellers/{slug}/extrato/upload", dependencies=[Depends(require_admin)])
+async def upload_extrato_multi(
+    slug: str,
+    files: List[UploadFile] = File(...),
+):
+    """Upload multiple extrato CSVs for a seller with coverage validation.
+
+    Auto-detects months from CSV content. Validates full coverage from
+    ca_start_date to yesterday. Ingests gap lines and backs up to GDrive.
+    """
+    db = get_db()
+    seller = get_seller_config(db, slug)
+    if not seller:
+        raise HTTPException(status_code=404, detail=f"Seller '{slug}' not found")
+
+    if seller.get("integration_mode") != "dashboard_ca":
+        raise HTTPException(
+            status_code=422,
+            detail="Seller integration_mode must be 'dashboard_ca' for extrato upload",
+        )
+
+    ca_start_date = seller.get("ca_start_date")
+    if not ca_start_date:
+        raise HTTPException(
+            status_code=422,
+            detail="Seller has no ca_start_date configured",
+        )
+    ca_start_date = str(ca_start_date)[:10]
+
+    # --- Read and decode all files ---
+    files_data: list[tuple[str, bytes, str]] = []
+    for f in files:
+        raw_bytes = await f.read()
+        if len(raw_bytes) > _MAX_FILE_SIZE:
+            size_mb = len(raw_bytes) / (1024 * 1024)
+            raise HTTPException(
+                status_code=413,
+                detail=f"File '{f.filename}' too large: {size_mb:.1f}MB exceeds 5MB limit",
+            )
+        csv_text = _decode_csv_bytes(raw_bytes)
+        files_data.append((csv_text, raw_bytes, f.filename or "unknown.csv"))
+
+    result = await process_extrato_files(db, slug, seller, files_data, ca_start_date)
+    return {"seller_slug": slug, **result}
 
 
 # ── Extrato Upload (single file, legacy) ────────────────────
