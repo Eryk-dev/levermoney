@@ -18,7 +18,7 @@ from app.services.onboarding_backfill import (
     retry_backfill,
     run_onboarding_backfill,
 )
-from .extrato import _decode_csv_bytes, _MAX_FILE_SIZE, process_extrato_files
+from .extrato import _decode_csv_bytes, _MAX_FILE_SIZE, process_extrato_files, save_extrato_files
 from ._deps import require_admin
 
 logger = logging.getLogger(__name__)
@@ -379,9 +379,12 @@ async def upgrade_seller_to_ca(
     logger.info("upgrade_seller_to_ca %s: ca_start_date=%s", slug, ca_start_date)
 
     try:
-        # Re-read seller after update (process_extrato_files needs current state)
+        # Re-read seller after update (save_extrato_files needs current state)
         seller = get_seller_config(db, slug)
-        extrato_result = await process_extrato_files(
+        # Save CSVs without ingesting — ingestion runs after backfill completes
+        # so that payment_events are populated and the ingester can correctly
+        # identify real gaps vs payments not yet backfilled.
+        extrato_result = await save_extrato_files(
             db, slug, seller, files_data, ca_start_date,
         )
     except HTTPException:
@@ -415,7 +418,7 @@ async def upgrade_seller_to_ca(
         )
         raise HTTPException(status_code=500, detail=f"Extrato processing failed: {exc}")
 
-    # --- Launch backfill ---
+    # --- Launch backfill (extrato ingestion runs at the end of backfill) ---
     asyncio.create_task(run_onboarding_backfill(slug))
     logger.info("upgrade_seller_to_ca %s: onboarding backfill task launched", slug)
 

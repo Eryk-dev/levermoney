@@ -412,6 +412,125 @@ async def process_extrato_files(
     }
 
 
+async def save_extrato_files(
+    db,
+    slug: str,
+    seller: dict,
+    files_data: list[tuple[str, bytes, str]],
+    ca_start_date: str,
+) -> dict:
+    """Validate coverage and save extrato CSVs without ingesting.
+
+    Used by upgrade-to-ca: CSVs are stored in extrato_uploads with
+    status='pending_ingestion' and csv_content populated. The actual
+    ingestion happens after the onboarding backfill completes (so that
+    payment_events are populated and the ingester can correctly identify
+    gaps instead of treating everything as missing).
+
+    Raises:
+        HTTPException 422 on coverage validation failure.
+    """
+    csv_texts = [fd[0] for fd in files_data]
+
+    # --- Validate coverage ---
+    coverage = validate_extrato_coverage(csv_texts, ca_start_date)
+    if not coverage["valid"]:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": f"Coverage validation failed: {coverage['error']}",
+                "covered_months": coverage["covered_months"],
+                "missing_months": coverage["missing_months"],
+                "gaps": coverage["gaps"],
+                "min_date": coverage["min_date"],
+                "max_date": coverage["max_date"],
+            },
+        )
+
+    # --- Detect months per CSV ---
+    month_to_csv: dict[str, tuple[str, bytes, str]] = {}
+
+    for csv_text, raw_bytes, fname in files_data:
+        _summary, transactions = _parse_account_statement(csv_text)
+        months_in_csv: set[str] = set()
+        for tx in transactions:
+            months_in_csv.add(tx["date"][:7])
+
+        for month in sorted(months_in_csv):
+            if month not in month_to_csv:
+                month_to_csv[month] = (csv_text, raw_bytes, fname)
+
+    needed_months = set(coverage["covered_months"])
+    months_to_process = sorted(m for m in month_to_csv if m in needed_months)
+
+    # --- Save each month as pending_ingestion ---
+    for month in months_to_process:
+        csv_text, raw_bytes, fname = month_to_csv[month]
+
+        upload_row = {
+            "seller_slug": slug,
+            "month": month,
+            "filename": fname,
+            "status": "pending_ingestion",
+            "csv_content": csv_text,
+            "error_message": None,
+            "lines_total": None,
+            "lines_ingested": None,
+            "lines_skipped": None,
+            "lines_already_covered": None,
+            "initial_balance": None,
+            "final_balance": None,
+            "summary": None,
+        }
+        db.table("extrato_uploads").upsert(
+            upload_row, on_conflict="seller_slug,month"
+        ).execute()
+
+    # --- Update seller flags ---
+    now_iso = datetime.now(timezone(timedelta(hours=-3))).isoformat()
+    db.table("sellers").update({
+        "extrato_missing": False,
+        "extrato_uploaded_at": now_iso,
+    }).eq("slug", slug).execute()
+
+    # --- GDrive backup (background) ---
+    gdrive_status = "skipped"
+    for month in months_to_process:
+        csv_text, raw_bytes, fname = month_to_csv[month]
+        gdrive_filename = f"{month}.csv"
+
+        async def _upload_to_gdrive(
+            _slug: str = slug,
+            _seller: dict = seller,
+            _bytes: bytes = raw_bytes,
+            _month: str = month,
+            _fname: str = gdrive_filename,
+        ) -> None:
+            try:
+                await asyncio.to_thread(
+                    upload_extrato_csv, _slug, _seller, _bytes, _month, _fname,
+                )
+            except Exception as exc:
+                logger.error(
+                    "gdrive extrato upload failed for %s month=%s: %s",
+                    _slug, _month, exc, exc_info=True,
+                )
+
+        asyncio.create_task(_upload_to_gdrive())
+        gdrive_status = "queued"
+
+    logger.info(
+        "save_extrato_files %s: saved %d months (pending_ingestion), gdrive=%s",
+        slug, len(months_to_process), gdrive_status,
+    )
+
+    return {
+        "total_files": len(files_data),
+        "months_saved": months_to_process,
+        "gdrive_status": gdrive_status,
+    }
+
+
 @router.post("/sellers/{slug}/extrato/upload", dependencies=[Depends(require_admin)])
 async def upload_extrato_multi(
     slug: str,

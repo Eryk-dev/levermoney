@@ -151,6 +151,20 @@ async def run_onboarding_backfill(seller_slug: str) -> None:
             result.get("baixas_created", 0),
         )
 
+        # --- 9. Ingest pending extratos (after backfill so payment_events exist) ---
+        try:
+            extrato_result = await _ingest_pending_extratos(db, seller_slug)
+            if extrato_result:
+                result["extrato_ingested"] = extrato_result
+                _update_seller_backfill_fields(
+                    db, seller_slug, {"ca_backfill_progress": result},
+                )
+        except Exception as extrato_exc:
+            logger.error(
+                "OnboardingBackfill %s: extrato ingestion failed (backfill still completed): %s",
+                seller_slug, extrato_exc, exc_info=True,
+            )
+
     except Exception as exc:
         logger.error(
             "OnboardingBackfill %s: FAILED with unhandled exception: %s",
@@ -171,6 +185,102 @@ async def run_onboarding_backfill(seller_slug: str) -> None:
                 seller_slug,
                 db_err,
             )
+
+
+async def _ingest_pending_extratos(db, seller_slug: str) -> dict | None:
+    """Ingest extrato CSVs saved with status='pending_ingestion'.
+
+    Called after backfill completes so that payment_events are populated
+    and the ingester can correctly distinguish real gaps from payments
+    that simply hadn't been backfilled yet.
+
+    Returns:
+        Dict with ingestion summary, or None if no pending extratos.
+    """
+    from app.services.extrato_ingester import ingest_extrato_from_csv
+
+    rows = (
+        db.table("extrato_uploads")
+        .select("id, month, csv_content, filename")
+        .eq("seller_slug", seller_slug)
+        .eq("status", "pending_ingestion")
+        .order("month")
+        .execute()
+    )
+
+    pending = rows.data or []
+    if not pending:
+        logger.info(
+            "OnboardingBackfill %s: no pending extrato uploads to ingest",
+            seller_slug,
+        )
+        return None
+
+    logger.info(
+        "OnboardingBackfill %s: ingesting %d pending extrato months",
+        seller_slug, len(pending),
+    )
+
+    total_ingested = 0
+    total_errors = 0
+    months_done = []
+
+    for row in pending:
+        month = row["month"]
+        csv_content = row.get("csv_content")
+        upload_id = row["id"]
+
+        if not csv_content:
+            logger.warning(
+                "OnboardingBackfill %s: extrato month=%s has no csv_content, skipping",
+                seller_slug, month,
+            )
+            db.table("extrato_uploads").update({
+                "status": "failed",
+                "error_message": "No csv_content stored",
+            }).eq("id", upload_id).execute()
+            total_errors += 1
+            continue
+
+        try:
+            result = await ingest_extrato_from_csv(seller_slug, csv_content, month)
+
+            import json
+            summary = result.get("summary") or {}
+            db.table("extrato_uploads").update({
+                "status": "completed",
+                "lines_total": result.get("total_lines", 0),
+                "lines_ingested": result.get("newly_ingested", 0),
+                "lines_skipped": result.get("skipped_internal", 0),
+                "lines_already_covered": result.get("already_covered", 0),
+                "initial_balance": summary.get("initial_balance"),
+                "final_balance": summary.get("final_balance"),
+                "summary": json.dumps(result.get("by_type", {})),
+                "csv_content": None,  # free up storage after ingestion
+            }).eq("id", upload_id).execute()
+
+            total_ingested += result.get("newly_ingested", 0)
+            months_done.append(month)
+            logger.info(
+                "OnboardingBackfill %s: extrato month=%s ingested (%d new lines)",
+                seller_slug, month, result.get("newly_ingested", 0),
+            )
+        except Exception as exc:
+            db.table("extrato_uploads").update({
+                "status": "failed",
+                "error_message": str(exc)[:500],
+            }).eq("id", upload_id).execute()
+            logger.error(
+                "OnboardingBackfill %s: extrato month=%s ingestion failed: %s",
+                seller_slug, month, exc, exc_info=True,
+            )
+            total_errors += 1
+
+    return {
+        "months_ingested": months_done,
+        "total_ingested": total_ingested,
+        "total_errors": total_errors,
+    }
 
 
 async def retry_backfill(seller_slug: str) -> None:
