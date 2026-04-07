@@ -45,7 +45,7 @@ def _load_category_names() -> dict[str, str]:
     if _CA_CATEGORY_NAMES:
         return _CA_CATEGORY_NAMES
     try:
-        path = pathlib.Path(__file__).resolve().parents[2] / "ca_categories.json"
+        path = pathlib.Path(__file__).resolve().parents[3] / "ca_categories.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         _CA_CATEGORY_NAMES = {
             cat["id"]: cat["nome"]
