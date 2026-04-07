@@ -4,7 +4,9 @@ Expenses export endpoints: XLSX/ZIP export, batches list, and confirm-import.
 import asyncio
 import hashlib
 import io
+import json
 import logging
+import pathlib
 import zipfile
 from datetime import datetime
 from uuid import uuid4
@@ -30,6 +32,40 @@ from ._deps import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ── Category UUID → name lookup ──────────────────────────────
+
+_CA_CATEGORY_NAMES: dict[str, str] = {}
+
+
+def _load_category_names() -> dict[str, str]:
+    """Load UUID→name map from ca_categories.json (cached in-process)."""
+    global _CA_CATEGORY_NAMES
+    if _CA_CATEGORY_NAMES:
+        return _CA_CATEGORY_NAMES
+    try:
+        path = pathlib.Path(__file__).resolve().parents[2] / "ca_categories.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        _CA_CATEGORY_NAMES = {
+            cat["id"]: cat["nome"]
+            for cat in data.get("categories", [])
+            if cat.get("id") and cat.get("nome")
+        }
+    except Exception as e:
+        logger.warning("Failed to load ca_categories.json: %s", e)
+    return _CA_CATEGORY_NAMES
+
+
+def _resolve_category(raw: str | None) -> str:
+    """Resolve a ca_category value to human-readable name.
+
+    Accepts UUID, human name, or empty. Returns name or original value.
+    """
+    if not raw:
+        return ""
+    names = _load_category_names()
+    return names.get(raw, raw)
 
 
 # ── XLSX builder ───────────────────────────────────────────────
@@ -97,7 +133,7 @@ def _build_xlsx(rows: list[dict], seller: dict, sheet_name: str) -> io.BytesIO:
             date_str,                          # Data de Vencimento
             date_str,                          # Data de Pagamento
             valor,                             # Valor
-            r.get("ca_category") or "",        # Categoria
+            _resolve_category(r.get("ca_category")),  # Categoria
             r.get("description") or "",        # Descricao
             contato,                           # Cliente/Fornecedor
             cnpj,                              # CNPJ/CPF
