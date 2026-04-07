@@ -245,9 +245,27 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
     return "other", "expense", None, False, f"Outro - {description or f'R$ {amount}'}"[:200]
 
 
-def _expense_signed_amount(direction: str, amount: float) -> float:
-    """Return signed amount: positive for income, negative for expense/transfer."""
+def _is_incoming_transfer(expense_type: str, payment: dict | None = None) -> bool:
+    """Return True when a transfer-direction expense represents money IN."""
+    if expense_type in ("deposit", "deposito_avulso"):
+        return True
+    # For transfer_intra: check if seller is the collector (receiver)
+    if expense_type == "transfer_intra" and payment:
+        collector_id = str((payment.get("collector") or {}).get("id") or "")
+        payer_id = str((payment.get("payer") or {}).get("id") or "")
+        # If collector != payer, and the payment shows as a money_transfer,
+        # the collector is receiving the money
+        if collector_id and payer_id and collector_id != payer_id:
+            return True
+    return False
+
+
+def _expense_signed_amount(direction: str, amount: float,
+                           expense_type: str = "", payment: dict | None = None) -> float:
+    """Return signed amount: positive for income/incoming-transfer, negative for expense/outgoing."""
     if direction == "income":
+        return abs(amount)
+    if direction == "transfer" and _is_incoming_transfer(expense_type, payment):
         return abs(amount)
     return -abs(amount)
 
@@ -292,7 +310,7 @@ async def _write_expense_events(
     Failures are logged as warnings but do not propagate.
     """
     amount = payment.get("transaction_amount", 0)
-    signed = _expense_signed_amount(direction, amount)
+    signed = _expense_signed_amount(direction, amount, expense_type, payment)
     competencia = _expense_competencia_date(payment)
     metadata = _build_expense_metadata(
         expense_type, direction, category, auto_cat, desc, payment,

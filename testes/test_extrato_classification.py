@@ -306,9 +306,9 @@ class TestClassifyExtratoLine:
         exp_type, direction, cat = _classify_extrato_line(
             "Débito por dívida Reclamações no Mercado Livre"
         )
-        assert exp_type == "debito_divida_disputa"
+        # Now _CHECK_PAYMENTS: skip if ref is a known payment (estorno already covers it)
+        assert exp_type == _CHECK_PAYMENTS
         assert direction == "expense"
-        assert cat is None  # pending_review
 
     def test_troca_produto(self):
         exp_type, direction, cat = _classify_extrato_line(

@@ -114,8 +114,8 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("difal",                             "difal",                 "expense",  "2.2.3"),
     ("faturas vencidas",                  "faturas_ml",            "expense",  "2.8.2"),
     ("envio do mercado livre",            "debito_envio_ml",       "expense",  "2.9.4"),
-    ("reclamacoes no mercado livre",      "debito_divida_disputa", "expense",  None),
-    ("reclamações no mercado livre",      "debito_divida_disputa", "expense",  None),
+    ("reclamacoes no mercado livre",      _CHECK_PAYMENTS,         "expense",  None),
+    ("reclamações no mercado livre",      _CHECK_PAYMENTS,         "expense",  None),
     # Additional types found in real extratos (jan 2026)
     ("troca de produto",                  "debito_troca",          "expense",  None),
     ("bonificacao",                       "bonus_envio",           "income",   "1.3.7"),
@@ -141,10 +141,10 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("aprovacao do dinheiro express",      "emprestimo_mp",         "income",   None),
     ("aprovação do dinheiro express",      "emprestimo_mp",         "income",   None),
     # MP investment (Renda = money market fund within MP)
-    ("dinheiro reservado renda",           None,                    None,       None),
-    ("dinheiro retirado renda",            None,                    None,       None),
+    ("dinheiro reservado renda",           "renda_reservada",       "expense",  None),
+    ("dinheiro retirado renda",            "renda_retirada",        "income",   None),
     # Internal transfers to sub-accounts (e.g. Lever Talents)
-    ("dinheiro reservado",                 None,                    None,       None),
+    ("dinheiro reservado",                 "reserva_subconta",      "expense",  None),
     # Purchase made via ML (product description embedded in tx_type)
     # e.g. "Compra de Adaptador Acelerador Piloto Automático..."
     ("compra de ",                        None,                    None,       None),
@@ -158,6 +158,8 @@ _CHECK_PAYMENTS_FALLBACK: dict[str, tuple[str, str]] = {
     "pagamento com":          ("qr_pix_nao_sync",      "income"),
     "dinheiro recebido":      ("dinheiro_recebido",     "income"),
     "pix recebido":           ("pix_nao_sync",          "income"),
+    "reclamacoes no mercado livre": ("debito_divida_disputa", "expense"),
+    "reclamações no mercado livre": ("debito_divida_disputa", "expense"),
 }
 
 # Abbreviated suffixes used when the same REFERENCE_ID appears multiple times
@@ -178,6 +180,9 @@ _EXPENSE_TYPE_ABBREV: dict[str, str] = {
     "subscription":             "sb",
     "pagamento_cartao_credito": "pc",
     "emprestimo_mp":            "em",
+    "renda_reservada":          "rr",
+    "renda_retirada":           "rt",
+    "reserva_subconta":         "rs",
     # New types for smart skip (lines not found in payment_events)
     "liberacao_nao_sync":       "ln",
     "qr_pix_nao_sync":         "qn",
@@ -203,6 +208,9 @@ _DESCRIPTION_TEMPLATES: dict[str, str] = {
     "subscription":          "Assinatura MP - Ref {ref_id}",
     "pagamento_cartao_credito": "Pagamento Cartao Credito MP - Ref {ref_id}",
     "emprestimo_mp":         "Emprestimo Express MP - Ref {ref_id}",
+    "renda_reservada":       "Reserva Renda MP - Ref {ref_id}",
+    "renda_retirada":        "Retirada Renda MP - Ref {ref_id}",
+    "reserva_subconta":      "Reserva Subconta MP - Ref {ref_id}",
     # New types for smart skip (lines not found in payment_events)
     "liberacao_nao_sync":    "Liberacao Nao Sincronizada - Ref {ref_id}",
     "qr_pix_nao_sync":      "Pagamento QR/PIX Nao Sincronizado - Ref {ref_id}",
@@ -777,7 +785,9 @@ def _fuzzy_match_expense(
     them with collection IDs (e.g. 14xxxxxxxxxx). Same charge, different IDs.
 
     Matches by: seller_slug + approximate amount (within R$ 0.01) +
-    competencia_date + expense_type in the given list.
+    competencia_date within ±7 days + expense_type in the given list.
+    The date tolerance is needed because the extrato uses the posting date
+    while the expense_classifier uses date_approved from the ML API.
 
     Returns True if a matching record exists (meaning the extrato line is
     already covered and should be skipped).
@@ -786,12 +796,18 @@ def _fuzzy_match_expense(
         return False
 
     try:
+        from datetime import datetime, timedelta
+        dt = datetime.strptime(date, "%Y-%m-%d")
+        date_start = (dt - timedelta(days=7)).strftime("%Y-%m-%d")
+        date_end = (dt + timedelta(days=7)).strftime("%Y-%m-%d")
+
         result = (
             db.table("payment_events")
             .select("reference_id, signed_amount, metadata")
             .eq("seller_slug", seller_slug)
             .eq("event_type", "expense_captured")
-            .eq("competencia_date", date)
+            .gte("competencia_date", date_start)
+            .lte("competencia_date", date_end)
             .execute()
         )
         for row in result.data or []:
@@ -800,7 +816,7 @@ def _fuzzy_match_expense(
             if row_expense_type not in expense_types:
                 continue
             existing_amount = abs(float(row.get("signed_amount") or 0))
-            if abs(existing_amount - amount) < 0.01:
+            if abs(existing_amount - amount) < 0.02:
                 logger.debug(
                     "fuzzy_match_expense: found match for amount=%.2f date=%s "
                     "type=%s → existing reference_id=%s",
@@ -918,6 +934,10 @@ async def ingest_extrato_for_seller(
     classified: list[tuple[dict, str, str, Optional[str], str]] = []
     # (tx, expense_type, direction, ca_category_uuid, payment_id_key)
     stats = Counter()
+    # Track how many times each composite key has been seen, to disambiguate
+    # multiple extrato lines with same ref+type (e.g. multiple "Dinheiro retido"
+    # for the same dispute).  Key format: "{ref}:{abbrev}" → count seen so far.
+    _key_counter: dict[str, int] = defaultdict(int)
 
     for tx in transactions:
         expense_type, direction, ca_category_uuid = _classify_extrato_line(
@@ -932,11 +952,18 @@ async def ingest_extrato_for_seller(
         # _CHECK_PAYMENTS lines need batch lookup before skip/ingest decision.
         # Use a temporary "cp" abbreviation for the composite key.
         if expense_type == _CHECK_PAYMENTS:
-            payment_id_key = f"{tx['reference_id']}:cp"
+            base_key = f"{tx['reference_id']}:cp"
         else:
             # Build composite key: "{reference_id}:{abbrev}"
             abbrev = _EXPENSE_TYPE_ABBREV.get(expense_type, "xx") if expense_type else "xx"
-            payment_id_key = f"{tx['reference_id']}:{abbrev}"
+            base_key = f"{tx['reference_id']}:{abbrev}"
+
+        # Disambiguate: append sequence number for 2nd, 3rd, ... occurrence
+        _key_counter[base_key] += 1
+        if _key_counter[base_key] == 1:
+            payment_id_key = base_key
+        else:
+            payment_id_key = f"{base_key}:{_key_counter[base_key]}"
 
         classified.append((tx, expense_type, direction, ca_category_uuid, payment_id_key))
 
@@ -1209,6 +1236,7 @@ async def ingest_extrato_from_csv(
     # First-pass classification
     classified: list[tuple[dict, str, str, Optional[str], str]] = []
     stats = Counter()
+    _key_counter: dict[str, int] = defaultdict(int)
 
     for tx in transactions:
         expense_type, direction, ca_category_uuid = _classify_extrato_line(
@@ -1220,10 +1248,16 @@ async def ingest_extrato_from_csv(
             continue
 
         if expense_type == _CHECK_PAYMENTS:
-            payment_id_key = f"{tx['reference_id']}:cp"
+            base_key = f"{tx['reference_id']}:cp"
         else:
             abbrev = _EXPENSE_TYPE_ABBREV.get(expense_type, "xx") if expense_type else "xx"
-            payment_id_key = f"{tx['reference_id']}:{abbrev}"
+            base_key = f"{tx['reference_id']}:{abbrev}"
+
+        _key_counter[base_key] += 1
+        if _key_counter[base_key] == 1:
+            payment_id_key = base_key
+        else:
+            payment_id_key = f"{base_key}:{_key_counter[base_key]}"
 
         classified.append((tx, expense_type, direction, ca_category_uuid, payment_id_key))
 
