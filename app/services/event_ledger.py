@@ -400,16 +400,13 @@ async def get_payment_statuses(
     while True:
         q = db.table(TABLE).select("ml_payment_id, event_type").eq(
             "seller_slug", seller_slug
-        )
+        ).not_.like("event_type", "cash_%").not_.like("event_type", "expense_%")
         if date_from:
             q = q.gte("competencia_date", date_from)
         if date_to:
             q = q.lte("competencia_date", date_to)
 
         rows = q.range(page_start, page_start + page_limit - 1).execute().data or []
-        rows = [r for r in rows
-                if not r["event_type"].startswith("cash_")
-                and not r["event_type"].startswith("expense_")]
         for r in rows:
             pid = int(r["ml_payment_id"])
             if pid not in events_by_pid:
@@ -442,16 +439,13 @@ async def get_dre_summary(
     while True:
         result = db.table(TABLE).select("event_type, signed_amount").eq(
             "seller_slug", seller_slug
-        ).gte(
+        ).not_.like("event_type", "cash_%").not_.like("event_type", "expense_%").gte(
             "competencia_date", date_from
         ).lte(
             "competencia_date", date_to
         ).range(page_start, page_start + page_limit - 1).execute()
 
         rows = result.data or []
-        rows = [r for r in rows
-                if not r["event_type"].startswith("cash_")
-                and not r["event_type"].startswith("expense_")]
         for row in rows:
             et = row["event_type"]
             summary[et] = round(summary.get(et, 0) + row["signed_amount"], 2)

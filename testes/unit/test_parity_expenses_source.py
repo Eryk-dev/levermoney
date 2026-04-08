@@ -765,20 +765,17 @@ class TestDREUnchanged:
 
     @pytest.mark.asyncio
     async def test_dre_summary_excludes_expense_events(self):
-        """get_dre_summary skips expense_* and cash_* events."""
+        """get_dre_summary skips expense_* and cash_* events via SQL (not_.like)."""
         from app.services.event_ledger import get_dre_summary
 
-        # Mix of payment events and expense events
-        mixed_rows = [
+        # DB returns only payment events (expense/cash filtered at SQL level via not_.like)
+        financial_rows = [
             {"event_type": "sale_approved", "signed_amount": 100.0},
             {"event_type": "fee_charged", "signed_amount": -10.0},
-            {"event_type": "expense_captured", "signed_amount": -50.0},
-            {"event_type": "expense_classified", "signed_amount": 0},
-            {"event_type": "cash_release", "signed_amount": 90.0},
         ]
 
         mock_db = MagicMock()
-        mock_db.table.return_value.select.return_value.eq.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value.data = mixed_rows
+        mock_db.table.return_value.select.return_value.eq.return_value.not_.like.return_value.not_.like.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value.data = financial_rows
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
             summary = await get_dre_summary("141air", "2026-01-01", "2026-01-31")

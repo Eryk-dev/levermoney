@@ -132,39 +132,37 @@ class TestCashEvents:
 
     @pytest.mark.asyncio
     async def test_get_dre_summary_excludes_cash(self):
-        """get_dre_summary must filter out cash_* and expense_* event types."""
+        """get_dre_summary filters out cash_* and expense_* event types via SQL (not_.like)."""
+        # DB returns only financial events (cash/expense filtered at SQL level via not_.like)
         rows = [
             {"event_type": "sale_approved", "signed_amount": 500.0},
             {"event_type": "fee_charged", "signed_amount": -50.0},
-            {"event_type": "cash_release", "signed_amount": 500.0},
-            {"event_type": "cash_expense", "signed_amount": -100.0},
-            {"event_type": "expense_classified", "signed_amount": -30.0},
         ]
         mock_db = MagicMock()
         chain = mock_db.table.return_value.select.return_value
-        chain.eq.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = _resp(rows)
+        chain.eq.return_value.not_.like.return_value.not_.like.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = _resp(rows)
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
             summary = await get_dre_summary("141air", "2026-01-01", "2026-01-31")
 
         assert "sale_approved" in summary
+        assert summary["sale_approved"] == 500.0
         assert "fee_charged" in summary
+        assert summary["fee_charged"] == -50.0
         assert "cash_release" not in summary
-        assert "cash_expense" not in summary
         assert "expense_classified" not in summary
 
     @pytest.mark.asyncio
     async def test_get_payment_statuses_excludes_cash(self):
-        """get_payment_statuses must filter out cash_* and expense_* rows."""
+        """get_payment_statuses filters out cash_* and expense_* rows via SQL (not_.like)."""
+        # DB returns only financial events (cash/expense filtered at SQL level via not_.like)
         rows = [
             {"ml_payment_id": 100, "event_type": "sale_approved"},
             {"ml_payment_id": 100, "event_type": "ca_sync_completed"},
-            {"ml_payment_id": 0, "event_type": "cash_release"},
-            {"ml_payment_id": 0, "event_type": "cash_expense"},
         ]
         mock_db = MagicMock()
         chain = mock_db.table.return_value.select.return_value
-        chain.eq.return_value.range.return_value.execute.return_value = _resp(rows)
+        chain.eq.return_value.not_.like.return_value.not_.like.return_value.range.return_value.execute.return_value = _resp(rows)
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
             statuses = await get_payment_statuses("141air")

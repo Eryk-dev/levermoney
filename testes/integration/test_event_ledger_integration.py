@@ -217,7 +217,7 @@ class TestGetDreSummaryAsync:
         ]
         mock_db = MagicMock()
         chain = mock_db.table.return_value.select.return_value
-        chain.eq.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = _resp(rows)
+        chain.eq.return_value.not_.like.return_value.not_.like.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = _resp(rows)
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
             summary = await get_dre_summary("141air", "2026-01-01", "2026-01-31")
@@ -233,7 +233,7 @@ class TestGetDreSummaryAsync:
 
         mock_db = MagicMock()
         chain = mock_db.table.return_value.select.return_value
-        execute_mock = chain.eq.return_value.gte.return_value.lte.return_value.range.return_value.execute
+        execute_mock = chain.eq.return_value.not_.like.return_value.not_.like.return_value.gte.return_value.lte.return_value.range.return_value.execute
         execute_mock.side_effect = [_resp(page1), _resp(page2)]
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
@@ -246,7 +246,7 @@ class TestGetDreSummaryAsync:
     async def test_empty(self):
         mock_db = MagicMock()
         chain = mock_db.table.return_value.select.return_value
-        chain.eq.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = _resp([])
+        chain.eq.return_value.not_.like.return_value.not_.like.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = _resp([])
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
             summary = await get_dre_summary("141air", "2026-01-01", "2026-01-31")
@@ -392,7 +392,7 @@ class TestGetPaymentStatusesAsync:
         ]
         mock_db = MagicMock()
         chain = mock_db.table.return_value.select.return_value
-        chain.eq.return_value.range.return_value.execute.return_value = _resp(rows)
+        chain.eq.return_value.not_.like.return_value.not_.like.return_value.range.return_value.execute.return_value = _resp(rows)
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
             statuses = await get_payment_statuses("141air")
@@ -409,8 +409,8 @@ class TestGetPaymentStatusesAsync:
         ]
         mock_db = MagicMock()
         chain = mock_db.table.return_value.select.return_value
-        # With date_from and date_to, chain has .gte().lte() before .range()
-        chain.eq.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = _resp(rows)
+        # With date_from and date_to, chain has .not_.like().not_.like().gte().lte() before .range()
+        chain.eq.return_value.not_.like.return_value.not_.like.return_value.gte.return_value.lte.return_value.range.return_value.execute.return_value = _resp(rows)
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
             statuses = await get_payment_statuses(
@@ -426,7 +426,7 @@ class TestGetPaymentStatusesAsync:
 
         mock_db = MagicMock()
         chain = mock_db.table.return_value.select.return_value
-        execute_mock = chain.eq.return_value.range.return_value.execute
+        execute_mock = chain.eq.return_value.not_.like.return_value.not_.like.return_value.range.return_value.execute
         execute_mock.side_effect = [_resp(page1), _resp(page2)]
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
@@ -439,7 +439,7 @@ class TestGetPaymentStatusesAsync:
     async def test_empty(self):
         mock_db = MagicMock()
         chain = mock_db.table.return_value.select.return_value
-        chain.eq.return_value.range.return_value.execute.return_value = _resp([])
+        chain.eq.return_value.not_.like.return_value.not_.like.return_value.range.return_value.execute.return_value = _resp([])
 
         with patch("app.services.event_ledger.get_db", return_value=mock_db):
             statuses = await get_payment_statuses("141air")
