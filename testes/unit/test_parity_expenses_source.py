@@ -638,7 +638,7 @@ class TestFinancialClosingManualLaneParity:
 
     def _compute_day_totals_from_mp(self, mp_rows: list[dict]) -> dict[str, dict]:
         """Simulate what _compute_manual_lane produces from mp_expenses rows."""
-        from app.services.financial_closing import _to_brt_day, _signed_amount
+        from app.services.financial_closing import _to_brt_day, _row_sign
         from collections import defaultdict
 
         by_day: dict[str, list[dict]] = defaultdict(list)
@@ -648,7 +648,7 @@ class TestFinancialClosingManualLaneParity:
 
         result = {}
         for day, rows in sorted(by_day.items()):
-            total_signed = round(sum(_signed_amount(r) for r in rows), 2)
+            total_signed = round(sum(_row_sign(r) for r in rows), 2)
             total_ids = {int(r["payment_id"]) for r in rows if r.get("payment_id") is not None}
             exported_ids = {
                 int(r["payment_id"]) for r in rows
@@ -706,7 +706,7 @@ class TestFinancialClosingManualLaneParity:
     @pytest.mark.asyncio
     async def test_same_signed_amounts_per_day(self, mp_rows, ledger_events):
         """Both sources have same total signed amount per day."""
-        from app.services.financial_closing import _to_brt_day, _signed_amount
+        from app.services.financial_closing import _to_brt_day, _row_sign
 
         mp_days = self._compute_day_totals_from_mp(mp_rows)
 
@@ -721,7 +721,7 @@ class TestFinancialClosingManualLaneParity:
             ledger_by_day[day].append(r)
 
         for day, mp_info in mp_days.items():
-            ledger_signed = round(sum(_signed_amount(r) for r in ledger_by_day[day]), 2)
+            ledger_signed = round(sum(_row_sign(r) for r in ledger_by_day[day]), 2)
             assert ledger_signed == mp_info["amount_total_signed"], (
                 f"Day {day}: mp_signed={mp_info['amount_total_signed']}, ledger_signed={ledger_signed}"
             )

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.db.supabase import get_db
 from app.models.sellers import get_all_active_sellers, get_seller_config
+from app.services import money
 from app.services.event_ledger import derive_payment_status, get_payment_statuses
 
 logger = logging.getLogger(__name__)
@@ -48,16 +49,15 @@ def _to_brt_day(iso_str: str | None) -> str:
         return iso_str[:10] if iso_str else "sem-data"
 
 
-def _signed_amount(row: dict) -> float:
+def _row_sign(row: dict) -> float:
+    """Compute signed amount for a closing row using unified sign convention."""
     amount = float(row.get("amount") or 0)
     direction = row.get("expense_direction", "expense")
     if direction == "income":
-        return abs(amount)
-    if direction == "transfer":
-        expense_type = row.get("expense_type", "")
-        if expense_type in ("deposit", "deposito_avulso"):
-            return abs(amount)
-    return -abs(amount)
+        return money.signed_amount("income", amount)
+    if direction == "transfer" and row.get("expense_type", "") in ("deposit", "deposito_avulso"):
+        return money.signed_amount("deposit", amount)
+    return money.signed_amount("expense", amount)
 
 
 def _batch_tables_available(db) -> bool:
@@ -149,13 +149,13 @@ async def _compute_manual_lane(
         miss_import = sorted(total_ids - imported_ids)
         missing_import_ids.update(miss_import)
 
-        total_signed = round(sum(_signed_amount(r) for r in day_rows), 2)
+        total_signed = round(sum(_row_sign(r) for r in day_rows), 2)
         exported_signed = round(
-            sum(_signed_amount(r) for r in day_rows if r.get("payment_id") is not None and int(r["payment_id"]) in exported_ids),
+            sum(_row_sign(r) for r in day_rows if r.get("payment_id") is not None and int(r["payment_id"]) in exported_ids),
             2,
         )
         imported_signed = round(
-            sum(_signed_amount(r) for r in day_rows if r.get("payment_id") is not None and int(r["payment_id"]) in imported_ids),
+            sum(_row_sign(r) for r in day_rows if r.get("payment_id") is not None and int(r["payment_id"]) in imported_ids),
             2,
         )
 

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from app.db.supabase import get_db
 from app.models.sellers import get_seller_config
 from app.routers.admin import require_admin
+from app.services import money
 
 logger = logging.getLogger(__name__)
 
@@ -88,15 +89,17 @@ def _is_incoming_transfer(row: dict, seller_ml_id: str = "") -> bool:
     return False
 
 
-def _signed_amount(row: dict, seller_ml_id: str = "") -> float:
-    """Amount using the same sign convention as XLSX export."""
+def _compute_row_sign(row: dict, seller_ml_id: str = "") -> float:
+    """Compute signed amount using unified sign convention."""
     amount = float(row.get("amount") or 0)
     direction = row.get("expense_direction", "expense")
     if direction == "income":
-        return abs(amount)
-    if direction == "transfer" and _is_incoming_transfer(row, seller_ml_id):
-        return abs(amount)
-    return -abs(amount)
+        return money.signed_amount("income", amount)
+    if direction == "transfer":
+        if _is_incoming_transfer(row, seller_ml_id):
+            return money.signed_amount("transfer_in", amount)
+        return money.signed_amount("transfer_out", amount)
+    return money.signed_amount("expense", amount)
 
 
 def _date_range_label(rows: list[dict], date_from: str | None = None, date_to: str | None = None) -> str:
@@ -187,7 +190,7 @@ def _persist_batch_metadata(
         "company": company,
         "status": status,
         "rows_count": len(rows),
-        "amount_total_signed": round(sum(_signed_amount(r, seller_ml_id) for r in rows), 2),
+        "amount_total_signed": round(sum(_compute_row_sign(r, seller_ml_id) for r in rows), 2),
         "date_from": date_from,
         "date_to": date_to,
         "exported_at": now if status == "exported" else None,
@@ -216,7 +219,7 @@ def _persist_batch_metadata(
             "payment_id": ml_pid,
             "expense_date": _to_brt_iso_date(row.get("date_approved") or row.get("date_created")),
             "expense_direction": row.get("expense_direction"),
-            "amount_signed": _signed_amount(row, seller_ml_id),
+            "amount_signed": _compute_row_sign(row, seller_ml_id),
             "status_snapshot": row.get("status"),
             "snapshot_payload": _build_snapshot_payload(row),
             "created_at": now,

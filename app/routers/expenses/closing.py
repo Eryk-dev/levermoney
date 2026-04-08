@@ -11,7 +11,7 @@ from app.models.sellers import get_seller_config
 from app.routers.admin import require_admin
 from ._deps import (
     MANUAL_EXPORTED_STATUSES,
-    _signed_amount, _group_rows_by_day, _batch_tables_available,
+    _compute_row_sign, _group_rows_by_day, _batch_tables_available,
     logger,
 )
 
@@ -97,10 +97,10 @@ async def closing_status(
         missing_export_ids = sorted(total_ids - exported_ids)
         missing_import_ids = sorted(total_ids - imported_ids)
 
-        total_signed = round(sum(_signed_amount(r) for r in day_rows), 2)
-        exported_signed = round(sum(_signed_amount(r) for r in day_rows if r.get("status") in MANUAL_EXPORTED_STATUSES), 2)
+        total_signed = round(sum(_compute_row_sign(r) for r in day_rows), 2)
+        exported_signed = round(sum(_compute_row_sign(r) for r in day_rows if r.get("status") in MANUAL_EXPORTED_STATUSES), 2)
         imported_signed = round(
-            sum(_signed_amount(r) for r in day_rows if r.get("payment_id") is not None and int(r["payment_id"]) in imported_ids), 2
+            sum(_compute_row_sign(r) for r in day_rows if r.get("payment_id") is not None and int(r["payment_id"]) in imported_ids), 2
         )
 
         day_closed = len(missing_import_ids) == 0

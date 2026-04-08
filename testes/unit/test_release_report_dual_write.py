@@ -8,7 +8,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.release_report_sync import (
-    _release_signed_amount,
     _build_release_expense_metadata,
     _write_release_expense_events,
 )
@@ -45,21 +44,6 @@ def _make_row(
 
 
 # ── Pure function tests ──────────────────────────────────────────────────
-
-class TestReleaseSignedAmount:
-    def test_income_positive(self):
-        assert _release_signed_amount("income", 100.0) == 100.0
-
-    def test_expense_negative(self):
-        assert _release_signed_amount("expense", 50.0) == -50.0
-
-    def test_transfer_negative(self):
-        assert _release_signed_amount("transfer", 200.0) == -200.0
-
-    def test_income_abs(self):
-        """Even if amount is negative, income returns positive."""
-        assert _release_signed_amount("income", -50.0) == 50.0
-
 
 class TestBuildReleaseExpenseMetadata:
     def test_payout_all_fields(self):

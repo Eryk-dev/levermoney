@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.db.supabase import get_db
 from app.models.sellers import get_all_active_sellers
+from app.services import money
 from app.services.ml_api import (
     create_release_report,
     download_release_report,
@@ -158,11 +159,6 @@ def _classify_credit(row: dict) -> tuple[str, str, str, str | None]:
     return "other", "income", f"Credito ML (release) - {desc_type} R$ {amount}", None
 
 
-def _release_signed_amount(direction: str, amount: float) -> float:
-    """Return signed amount: positive for income, negative for expense/transfer."""
-    if direction == "income":
-        return abs(amount)
-    return -abs(amount)
 
 
 def _build_release_expense_metadata(
@@ -208,7 +204,8 @@ async def _write_release_expense_events(
 
     Failures are logged as warnings but do not propagate.
     """
-    signed = _release_signed_amount(direction, amount)
+    money_dir = {"income": "income", "expense": "expense", "transfer": "transfer_out"}.get(direction, "expense")
+    signed = money.signed_amount(money_dir, amount)
     competencia = row["date"][:10]
     metadata = _build_release_expense_metadata(
         row, expense_type, direction, ca_category, auto_cat, description, amount,

@@ -25,7 +25,7 @@ from ._deps import (
     ConfirmImportRequest,
     _to_brt_date_str,
     _get_centro_custo_name, _sanitize_path_component,
-    _signed_amount, _date_range_label, _is_incoming_transfer,
+    _compute_row_sign, _date_range_label, _is_incoming_transfer,
     _batch_tables_available, _persist_batch_metadata, update_batch_gdrive_status,
 )
 
