@@ -513,25 +513,70 @@ class TestRefundEstornos:
 class TestErrorHandling:
 
     @pytest.mark.asyncio
-    async def test_event_record_error_does_not_abort(self, proc_mocks):
-        """EventRecordError on record_event is logged but processing continues."""
+    async def test_event_record_error_skips_enqueue(self, proc_mocks):
+        """EventRecordError on record_event → corresponding enqueue is NOT called."""
         payment = _make_payment()
         m = proc_mocks
-        # First call succeeds (sale_approved), second fails (fee_charged),
-        # third succeeds (shipping_charged)
+        # All record_event calls raise EventRecordError
+        m["event_ledger"].record_event = AsyncMock(
+            side_effect=EventRecordError("DB connection lost"),
+        )
+
+        # Should not raise — errors are caught and logged
+        await process_payment_webhook("141air", 12345, payment_data=payment)
+
+        # record_event was attempted for all 3 events
+        assert m["event_ledger"].record_event.call_count == 3
+        # No enqueue calls since all record_events failed (WAL pattern)
+        m["ca_queue"].enqueue_receita.assert_not_called()
+        m["ca_queue"].enqueue_comissao.assert_not_called()
+        m["ca_queue"].enqueue_frete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_partial_record_failure_skips_only_failed_enqueue(self, proc_mocks):
+        """When one record_event fails, only that pair's enqueue is skipped."""
+        payment = _make_payment()
+        m = proc_mocks
+        # sale_approved succeeds, fee_charged fails, shipping_charged succeeds
         m["event_ledger"].record_event = AsyncMock(side_effect=[
             {"id": 1},
             EventRecordError("DB connection lost"),
             {"id": 3},
         ])
 
-        # Should not raise — error is caught and logged
         await process_payment_webhook("141air", 12345, payment_data=payment)
 
-        # All 3 record_event calls were attempted
         assert m["event_ledger"].record_event.call_count == 3
-        # CA queue jobs were all enqueued (they happen before record_event)
+        # receita enqueued (sale_approved succeeded)
         m["ca_queue"].enqueue_receita.assert_called_once()
+        # comissao NOT enqueued (fee_charged failed)
+        m["ca_queue"].enqueue_comissao.assert_not_called()
+        # frete enqueued (shipping_charged succeeded)
+        m["ca_queue"].enqueue_frete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_enqueue_failure_after_successful_record(self, proc_mocks):
+        """If enqueue fails after record_event succeeds, event is still recorded."""
+        payment = _make_payment()
+        m = proc_mocks
+        # All record_event calls succeed
+        m["event_ledger"].record_event = AsyncMock(return_value={"id": 1})
+        # enqueue_receita fails
+        m["ca_queue"].enqueue_receita = AsyncMock(side_effect=Exception("Queue down"))
+
+        # Should not raise — enqueue failure is caught and logged
+        await process_payment_webhook("141air", 12345, payment_data=payment)
+
+        # record_event was called successfully for all events
+        events = _recorded_events(m["event_ledger"])
+        assert "sale_approved" in events
+        assert "fee_charged" in events
+        assert "shipping_charged" in events
+        # enqueue_receita was attempted (and failed)
+        m["ca_queue"].enqueue_receita.assert_called_once()
+        # Other enqueues still succeeded
+        m["ca_queue"].enqueue_comissao.assert_called_once()
+        m["ca_queue"].enqueue_frete.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_refund_already_exists_skips(self, proc_mocks):

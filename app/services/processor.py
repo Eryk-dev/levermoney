@@ -328,7 +328,6 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
         competencia, amount, desc_receita, obs, contato, conta,
         cat_receita, cc, parcela_receita,
     )
-    await ca_queue.enqueue_receita(seller_slug, payment_id, receita_payload)
     try:
         await event_ledger.record_event(
             seller_slug=seller_slug, ml_payment_id=payment_id,
@@ -345,6 +344,11 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
         )
     except EventRecordError as e:
         logger.error("Event ledger sale_approved failed for %s: %s", payment_id, e)
+    else:
+        try:
+            await ca_queue.enqueue_receita(seller_slug, payment_id, receita_payload)
+        except Exception as e:
+            logger.warning("Payment %s: sale_approved recorded but enqueue_receita failed: %s", payment_id, e)
 
     # B) DESPESA - Comissão ML (se > 0)
     if mp_fee > 0:
@@ -355,7 +359,6 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
             CA_CATEGORIES["comissao_ml"],
             f"Comissão ML #{payment_id}",
         )
-        await ca_queue.enqueue_comissao(seller_slug, payment_id, comissao_payload)
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
@@ -365,6 +368,11 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
             )
         except EventRecordError as e:
             logger.error("Event ledger fee_charged failed for %s: %s", payment_id, e)
+        else:
+            try:
+                await ca_queue.enqueue_comissao(seller_slug, payment_id, comissao_payload)
+            except Exception as e:
+                logger.warning("Payment %s: fee_charged recorded but enqueue_comissao failed: %s", payment_id, e)
 
     # C) DESPESA - Frete (se > 0)
     if shipping_cost_seller > 0:
@@ -375,7 +383,6 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
             CA_CATEGORIES["frete_mercadoenvios"],
             f"Frete ML #{payment_id}",
         )
-        await ca_queue.enqueue_frete(seller_slug, payment_id, frete_payload)
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
@@ -385,6 +392,11 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
             )
         except EventRecordError as e:
             logger.error("Event ledger shipping_charged failed for %s: %s", payment_id, e)
+        else:
+            try:
+                await ca_queue.enqueue_frete(seller_slug, payment_id, frete_payload)
+            except Exception as e:
+                logger.warning("Payment %s: shipping_charged recorded but enqueue_frete failed: %s", payment_id, e)
 
     # NOTA: financing_fee NÃO gera despesa (net-neutral).
 
@@ -398,8 +410,6 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
             contato, conta, CA_CATEGORIES["estorno_frete"], cc,
             _build_parcela(subsidy_desc, money_release_date, conta, subsidy),
         )
-        await ca_queue.enqueue_receita(seller_slug, f"{payment_id}_subsidy", subsidy_payload)
-        logger.info("Payment %s: ML subsidy detected R$%.2f, enqueued receita 1.3.7", payment_id, subsidy)
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
@@ -409,6 +419,12 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
             )
         except EventRecordError as e:
             logger.error("Event ledger subsidy_credited failed for %s: %s", payment_id, e)
+        else:
+            try:
+                await ca_queue.enqueue_receita(seller_slug, f"{payment_id}_subsidy", subsidy_payload)
+            except Exception as e:
+                logger.warning("Payment %s: subsidy_credited recorded but enqueue_receita failed: %s", payment_id, e)
+            logger.info("Payment %s: ML subsidy detected R$%.2f, enqueued receita 1.3.7", payment_id, subsidy)
 
     logger.info(
         f"Payment {payment_id} queued: receita={amount}, comissão={mp_fee}, "
@@ -459,8 +475,6 @@ async def _process_partial_refund(seller: dict, payment: dict, existing_event_ty
             contato, conta, CA_CATEGORIES["devolucao"], cc, parcela,
         )
 
-        await ca_queue.enqueue_partial_refund(seller_slug, payment_id, i, estorno_payload)
-        logger.info(f"Enqueued partial refund: payment {payment_id}, refund {refund_id}, R${refund_amount}")
         try:
             competencia_pr = _to_brt_date(payment.get("date_approved") or payment.get("date_created", ""))
             await event_ledger.record_event(
@@ -475,6 +489,12 @@ async def _process_partial_refund(seller: dict, payment: dict, existing_event_ty
             )
         except EventRecordError as e:
             logger.error("Event ledger partial_refund failed for %s: %s", payment_id, e)
+        else:
+            try:
+                await ca_queue.enqueue_partial_refund(seller_slug, payment_id, i, estorno_payload)
+            except Exception as e:
+                logger.warning("Payment %s: partial_refund recorded but enqueue failed: %s", payment_id, e)
+            logger.info(f"Enqueued partial refund: payment {payment_id}, refund {refund_id}, R${refund_amount}")
 
 
 async def _process_refunded(seller: dict, payment: dict, existing_event_types: set[str]):
@@ -521,9 +541,7 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
         f"Refund: R${estorno_receita} (original: R${amount})",
         contato, conta, CA_CATEGORIES["devolucao"], cc, parcela,
     )
-    await ca_queue.enqueue_estorno(seller_slug, payment_id, estorno_payload)
-
-    # Event ledger: refund_created
+    # Event ledger: refund_created (WAL: record event before enqueue)
     competencia_refund = _to_brt_date(payment.get("date_approved") or payment.get("date_created", ""))
     order_id_refund = (payment.get("order") or {}).get("id")
     try:
@@ -535,6 +553,11 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
         )
     except EventRecordError as e:
         logger.error("Event ledger refund_created failed for %s: %s", payment_id, e)
+    else:
+        try:
+            await ca_queue.enqueue_estorno(seller_slug, payment_id, estorno_payload)
+        except Exception as e:
+            logger.warning("Payment %s: refund_created recorded but enqueue_estorno failed: %s", payment_id, e)
 
     # B) Estorno de taxas: use charges_details to determine ACTUAL refunded amounts
     refunded_fee = 0.0
@@ -579,7 +602,6 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
             f"Estorno comissão por devolução (fee_refunded={refunded_fee})",
             contato, conta, CA_CATEGORIES["estorno_taxa"], cc, parcela_est,
         )
-        await ca_queue.enqueue_estorno_taxa(seller_slug, payment_id, estorno_taxa_payload)
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
@@ -589,6 +611,11 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
             )
         except EventRecordError as e:
             logger.error("Event ledger refund_fee failed for %s: %s", payment_id, e)
+        else:
+            try:
+                await ca_queue.enqueue_estorno_taxa(seller_slug, payment_id, estorno_taxa_payload)
+            except Exception as e:
+                logger.warning("Payment %s: refund_fee recorded but enqueue_estorno_taxa failed: %s", payment_id, e)
 
     if refunded_shipping > 0 and estorno_receita >= amount:
         parcela_frete = _build_parcela(f"Estorno frete ML #{payment_id}", date_refunded, conta, refunded_shipping)
@@ -598,7 +625,6 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
             f"Estorno frete por devolução (shipping_refunded={refunded_shipping})",
             contato, conta, CA_CATEGORIES["estorno_frete"], cc, parcela_frete,
         )
-        await ca_queue.enqueue_estorno_frete(seller_slug, payment_id, estorno_frete_payload)
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
@@ -608,3 +634,8 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
             )
         except EventRecordError as e:
             logger.error("Event ledger refund_shipping failed for %s: %s", payment_id, e)
+        else:
+            try:
+                await ca_queue.enqueue_estorno_frete(seller_slug, payment_id, estorno_frete_payload)
+            except Exception as e:
+                logger.warning("Payment %s: refund_shipping recorded but enqueue_estorno_frete failed: %s", payment_id, e)
