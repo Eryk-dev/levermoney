@@ -4,6 +4,7 @@ Writes expense_captured (+ expense_classified) events to the event ledger.
 """
 import logging
 
+from app.services import money
 from app.services.event_ledger import EventRecordError, record_expense_event
 
 logger = logging.getLogger(__name__)
@@ -260,16 +261,6 @@ def _is_incoming_transfer(expense_type: str, payment: dict | None = None) -> boo
     return False
 
 
-def _expense_signed_amount(direction: str, amount: float,
-                           expense_type: str = "", payment: dict | None = None) -> float:
-    """Return signed amount: positive for income/incoming-transfer, negative for expense/outgoing."""
-    if direction == "income":
-        return abs(amount)
-    if direction == "transfer" and _is_incoming_transfer(expense_type, payment):
-        return abs(amount)
-    return -abs(amount)
-
-
 def _expense_competencia_date(payment: dict) -> str:
     """Extract competencia date from date_approved or date_created (date-only)."""
     raw = payment.get("date_approved") or payment.get("date_created") or ""
@@ -310,7 +301,16 @@ async def _write_expense_events(
     Failures are logged as warnings but do not propagate.
     """
     amount = payment.get("transaction_amount", 0)
-    signed = _expense_signed_amount(direction, amount, expense_type, payment)
+    # Determine sign direction for unified money.signed_amount
+    if direction == "income":
+        sign_dir = "income"
+    elif direction == "transfer" and _is_incoming_transfer(expense_type, payment):
+        sign_dir = "transfer_in"
+    elif direction == "transfer":
+        sign_dir = "transfer_out"
+    else:
+        sign_dir = "expense"
+    signed = money.signed_amount(sign_dir, amount)
     competencia = _expense_competencia_date(payment)
     metadata = _build_expense_metadata(
         expense_type, direction, category, auto_cat, desc, payment,

@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.expense_classifier import (
     classify_non_order_payment,
-    _expense_signed_amount,
     _expense_competencia_date,
     _build_expense_metadata,
 )
@@ -56,21 +55,6 @@ def _mock_db():
 
 
 # ── Pure function tests ──────────────────────────────────────────────────
-
-class TestExpenseSignedAmount:
-    def test_income_positive(self):
-        assert _expense_signed_amount("income", 100.0) == 100.0
-
-    def test_expense_negative(self):
-        assert _expense_signed_amount("expense", 49.90) == -49.90
-
-    def test_transfer_negative(self):
-        assert _expense_signed_amount("transfer", 200.0) == -200.0
-
-    def test_income_abs(self):
-        """Even if amount is negative, income returns positive."""
-        assert _expense_signed_amount("income", -50.0) == 50.0
-
 
 class TestExpenseCompetenciaDate:
     def test_from_date_approved(self):
