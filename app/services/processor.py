@@ -16,7 +16,7 @@ from app.models.sellers import (
     get_missing_ca_launch_fields,
     get_seller_config,
 )
-from app.services import ml_api, ca_queue, event_ledger
+from app.services import ml_api, ca_queue, event_ledger, money
 from app.services.event_ledger import EventRecordError
 
 logger = logging.getLogger(__name__)
@@ -332,7 +332,7 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
     try:
         await event_ledger.record_event(
             seller_slug=seller_slug, ml_payment_id=payment_id,
-            event_type="sale_approved", signed_amount=amount,
+            event_type="sale_approved", signed_amount=money.signed_amount("income", amount),
             competencia_date=competencia, event_date=competencia,
             ml_order_id=order_id, source="processor",
             metadata={
@@ -359,7 +359,7 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
-                event_type="fee_charged", signed_amount=-mp_fee,
+                event_type="fee_charged", signed_amount=money.signed_amount("expense", mp_fee),
                 competencia_date=competencia, event_date=competencia,
                 ml_order_id=order_id, source="processor",
             )
@@ -379,7 +379,7 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
-                event_type="shipping_charged", signed_amount=-shipping_cost_seller,
+                event_type="shipping_charged", signed_amount=money.signed_amount("expense", shipping_cost_seller),
                 competencia_date=competencia, event_date=competencia,
                 ml_order_id=order_id, source="processor",
             )
@@ -403,7 +403,7 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
-                event_type="subsidy_credited", signed_amount=subsidy,
+                event_type="subsidy_credited", signed_amount=money.signed_amount("income", subsidy),
                 competencia_date=competencia, event_date=competencia,
                 ml_order_id=order_id, source="processor",
             )
@@ -465,7 +465,7 @@ async def _process_partial_refund(seller: dict, payment: dict, existing_event_ty
             competencia_pr = _to_brt_date(payment.get("date_approved") or payment.get("date_created", ""))
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
-                event_type="partial_refund", signed_amount=-refund_amount,
+                event_type="partial_refund", signed_amount=money.signed_amount("expense", refund_amount),
                 competencia_date=competencia_pr, event_date=date_refund,
                 ml_order_id=(payment.get("order") or {}).get("id"),
                 source="processor",
@@ -529,7 +529,7 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
     try:
         await event_ledger.record_event(
             seller_slug=seller_slug, ml_payment_id=payment_id,
-            event_type="refund_created", signed_amount=-estorno_receita,
+            event_type="refund_created", signed_amount=money.signed_amount("expense", estorno_receita),
             competencia_date=competencia_refund, event_date=date_refunded,
             ml_order_id=order_id_refund, source="processor",
         )
@@ -583,7 +583,7 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
-                event_type="refund_fee", signed_amount=refunded_fee,
+                event_type="refund_fee", signed_amount=money.signed_amount("income", refunded_fee),
                 competencia_date=competencia_refund, event_date=date_refunded,
                 ml_order_id=order_id_refund, source="processor",
             )
@@ -602,7 +602,7 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
         try:
             await event_ledger.record_event(
                 seller_slug=seller_slug, ml_payment_id=payment_id,
-                event_type="refund_shipping", signed_amount=refunded_shipping,
+                event_type="refund_shipping", signed_amount=money.signed_amount("income", refunded_shipping),
                 competencia_date=competencia_refund, event_date=date_refunded,
                 ml_order_id=order_id_refund, source="processor",
             )
