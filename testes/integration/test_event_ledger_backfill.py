@@ -37,8 +37,8 @@ def _d(val) -> Decimal:
     return Decimal(str(val))
 
 
-CACHE_JAN = Path(__file__).parent / "data" / "cache_jan2026" / "141air_payments.json"
-CACHE_FEV = Path(__file__).parent / "data" / "cache_fev2026" / "141air_payments.json"
+CACHE_JAN = Path(__file__).parent.parent / "data" / "cache_jan2026" / "141air_payments.json"
+CACHE_FEV = Path(__file__).parent.parent / "data" / "cache_fev2026" / "141air_payments.json"
 
 
 def _load_cache(path: Path) -> list[dict]:

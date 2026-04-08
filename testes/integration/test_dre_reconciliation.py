@@ -1,10 +1,10 @@
 """
-DRE Reconciliation Tests — February 2026, 141air.
+DRE Reconciliation Tests — validates processor output against real data.
 
-Same structure as test_dre_reconciliation.py (January) but with February data.
-Uses REAL payment cache and REAL extrato CSV.
+Uses REAL payment cache (141air January 2026) and REAL extrato CSV to guarantee
+that a backfill produces correct financial entries matching ML/MP.
 
-Run: python3 -m pytest testes/test_dre_reconciliation_fev2026.py -v
+Run: python3 -m pytest testes/test_dre_reconciliation.py -v
 """
 import json
 from collections import defaultdict
@@ -29,10 +29,8 @@ from app.services.extrato_ingester import (
 # Session-scoped fixtures — load real data once
 # ---------------------------------------------------------------------------
 
-CACHE_PATH = Path(__file__).parent / "data" / "cache_fev2026" / "141air_payments.json"
-EXTRATO_PATH = Path(__file__).parent / "data" / "extratos" / "extrato fevereiro 141Air.csv"
-
-MONTH_PREFIX = "2026-02"
+CACHE_PATH = Path(__file__).parent.parent / "data" / "cache_jan2026" / "141air_payments.json"
+EXTRATO_PATH = Path(__file__).parent.parent / "data" / "extratos" / "extrato janeiro 141Air.csv"
 
 
 def _d(val) -> Decimal:
@@ -42,7 +40,7 @@ def _d(val) -> Decimal:
 
 @pytest.fixture(scope="session")
 def all_payments():
-    """All payments from 141air February cache."""
+    """All 879 payments from 141air cache."""
     cache = json.loads(CACHE_PATH.read_text())
     return cache["payments"]
 
@@ -58,7 +56,7 @@ def processable_payments(all_payments):
     4. Not cancelled/rejected
     5. Not refunded/by_admin (backfill: kit split, new payments cover it)
     6. Must have date_approved
-    7. date_approved BRT must be in 2026-02
+    7. date_approved BRT must be in 2026-01
     """
     result = []
     for p in all_payments:
@@ -77,7 +75,7 @@ def processable_payments(all_payments):
         if not da:
             continue
         brt = _to_brt_date(da)
-        if not brt or not brt.startswith(MONTH_PREFIX):
+        if not brt or not brt.startswith("2026-01"):
             continue
         result.append(p)
     return result
@@ -124,11 +122,14 @@ def dre_values(processable_payments, payment_groups):
     """Compute all DRE values from real data using Decimal arithmetic."""
     g = payment_groups
 
+    # Receita: approved + cb_reimbursed create receita directly
+    # Refunded also create receita first (processor calls _process_approved)
     receita_111 = sum(_d(p["transaction_amount"]) for p in
                       g["approved_ml"] + g["cb_reimbursed"] + g["refunded_ml"])
     receita_112 = sum(_d(p["transaction_amount"]) for p in
                       g["approved_mp"] + g["refunded_mp"])
 
+    # Comissao and frete for ALL processable
     comissao = Decimal("0")
     frete = Decimal("0")
     comissao_count = 0
@@ -142,8 +143,9 @@ def dre_values(processable_payments, payment_groups):
             frete += _d(ship)
             frete_count += 1
 
-    all_refunded = g["refunded_ml"] + g["refunded_mp"]
+    # Devolucoes
     devolucao = Decimal("0")
+    all_refunded = g["refunded_ml"] + g["refunded_mp"]
     for p in all_refunded:
         amt = _d(p["transaction_amount"])
         refunds = p.get("refunds", [])
@@ -153,6 +155,7 @@ def dre_values(processable_payments, payment_groups):
             total_ref = _d(p.get("transaction_amount_refunded") or p["transaction_amount"])
         devolucao += min(total_ref, amt)
 
+    # Estorno taxa and frete
     estorno_taxa = Decimal("0")
     estorno_taxa_count = 0
     estorno_frete = Decimal("0")
@@ -231,22 +234,22 @@ def extrato_data():
 
 class TestDataLoading:
     def test_cache_total(self, all_payments):
-        assert len(all_payments) == 585
+        assert len(all_payments) == 879
 
     def test_processable_count(self, processable_payments):
-        assert len(processable_payments) == 402
+        assert len(processable_payments) == 438
 
     def test_approved_ml_count(self, payment_groups):
-        assert len(payment_groups["approved_ml"]) == 367
+        assert len(payment_groups["approved_ml"]) == 359
 
     def test_approved_mp_count(self, payment_groups):
-        assert len(payment_groups["approved_mp"]) == 0
+        assert len(payment_groups["approved_mp"]) == 1
 
     def test_cb_reimbursed_count(self, payment_groups):
         assert len(payment_groups["cb_reimbursed"]) == 1
 
     def test_refunded_ml_count(self, payment_groups):
-        assert len(payment_groups["refunded_ml"]) == 34
+        assert len(payment_groups["refunded_ml"]) == 77
 
     def test_refunded_mp_count(self, payment_groups):
         assert len(payment_groups["refunded_mp"]) == 0
@@ -258,7 +261,7 @@ class TestDataLoading:
 
     def test_extrato_transaction_count(self, extrato_data):
         _, txs = extrato_data
-        assert len(txs) == 592
+        assert len(txs) == 690
 
 
 # ===========================================================================
@@ -268,19 +271,19 @@ class TestDataLoading:
 class TestSkipFilters:
     def test_no_order_id_skipped(self, all_payments):
         no_order = [p for p in all_payments if not (p.get("order") or {}).get("id")]
-        assert len(no_order) == 35
+        assert len(no_order) == 80
 
     def test_marketplace_shipment_skipped(self, all_payments):
         ms = [p for p in all_payments
               if (p.get("description") or "") == "marketplace_shipment"]
-        assert len(ms) == 7
+        assert len(ms) == 16
 
     def test_collector_id_skipped(self, all_payments):
         """Payments with collector.id are purchases by the seller, not sales."""
         with_coll = [p for p in all_payments
                      if (p.get("order") or {}).get("id")
                      and (p.get("collector") or {}).get("id") is not None]
-        assert len(with_coll) == 2
+        assert len(with_coll) == 6
 
     def test_by_admin_skipped(self, all_payments):
         """refunded/by_admin are kit splits — new payments cover the revenue."""
@@ -288,13 +291,13 @@ class TestSkipFilters:
                     if p["status"] == "refunded"
                     and p.get("status_detail") == "by_admin"
                     and (p.get("order") or {}).get("id")]
-        assert len(by_admin) == 0
+        assert len(by_admin) == 2
 
-    def test_all_processable_are_february_brt(self, processable_payments):
+    def test_all_processable_are_january_brt(self, processable_payments):
         for p in processable_payments:
             da = p.get("date_approved", "")
             brt = _to_brt_date(da)
-            assert brt.startswith(MONTH_PREFIX), f"Payment {p['id']} has BRT date {brt}"
+            assert brt.startswith("2026-01"), f"Payment {p['id']} has BRT date {brt}"
 
 
 # ===========================================================================
@@ -303,30 +306,44 @@ class TestSkipFilters:
 
 class TestReceita:
     def test_receita_mercadolibre(self, dre_values):
-        """1.1.1 Vendas ML (approved + CB/reimbursed + refunded)."""
-        assert dre_values["receita_111"] == _d("119430.70")
+        """1.1.1 Vendas ML = R$179,512.35 (approved + CB/reimbursed + refunded)."""
+        assert dre_values["receita_111"] == _d("179512.35")
 
     def test_receita_mercadopago(self, dre_values):
-        """1.1.2 Loja Propria — no MP sales in February."""
-        assert dre_values["receita_112"] == _d("0")
+        """1.1.2 Loja Propria = R$59.90."""
+        assert dre_values["receita_112"] == _d("59.90")
 
     def test_receita_bruta_total(self, dre_values):
         total = dre_values["receita_111"] + dre_values["receita_112"]
-        assert total == _d("119430.70")
+        assert total == _d("179572.25")
 
     def test_refunded_create_receita_first(self, payment_groups, dre_values):
-        """Refunded payments ALSO create receita (processor calls _process_approved)."""
+        """Refunded payments ALSO create receita (processor calls _process_approved).
+        So receita_111 includes 77 refunded amounts."""
         refunded_total = sum(_d(p["transaction_amount"]) for p in payment_groups["refunded_ml"])
         approved_total = sum(_d(p["transaction_amount"]) for p in
                             payment_groups["approved_ml"] + payment_groups["cb_reimbursed"])
         assert dre_values["receita_111"] == approved_total + refunded_total
 
     def test_cb_reimbursed_creates_receita(self, payment_groups):
-        """charged_back+reimbursed creates receita like approved."""
+        """charged_back+reimbursed (id=140797336762) creates receita like approved."""
         cb = payment_groups["cb_reimbursed"]
         assert len(cb) == 1
-        assert cb[0]["id"] == 143699005939
-        assert _d(cb[0]["transaction_amount"]) == _d("115.80")
+        assert cb[0]["id"] == 140797336762
+        assert _d(cb[0]["transaction_amount"]) == _d("113.06")
+
+    def test_mercadolibre_excl_cb_close_to_ml(self, payment_groups):
+        """ML 'vendas por competencia' shows ~R$179,814 (user value, rounded).
+        Our calculation excl CB = R$179,399.29.
+        Gap of ~R$415 is due to collector_id filter (R$55.88) + by_admin skip (R$355.94).
+        These are correctly excluded from the backfill but ML counts them in dashboard."""
+        approved_plus_refunded = sum(
+            _d(p["transaction_amount"])
+            for p in payment_groups["approved_ml"] + payment_groups["refunded_ml"]
+        )
+        assert approved_plus_refunded == _d("179399.29")
+        # ML dashboard shows ~R$179,814 (includes by_admin + collector_id payments)
+        # Processor correctly excludes them to avoid duplicate/invalid entries
 
 
 # ===========================================================================
@@ -335,15 +352,16 @@ class TestReceita:
 
 class TestComissao:
     def test_comissao_total(self, dre_values):
-        assert dre_values["comissao"] == _d("15320.88")
+        assert dre_values["comissao"] == _d("23085.97")
 
     def test_comissao_count(self, dre_values):
-        assert dre_values["comissao_count"] == 400
+        assert dre_values["comissao_count"] == 435
 
     def test_financing_fee_excluded(self, processable_payments):
         """No financing_fee amount appears in comissao — it is net-neutral."""
         for p in processable_payments:
             mp_fee, _, _, _, _ = _extract_processor_charges(p)
+            # Manually compute what fee WOULD be if financing_fee were included
             financing_fee_total = sum(
                 _to_float(c["amounts"].get("original", 0))
                 for c in p.get("charges_details", [])
@@ -351,8 +369,31 @@ class TestComissao:
                 and str(c.get("name", "")).strip().lower() == "financing_fee"
             )
             if financing_fee_total > 0:
+                # If financing_fee existed, mp_fee must NOT include it
                 fee_with_financing = mp_fee + financing_fee_total
                 assert fee_with_financing > mp_fee
+
+    def test_coupon_from_ml_excluded(self, processable_payments):
+        """Coupons from=ml are NOT charged to seller."""
+        for p in processable_payments:
+            ml_coupons = [
+                c for c in p.get("charges_details", [])
+                if (c.get("accounts") or {}).get("from") == "ml"
+                and c.get("type") == "coupon"
+            ]
+            if ml_coupons:
+                # These coupons should NOT be in the fee
+                mp_fee, _, _, _, _ = _extract_processor_charges(p)
+                coupon_total = sum(_to_float(c["amounts"]["original"]) for c in ml_coupons)
+                # Rebuild fee manually without the coupon to verify
+                fee_without_ml_coupon = sum(
+                    _to_float(c["amounts"]["original"])
+                    for c in p.get("charges_details", [])
+                    if (c.get("accounts") or {}).get("from") == "collector"
+                    and c.get("type") in ("fee", "coupon")
+                    and str(c.get("name", "")).strip().lower() != "financing_fee"
+                )
+                assert abs(mp_fee - fee_without_ml_coupon) < 0.01
 
     def test_no_comissao_without_charges(self, processable_payments):
         """Payments with empty charges_details have comissao = 0."""
@@ -368,10 +409,10 @@ class TestComissao:
 
 class TestFrete:
     def test_frete_total(self, dre_values):
-        assert dre_values["frete"] == _d("7147.44")
+        assert dre_values["frete"] == _d("8946.37")
 
     def test_frete_count(self, dre_values):
-        assert dre_values["frete_count"] == 307
+        assert dre_values["frete_count"] == 362
 
     def test_frete_never_negative(self, processable_payments):
         for p in processable_payments:
@@ -385,10 +426,10 @@ class TestFrete:
 
 class TestDevolucoes:
     def test_devolucao_total(self, dre_values):
-        assert dre_values["devolucao"] == _d("8467.38")
+        assert dre_values["devolucao"] == _d("45375.41")
 
     def test_devolucao_count(self, dre_values):
-        assert dre_values["devolucao_count"] == 34
+        assert dre_values["devolucao_count"] == 77
 
     def test_devolucao_capped_at_amount(self, payment_groups):
         """Estorno receita can never exceed transaction_amount."""
@@ -409,10 +450,10 @@ class TestDevolucoes:
 
 class TestEstornoTaxa:
     def test_estorno_taxa_total(self, dre_values):
-        assert dre_values["estorno_taxa"] == _d("1034.81")
+        assert dre_values["estorno_taxa"] == _d("5948.66")
 
     def test_estorno_taxa_count(self, dre_values):
-        assert dre_values["estorno_taxa_count"] == 32
+        assert dre_values["estorno_taxa_count"] == 75
 
     def test_estorno_taxa_only_full_refund(self, payment_groups):
         """Estorno taxa only created when estorno_receita >= transaction_amount."""
@@ -426,7 +467,14 @@ class TestEstornoTaxa:
             estorno = min(total_ref, amt)
             if estorno < amt:
                 # Partial refund: no estorno taxa should be created
-                pass
+                ref_fee = Decimal("0")
+                for c in p.get("charges_details", []):
+                    if (c.get("accounts") or {}).get("from") != "collector":
+                        continue
+                    if str(c.get("type", "")).lower() == "fee":
+                        ref_fee += _d(_to_float(c["amounts"].get("refunded", 0)))
+                # Even if fees were refunded, processor skips them for partial refunds
+                # (the estorno_receita < amount check in processor)
 
 
 # ===========================================================================
@@ -435,10 +483,10 @@ class TestEstornoTaxa:
 
 class TestEstornoFrete:
     def test_estorno_frete_total(self, dre_values):
-        assert dre_values["estorno_frete"] == _d("406.70")
+        assert dre_values["estorno_frete"] == _d("1442.21")
 
     def test_estorno_frete_count(self, dre_values):
-        assert dre_values["estorno_frete_count"] == 17
+        assert dre_values["estorno_frete_count"] == 54
 
 
 # ===========================================================================
@@ -476,7 +524,7 @@ class TestDREConsistency:
             + v["estorno_taxa"]
             + v["estorno_frete"]
         )
-        assert receita_liq == _d("112404.83")
+        assert receita_liq == _d("141587.71")
 
     def test_resultado_operacional(self, dre_values):
         v = dre_values
@@ -487,7 +535,7 @@ class TestDREConsistency:
             + v["estorno_frete"]
         )
         resultado = receita_liq - v["comissao"] - v["frete"]
-        assert resultado == _d("89936.51")
+        assert resultado == _d("109555.37")
 
 
 # ===========================================================================
@@ -510,19 +558,11 @@ class TestExtratoLiberacaoMatch:
         return pairs
 
     def test_liberacao_count(self, liberacao_entries):
-        assert len(liberacao_entries) == 211
+        assert len(liberacao_entries) == 289
 
     def test_net_amount_match(self, liberacao_entries):
-        """Every liberacao amount matches net_received_amount from payment.
-
-        2 known exceptions: payments 142698519459 and 143104571692 were
-        released in January but refunded in February — the extrato shows
-        the adjusted amount post-refund, not the original net.
-        """
-        KNOWN_REFUND_ADJUSTMENTS = {142698519459, 143104571692}
+        """Every liberacao amount matches net_received_amount from payment."""
         for tx, p in liberacao_entries:
-            if p["id"] in KNOWN_REFUND_ADJUSTMENTS:
-                continue
             ext_amount = _d(str(tx["amount"]))
             pay_net = _d(str(p.get("transaction_details", {}).get("net_received_amount", 0)))
             assert abs(ext_amount - pay_net) < _d("0.02"), (
@@ -530,14 +570,8 @@ class TestExtratoLiberacaoMatch:
             )
 
     def test_release_date_match(self, liberacao_entries):
-        """Every liberacao date matches _to_brt_date(money_release_date).
-
-        Same 2 known exceptions as net_amount_match — cross-month refund adjustments.
-        """
-        KNOWN_REFUND_ADJUSTMENTS = {142698519459, 143104571692}
+        """Every liberacao date matches _to_brt_date(money_release_date)."""
         for tx, p in liberacao_entries:
-            if p["id"] in KNOWN_REFUND_ADJUSTMENTS:
-                continue
             mrd = p.get("money_release_date", "")
             if not mrd:
                 continue
@@ -594,8 +628,9 @@ class TestExtratoCoverage:
 # ===========================================================================
 
 class TestCompetenciaDate:
-    def test_no_month_crossing_in_february(self, all_payments):
-        """No payment has date_approved that changes month between UTC-4 and BRT."""
+    def test_no_month_crossing_in_january(self, all_payments):
+        """No payment in the cache has date_approved that changes month between
+        UTC-4 (raw) and BRT — at least for January 2026."""
         from datetime import datetime, timezone, timedelta
         BRT = timezone(timedelta(hours=-3))
         crossings = 0
@@ -614,6 +649,6 @@ class TestCompetenciaDate:
         assert crossings == 0
 
     def test_competencia_uses_date_approved_not_created(self, processable_payments):
-        """Every processable payment uses date_approved for competencia."""
+        """Every processable payment uses date_approved (not date_created) for competencia."""
         for p in processable_payments:
             assert p.get("date_approved"), f"Payment {p['id']} missing date_approved"
