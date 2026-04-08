@@ -31,12 +31,13 @@ check_extrato_coverage_all_sellers() so coverage reaches 100%.
 import calendar
 import logging
 import unicodedata
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from app.db.supabase import get_db
 from app.models.sellers import CA_CATEGORIES, get_all_active_sellers, get_seller_config
+from app.services import money
 from app.services.event_ledger import EventRecordError, record_expense_event
 from app.services.release_report_sync import _get_or_create_report
 
@@ -561,13 +562,6 @@ def _build_extrato_description(tx: dict, expense_type: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _extrato_signed_amount(direction: str, amount: float) -> float:
-    """Return signed amount: positive for income, negative for expense/transfer."""
-    if direction == "income":
-        return abs(amount)
-    return -abs(amount)
-
-
 def _build_extrato_expense_metadata(
     tx: dict,
     expense_type: str,
@@ -609,7 +603,7 @@ async def _write_extrato_expense_events(
     Failures are logged as warnings but do not propagate.
     """
     amount = abs(tx["amount"])
-    signed = _extrato_signed_amount(direction, amount)
+    signed = money.signed_amount("income" if direction == "income" else "expense", amount)
     competencia = tx["date"][:10]
     auto_cat = ca_category_uuid is not None
     metadata = _build_extrato_expense_metadata(

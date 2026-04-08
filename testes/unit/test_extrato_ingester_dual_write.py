@@ -9,7 +9,6 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.extrato_ingester import (
-    _extrato_signed_amount,
     _build_extrato_expense_metadata,
     _write_extrato_expense_events,
 )
@@ -33,21 +32,6 @@ def _make_tx(
 
 
 # ── Pure function tests ──────────────────────────────────────────────────
-
-class TestExtratoSignedAmount:
-    def test_income_positive(self):
-        assert _extrato_signed_amount("income", 100.0) == 100.0
-
-    def test_expense_negative(self):
-        assert _extrato_signed_amount("expense", 50.0) == -50.0
-
-    def test_transfer_negative(self):
-        assert _extrato_signed_amount("transfer", 200.0) == -200.0
-
-    def test_income_abs(self):
-        """Even if amount is negative, income returns positive."""
-        assert _extrato_signed_amount("income", -50.0) == 50.0
-
 
 class TestBuildExtratoExpenseMetadata:
     def test_all_fields_present(self):
