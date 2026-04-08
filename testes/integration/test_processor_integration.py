@@ -170,6 +170,17 @@ class TestStateMachine:
         m["ca_queue"].enqueue_comissao.assert_called_once()
         m["ca_queue"].enqueue_frete.assert_called_once()
 
+        # Payload value assertions
+        receita_payload = m["ca_queue"].enqueue_receita.call_args[0][2]
+        assert receita_payload["valor"] == 100.0
+        assert receita_payload["data_competencia"] == "2026-01-15"
+
+        comissao_payload = m["ca_queue"].enqueue_comissao.call_args[0][2]
+        assert comissao_payload["valor"] == 15.0
+
+        frete_payload = m["ca_queue"].enqueue_frete.call_args[0][2]
+        assert frete_payload["valor"] == 5.0
+
     @pytest.mark.asyncio
     async def test_approved_already_processed_skips(self, proc_mocks):
         """Approved payment with existing sale_approved → skip (no new events)."""
@@ -225,6 +236,19 @@ class TestStateMachine:
         m["ca_queue"].enqueue_receita.assert_called_once()
         m["ca_queue"].enqueue_estorno.assert_called_once()
 
+        # Payload value assertions
+        receita_payload = m["ca_queue"].enqueue_receita.call_args[0][2]
+        assert receita_payload["valor"] == 100.0
+
+        estorno_payload = m["ca_queue"].enqueue_estorno.call_args[0][2]
+        assert estorno_payload["valor"] == 100.0
+
+        estorno_taxa_payload = m["ca_queue"].enqueue_estorno_taxa.call_args[0][2]
+        assert estorno_taxa_payload["valor"] == 15.0
+
+        estorno_frete_payload = m["ca_queue"].enqueue_estorno_frete.call_args[0][2]
+        assert estorno_frete_payload["valor"] == 5.0
+
     @pytest.mark.asyncio
     async def test_refunded_already_approved_only_refunds(self, proc_mocks):
         """Refunded with existing sale_approved → only refund events."""
@@ -247,6 +271,10 @@ class TestStateMachine:
         assert "refund_created" in events
         m["ca_queue"].enqueue_receita.assert_not_called()
         m["ca_queue"].enqueue_estorno.assert_called_once()
+
+        # Payload value assertions
+        estorno_payload = m["ca_queue"].enqueue_estorno.call_args[0][2]
+        assert estorno_payload["valor"] == 100.0
 
     @pytest.mark.asyncio
     async def test_charged_back_reimbursed_treated_as_approved(self, proc_mocks):
@@ -384,6 +412,11 @@ class TestSubsidy:
         assert len(subsidy_events) == 1
         assert subsidy_events[0][1] == 2.0
 
+        # Subsidy receita payload: enqueue_receita called twice (sale + subsidy)
+        assert m["ca_queue"].enqueue_receita.call_count == 2
+        subsidy_payload = m["ca_queue"].enqueue_receita.call_args_list[1][0][2]
+        assert subsidy_payload["valor"] == 2.0
+
     @pytest.mark.asyncio
     async def test_no_subsidy_when_net_matches(self, proc_mocks):
         """When ML net matches calculated net, no subsidy event."""
@@ -481,6 +514,16 @@ class TestRefundEstornos:
         m["ca_queue"].enqueue_estorno_taxa.assert_called_once()
         m["ca_queue"].enqueue_estorno_frete.assert_called_once()
 
+        # Payload value assertions
+        estorno_payload = m["ca_queue"].enqueue_estorno.call_args[0][2]
+        assert estorno_payload["valor"] == 100.0
+
+        estorno_taxa_payload = m["ca_queue"].enqueue_estorno_taxa.call_args[0][2]
+        assert estorno_taxa_payload["valor"] == 15.0
+
+        estorno_frete_payload = m["ca_queue"].enqueue_estorno_frete.call_args[0][2]
+        assert estorno_frete_payload["valor"] == 5.0
+
     @pytest.mark.asyncio
     async def test_partial_refund_with_refunded_fees_creates_estorno_taxa(self, proc_mocks):
         """Partial refund where ML refunded fees → refund_fee + refund_shipping events ARE created."""
@@ -506,6 +549,16 @@ class TestRefundEstornos:
         assert "refund_shipping" in events
         m["ca_queue"].enqueue_estorno_taxa.assert_called_once()
         m["ca_queue"].enqueue_estorno_frete.assert_called_once()
+
+        # Payload value assertions — partial refund amount, full fee/shipping refund
+        estorno_payload = m["ca_queue"].enqueue_estorno.call_args[0][2]
+        assert estorno_payload["valor"] == 50.0
+
+        estorno_taxa_payload = m["ca_queue"].enqueue_estorno_taxa.call_args[0][2]
+        assert estorno_taxa_payload["valor"] == 15.0
+
+        estorno_frete_payload = m["ca_queue"].enqueue_estorno_frete.call_args[0][2]
+        assert estorno_frete_payload["valor"] == 5.0
 
     @pytest.mark.asyncio
     async def test_partial_refund_without_refunded_fees_no_estorno_taxa(self, proc_mocks):
