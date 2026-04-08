@@ -482,8 +482,8 @@ class TestRefundEstornos:
         m["ca_queue"].enqueue_estorno_frete.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_partial_refund_amount_no_estorno_taxa(self, proc_mocks):
-        """Partial refund (estorno < amount) → no refund_fee or refund_shipping."""
+    async def test_partial_refund_with_refunded_fees_creates_estorno_taxa(self, proc_mocks):
+        """Partial refund where ML refunded fees → refund_fee + refund_shipping events ARE created."""
         payment = _make_payment(
             status="refunded", status_detail="bpp_refunded",
             amount=100.0, net=80.0,
@@ -501,9 +501,37 @@ class TestRefundEstornos:
 
         events = _recorded_events(m["event_ledger"])
         assert "refund_created" in events
-        # estorno_receita (50) < amount (100) → no taxa/frete estorno
+        # ML reported refunded fees → events must be created regardless of partial refund
+        assert "refund_fee" in events
+        assert "refund_shipping" in events
+        m["ca_queue"].enqueue_estorno_taxa.assert_called_once()
+        m["ca_queue"].enqueue_estorno_frete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_partial_refund_without_refunded_fees_no_estorno_taxa(self, proc_mocks):
+        """Partial refund where ML did NOT refund fees → no refund_fee or refund_shipping."""
+        payment = _make_payment(
+            status="refunded", status_detail="bpp_refunded",
+            amount=100.0, net=80.0,
+            fee_original=15.0, shipping_original=5.0,
+            fee_refunded=0, shipping_refunded=0,
+            refunds=[{"id": 1, "amount": 50.0, "date_created": "2026-02-01T10:00:00.000-04:00"}],
+            transaction_amount_refunded=50.0,
+        )
+        m = proc_mocks
+        m["event_ledger"].get_events = AsyncMock(return_value=[
+            {"event_type": "sale_approved"},
+        ])
+
+        await process_payment_webhook("141air", 12345, payment_data=payment)
+
+        events = _recorded_events(m["event_ledger"])
+        assert "refund_created" in events
+        # ML reported zero refunded fees → no taxa/frete events
         assert "refund_fee" not in events
         assert "refund_shipping" not in events
+        m["ca_queue"].enqueue_estorno_taxa.assert_not_called()
+        m["ca_queue"].enqueue_estorno_frete.assert_not_called()
 
 
 # ===========================================================================

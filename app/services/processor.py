@@ -594,7 +594,7 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
     refunded_fee = round(refunded_fee, 2)
     refunded_shipping = round(refunded_shipping, 2)
 
-    if refunded_fee > 0 and estorno_receita >= amount:
+    if refunded_fee > 0:
         parcela_est = _build_parcela(f"Estorno taxa ML #{payment_id}", date_refunded, conta, refunded_fee)
         estorno_taxa_payload = _build_evento(
             date_refunded, refunded_fee,
@@ -617,7 +617,7 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
             except Exception as e:
                 logger.warning("Payment %s: refund_fee recorded but enqueue_estorno_taxa failed: %s", payment_id, e)
 
-    if refunded_shipping > 0 and estorno_receita >= amount:
+    if refunded_shipping > 0:
         parcela_frete = _build_parcela(f"Estorno frete ML #{payment_id}", date_refunded, conta, refunded_shipping)
         estorno_frete_payload = _build_evento(
             date_refunded, refunded_shipping,
