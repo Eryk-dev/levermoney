@@ -91,6 +91,18 @@ class TestUploadExtratoMulti:
     """Test the multi-file extrato upload endpoint."""
 
     @pytest.fixture(autouse=True)
+    def _freeze_date(self, monkeypatch):
+        """Freeze datetime.now() so yesterday = 2026-03-15 (within CSV range)."""
+        from datetime import datetime as _real_dt
+
+        class _Frozen(_real_dt):
+            @classmethod
+            def now(cls, tz=None):
+                return _real_dt(2026, 3, 16, 12, 0, 0, tzinfo=tz)
+
+        monkeypatch.setattr("app.services.extrato_ingester.datetime", _Frozen)
+
+    @pytest.fixture(autouse=True)
     def _patch_deps(self, monkeypatch):
         """Patch DB, services, and asyncio for all tests."""
         # Mock DB

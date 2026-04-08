@@ -508,6 +508,18 @@ class TestMonthsRange:
 class TestValidateExtratoCoverage:
     """Tests for the multi-CSV coverage validation function."""
 
+    @pytest.fixture(autouse=True)
+    def _freeze_date(self, monkeypatch):
+        """Freeze datetime.now() so yesterday = 2026-03-15 (within CSV range)."""
+        from datetime import datetime as _real_dt
+
+        class _Frozen(_real_dt):
+            @classmethod
+            def now(cls, tz=None):
+                return _real_dt(2026, 3, 16, 12, 0, 0, tzinfo=tz)
+
+        monkeypatch.setattr("app.services.extrato_ingester.datetime", _Frozen)
+
     def _make_csv(self, dates: list[str]) -> str:
         """Build a minimal extrato CSV with transactions on given dates (YYYY-MM-DD)."""
         lines = [
