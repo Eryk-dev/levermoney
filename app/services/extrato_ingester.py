@@ -96,10 +96,12 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("pagamento com",                     _CHECK_PAYMENTS,         "income",   None),
     # --- CONDITIONAL SKIPS (PIX received — check if ref_id is in payments) ---
     ("pix recebido",                      _CHECK_PAYMENTS,         "income",   None),
-    # --- UNCONDITIONAL SKIPS (truly internal, no financial impact) ---
-    ("transferencia pix",                 None,                    None,       None),
-    ("pix enviado",                       None,                    None,       None),
-    ("pagamento de conta",                None,                    None,       None),
+    # --- CAPTURED (previously unconditional skips, but have cash impact) ---
+    ("transferencia pix recebida",        "transferencia_pix_in",  "income",   None),
+    ("transferencia pix enviada",         "transferencia_pix_out", "expense",  None),
+    ("transferencia pix",                 "transferencia_pix",     "expense",  None),
+    ("pix enviado",                       "pix_enviado",           "expense",  None),
+    ("pagamento de conta",                "pagamento_conta",       "expense",  None),
     # --- INCOME ---
     ("reembolso reclamacoes",             "reembolso_disputa",     "income",   "1.3.4"),
     ("reembolso reclamações",             "reembolso_disputa",     "income",   "1.3.4"),
@@ -189,6 +191,12 @@ _EXPENSE_TYPE_ABBREV: dict[str, str] = {
     "qr_pix_nao_sync":         "qn",
     "dinheiro_recebido":        "dc",
     "pix_nao_sync":             "pn",
+    # Captured from former unconditional skips
+    "transferencia_pix_in":     "ti",
+    "transferencia_pix_out":    "to",
+    "transferencia_pix":        "tp",
+    "pix_enviado":              "pe",
+    "pagamento_conta":          "pg",
 }
 
 
@@ -217,6 +225,12 @@ _DESCRIPTION_TEMPLATES: dict[str, str] = {
     "qr_pix_nao_sync":      "Pagamento QR/PIX Nao Sincronizado - Ref {ref_id}",
     "dinheiro_recebido":     "Dinheiro Recebido Nao Sincronizado - Ref {ref_id}",
     "pix_nao_sync":          "PIX Recebido Nao Sincronizado - Ref {ref_id}",
+    # Captured from former unconditional skips
+    "transferencia_pix_in":  "Transferencia PIX Recebida - Ref {ref_id}",
+    "transferencia_pix_out": "Transferencia PIX Enviada - Ref {ref_id}",
+    "transferencia_pix":     "Transferencia PIX - Ref {ref_id}",
+    "pix_enviado":           "PIX Enviado - Ref {ref_id}",
+    "pagamento_conta":       "Pagamento de Conta - Ref {ref_id}",
 }
 
 

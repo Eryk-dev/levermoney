@@ -1,152 +1,193 @@
 # Ralph Progress Log
-Started: Mon Mar 16 07:54:09 -03 2026
+Started: Wed Apr  8 10:13:13 -03 2026
 ---
 
 ## Codebase Patterns
-- Migrations use `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` for idempotency
-- Migration files follow pattern `NNN_description.sql` in migrations/
-- Test suite: 554 tests, all offline, ~2s via `python3 -m pytest`
-- Frontend hooks follow `useExpenses.ts` pattern: TOKEN_KEY='lever-admin-token', authHeaders with X-Admin-Token, handleUnauthorized on 401
-- Envelope responses (e.g. `{ seller, count, data }`) must extract `.data` in hooks
-- Upload endpoints use `FormData` with `formData.append('files', file)` for multipart (no Content-Type header — browser sets it)
-- `validate_extrato_coverage()` and `_months_range()` are public helpers in `extrato_ingester.py` for CSV coverage validation
-- Extrato CSV dates: DD-MM-YYYY in file, YYYY-MM-DD after parsing by `_parse_account_statement()`
-- Test fixtures for extrato: `sample_extrato_csv` in conftest.py, real files in `testes/data/extratos/`
-- GDrive background upload pattern: `asyncio.create_task(asyncio.to_thread(sync_fn, ...))` — never block response
-- `gdrive_client.py` has two upload functions: `upload_expenses_zip()` (DESPESAS) and `upload_extrato_csv()` (EXTRATOS)
-- Multi-file upload endpoint: `POST /admin/sellers/{slug}/extrato/upload` — auto-detects months from CSV content
-- Hidden file input pattern for card upload buttons: `<input ref={...} style=display:none multiple>` + `button.onClick → ref.click()`
-- ExtratoTab uses `useExtrato` hook (not inline fetch) — follows same separation as ExpensesExportTab/useExpenses
-- AdminPanel already had ExtratoTab wired in from US-007 commit — always check existing state before implementing
+- Test data lives at `testes/data/`; integration tests at `testes/integration/` need `.parent.parent / "data"` to reach it
+- Full suite has 569 passing tests after US-003
+- The commit from this branch will also include previously staged renames (docs reorganization, test file moves)
+- To freeze `datetime.now()` in `extrato_ingester.py` tests: monkeypatch `app.services.extrato_ingester.datetime` with a subclass overriding `now()`. This preserves `strptime` etc.
+- `app/services/money.py` is the single source of truth for sign convention. Directions: income, expense, transfer_in, transfer_out, deposit. Import: `from app.services.money import signed_amount`
+- In processor.py, use `from app.services import money` (module import) + `money.signed_amount(...)` to avoid clash with `signed_amount=` keyword arg in `record_event()` calls
+- expense_classifier.py uses generic "transfer" direction internally — must disambiguate to "transfer_in"/"transfer_out" via `_is_incoming_transfer()` before calling `money.signed_amount()`
+- When removing private functions, always check: app imports, test imports, and cross-module imports (e.g., expenses/closing.py imports from _deps.py)
+- All `_signed_amount` variants eliminated from `app/` — `money.signed_amount()` is sole source of truth for sign convention
+- processor.py uses WAL pattern: `try: record_event → except EventRecordError: skip → else: try enqueue → except: log warning`. Each pair is independent
+- Supabase `.not_.like()` can be chained: `.not_.like("col", "a%").not_.like("col", "b%")` — confirmed working in production code (see `faturamento_sync.py` for `.not_.is_` precedent)
 
 ---
 
-## 2026-03-16 - US-001
-- Created migration 010_extrato_missing.sql
-- Adds `extrato_missing BOOLEAN DEFAULT FALSE` and `extrato_uploaded_at TIMESTAMPTZ NULL` to sellers table
-- Files changed: migrations/010_extrato_missing.sql
+## 2026-04-08 - US-001
+- Fixed data paths in 3 integration test files: `.parent / "data"` → `.parent.parent / "data"`
+- Files changed:
+  - testes/integration/test_dre_reconciliation.py (line 32-33)
+  - testes/integration/test_dre_reconciliation_fev2026.py (line 32-33)
+  - testes/integration/test_event_ledger_backfill.py (line 40-41)
 - **Learnings for future iterations:**
-  - Reference migration 007_extrato_uploads.sql for style/patterns
-  - The extrato_uploads table already exists (migration 007) — sellers columns are separate
-  - 520 tests pass with no changes needed
+  - When tests are moved to subdirectories, all relative `Path(__file__).parent` references must be updated
+  - The first commit on this branch also included ~40 file renames that were staged on main (docs reorg, test moves)
+  - Integration tests: 170 passed, 0 failed after fix
+  - Full suite: 543 passed, 9 failed (pre-existing time-dependent, US-002)
 ---
 
-## 2026-03-16 - US-002
-- Implemented `validate_extrato_coverage(csv_texts, ca_start_date)` in `app/services/extrato_ingester.py`
-- Added `_months_range(start, end)` helper for YYYY-MM range generation
-- Added `_coverage_error(msg)` factory for failed validation results
-- 16 new tests in `testes/test_extrato_classification.py` covering: valid single/multi CSV, overlapping CSVs, missing start month, internal gaps, empty CSV, invalid header, bad date format, real CSV files
-- Files changed: `app/services/extrato_ingester.py`, `testes/test_extrato_classification.py`
-- 534 tests pass (was 520)
+## 2026-04-08 - US-002
+- Froze `datetime.now()` in 2 test files to eliminate 9 time-dependent failures
+- Files changed:
+  - testes/unit/test_extrato_classification.py — added `_freeze_date` fixture to `TestValidateExtratoCoverage`
+  - testes/unit/test_extrato_multi_upload.py — added `_freeze_date` fixture to `TestUploadExtratoMulti`
 - **Learnings for future iterations:**
-  - `_parse_account_statement()` returns `({}, [])` for completely invalid CSV — check `summary` dict for INITIAL_BALANCE validation
-  - Dates in CSV are DD-MM-YYYY, dates in transaction dicts are YYYY-MM-DD (already converted by parser)
-  - `BRT` timezone constant already defined at module level in extrato_ingester.py
-  - The `_make_csv()` test helper pattern is useful — build minimal CSVs with exact date control
-  - `date` import was added alongside `datetime` from the `datetime` module for type annotations
+  - `validate_extrato_coverage()` computes `yesterday = datetime.now(BRT) - 1 day` — tests with CSVs in past months break each month
+  - Monkeypatch pattern: subclass `datetime` overriding only `now()`, preserves `strptime`/`strftime`/etc
+  - Frozen date `2026-03-16` (yesterday=2026-03-15) matches max CSV date in all affected tests
+  - Full suite: 552 passed, 0 failed
 ---
 
-## 2026-03-16 - US-003
-- Implemented multi-file extrato upload endpoint `POST /admin/sellers/{slug}/extrato/upload` in `app/routers/admin/extrato.py`
-- Added `upload_extrato_csv()` GDrive helper in `app/services/gdrive_client.py` (hierarchy: ROOT/EXTRATOS/{EMPRESA}/{YYYY-MM}.csv)
-- 13 new tests in `testes/test_extrato_multi_upload.py` covering: seller validation, integration_mode check, file size limit, coverage validation failure, successful multi-file upload, seller flag updates, extrato_uploads upsert, multiple CSVs across months, GDrive queueing, ingestion error resilience
-- Files changed: `app/routers/admin/extrato.py`, `app/services/gdrive_client.py`, `testes/test_extrato_multi_upload.py`
-- 547 tests pass (was 534)
+## 2026-04-08 - US-003
+- Created `app/services/money.py` with unified `signed_amount(direction, amount)` function
+- Created `testes/unit/test_money.py` with 17 parametrized tests (all directions + edge cases)
+- Files changed:
+  - app/services/money.py (new)
+  - testes/unit/test_money.py (new)
 - **Learnings for future iterations:**
-  - `_parse_account_statement()` can be imported from extrato_ingester even though it has underscore prefix — used for month detection from CSV content
-  - GDrive upload for extrato uses `asyncio.create_task(asyncio.to_thread(...))` pattern (same as expenses export)
-  - Multi-file endpoint auto-detects months by parsing all CSVs and building a month→csv mapping; first CSV wins for overlapping months (ingester deduplicates)
-  - Mock chain pattern for Supabase: `mock_table.upsert.return_value = mock_table` chains for `.upsert().execute()` etc.
-  - `_decode_csv_bytes()` extracted as reusable helper for utf-8-sig/latin-1 decoding
-  - Seller's `ca_start_date` may be a date object from Supabase — normalize with `str(...)[:10]`
+  - 6 independent `_signed_amount` variants exist across: processor.py (inline), expense_classifier.py, extrato_ingester.py, financial_closing.py, release_report_sync.py, expenses/_deps.py
+  - financial_closing.py has special `deposit`/`deposito_avulso` handling mapped to `deposit` direction
+  - expense_classifier.py uses `_is_incoming_transfer()` to determine `transfer_in` vs `transfer_out` — that helper stays, only sign logic moves to money.py
+  - Full suite: 569 passed, 0 failed
 ---
 
-## 2026-03-16 - US-004
-- Added `skip_extrato: bool = False` to `ActivateSellerRequest` and `UpgradeToCaRequest`
-- `activate_seller_v2` sets `extrato_missing = req.skip_extrato` when `integration_mode=dashboard_ca`
-- `upgrade_seller_to_ca` sets `extrato_missing = req.skip_extrato` in update payload
-- No changes to backfill trigger — backfill still starts immediately regardless
-- Files changed: `app/routers/admin/sellers.py`
-- 547 tests pass (no new tests needed — pure data-pass-through change)
+## 2026-04-08 - US-004
+- Updated all 8 `signed_amount=` assignments in processor.py to use `money.signed_amount(direction, amount)`
+- Used module import (`from app.services import money`) to avoid naming clash with the `signed_amount` keyword argument
+- Files changed:
+  - app/services/processor.py (8 lines: 4 in _process_approved, 1 in _process_partial_refund, 3 in _process_refunded)
 - **Learnings for future iterations:**
-  - `ActivateSellerRequest` is at line 168, `activate_seller_v2` at line 179, `UpgradeToCaRequest` at line 297, `upgrade_seller_to_ca` at line 303
-  - Both endpoints build an `update_data` dict that gets written to the sellers table — just add fields there
-  - The backfill is triggered unconditionally for dashboard_ca via `asyncio.create_task(run_onboarding_backfill(slug))` — do NOT gate it on extrato status
+  - When the function name matches a keyword argument name (e.g., `signed_amount=signed_amount(...)`), use module-level import instead of direct function import
+  - Sign mapping: sale_approved/subsidy_credited/refund_fee/refund_shipping → 'income', fee_charged/shipping_charged/refund_created/partial_refund → 'expense'
+  - Full suite: 569 passed, 0 failed
 ---
 
-## 2026-03-16 - US-005
-- Added step 6c in `_execute_backfill()` between release report backfill (step 6b) and baixas (step 7)
-- Queries `extrato_uploads` table for completed uploads, then checks `sellers.extrato_missing` flag
-- Sets `progress["extrato_status"]` to `"covered"`, `"missing"`, or `"pending"`
-- Non-fatal: exceptions are caught and logged as warnings without aborting backfill
-- Files changed: `app/services/onboarding_backfill.py`
-- 547 tests pass (no new tests needed — logging-only step with no behavioral change)
+## 2026-04-08 - US-006
+- Replaced `_extrato_signed_amount()` in extrato_ingester.py with unified `money.signed_amount()`
+- Direction mapping: income→'income', else→'expense' (matches original behavior where transfer was treated as expense)
+- Removed `TestExtratoSignedAmount` class from tests (sign logic now tested in `test_money.py`)
+- Files changed:
+  - app/services/extrato_ingester.py (removed `_extrato_signed_amount`, added `from app.services import money`, updated `_write_extrato_expense_events`)
+  - testes/unit/test_extrato_ingester_dual_write.py (removed import + 4 tests of deleted function)
 - **Learnings for future iterations:**
-  - Step 6c is purely informational — it does NOT trigger extrato ingestion (that happens at upload time via US-003)
-  - The `extrato_uploads` table uses `status=completed` as the filter for successful uploads
-  - `seller.extrato_missing` may be `None` from DB — use `or False` to normalize
-  - New progress keys (like `extrato_status`) are safely added — the final log in `run_onboarding_backfill` uses `.get()` with defaults
+  - extrato_ingester uses direction values: "income", "expense", "transfer" — but "transfer" is always treated as negative (same as expense), so the mapping is simply income→'income', else→'expense'
+  - Test file imported `_extrato_signed_amount` directly — always check test imports when removing private functions
+  - Full suite: 561 passed, 0 failed (4 fewer tests due to removed `TestExtratoSignedAmount` class)
 ---
 
-## 2026-03-16 - US-006
-- Implemented `GET /admin/extrato/sellers-status` endpoint in `app/routers/admin/extrato.py`
-- Returns list of active dashboard_ca sellers with months_needed, months_uploaded, months_missing, coverage_status
-- Uses `_months_range()` from extrato_ingester for month list generation
-- Aggregates completed uploads from `extrato_uploads` table grouped by seller_slug
-- 7 new tests in `testes/test_extrato_sellers_status.py` covering: empty sellers, no ca_start_date, full/partial/missing coverage, multiple sellers, date object normalization
-- Files changed: `app/routers/admin/extrato.py`, `testes/test_extrato_sellers_status.py`
-- 554 tests pass (was 547)
+## 2026-04-08 - US-005
+- Replaced `_expense_signed_amount()` in expense_classifier.py with unified `money.signed_amount()`
+- Direction mapping: income→'income', transfer+incoming→'transfer_in', transfer+outgoing→'transfer_out', else→'expense'
+- Kept `_is_incoming_transfer()` helper — called before `money.signed_amount()` to determine direction
+- Removed `TestExpenseSignedAmount` class from tests (sign logic now tested in `test_money.py`)
+- Files changed:
+  - app/services/expense_classifier.py (removed `_expense_signed_amount`, added `from app.services import money`, updated `_write_expense_events`)
+  - testes/unit/test_expense_classifier_dual_write.py (removed import + 4 tests of deleted function)
 - **Learnings for future iterations:**
-  - `_months_range()` is importable from `extrato_ingester` and takes `date` objects (not strings)
-  - `datetime` mock pattern: mock `datetime.now()` but allow `datetime()` constructor via `mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)`
-  - For mock DB dispatching by table name, use `db.table = table_dispatch` with a closure that counts calls
-  - `ca_start_date` from Supabase can be a date object — always normalize with `str(...)[:10]` then `date.fromisoformat()`
+  - expense_classifier uses `direction` values: "income", "transfer", "expense", "skip" — the "transfer" direction needs further disambiguation via `_is_incoming_transfer()` before passing to `money.signed_amount()`
+  - Test file imported `_expense_signed_amount` directly — when removing private functions, always check test imports
+  - Full suite: 565 passed, 0 failed (4 fewer tests due to removed `TestExpenseSignedAmount` class)
 ---
 
-## 2026-03-16 - US-007
-- Created `dashboard/src/hooks/useExtrato.ts` with 3 exported types and 3 API functions
-- Types: `ExtratoSellerStatus`, `ExtratoUploadResult`, `ExtratoUploadRecord`
-- Functions: `loadSellersStatus()`, `uploadExtratos(sellerSlug, files)`, `loadUploadHistory(sellerSlug)`
-- Follows exact pattern from `useExpenses.ts`: TOKEN_KEY, authHeaders, handleUnauthorized on 401
-- `uploadExtratos` uses FormData for multipart upload, re-throws errors for caller to handle
-- `loadUploadHistory` extracts `.data` from envelope response `{ seller, count, data }`
-- Files changed: `dashboard/src/hooks/useExtrato.ts`
-- TypeScript typecheck passes, 554 pytest tests pass
+## 2026-04-08 - US-007
+- Replaced local `_signed_amount` variants in 3 remaining files with `money.signed_amount()`
+- Removed `_signed_amount` from financial_closing.py → renamed to `_row_sign()` delegating to `money.signed_amount()`
+- Removed `_release_signed_amount` from release_report_sync.py → inlined `money.signed_amount()` with direction mapping dict
+- Removed `_signed_amount` from expenses/_deps.py → renamed to `_compute_row_sign()` delegating to `money.signed_amount()`
+- Updated imports in `expenses/closing.py`, `expenses/export.py`
+- Removed `TestReleaseSignedAmount` test class from test_release_report_dual_write.py
+- Updated `test_parity_expenses_source.py` imports from `_signed_amount` to `_row_sign`
+- Files changed:
+  - app/services/financial_closing.py (removed `_signed_amount`, added `_row_sign`, import money)
+  - app/services/release_report_sync.py (removed `_release_signed_amount`, inline money call)
+  - app/routers/expenses/_deps.py (removed `_signed_amount`, added `_compute_row_sign`, import money)
+  - app/routers/expenses/closing.py (import rename)
+  - app/routers/expenses/export.py (import rename)
+  - testes/unit/test_release_report_dual_write.py (removed import + 4 tests)
+  - testes/unit/test_parity_expenses_source.py (updated imports + call sites)
 - **Learnings for future iterations:**
-  - `useExpenses.ts` is the canonical pattern for admin API hooks — copy structure exactly
-  - TOKEN_KEY is `'lever-admin-token'` (same across all admin hooks)
-  - For multipart uploads, do NOT set Content-Type header — browser sets boundary automatically
-  - Upload endpoint error responses may have nested `detail.message` or flat `detail` string — handle both
-  - The `/admin/extrato/uploads/{seller_slug}` endpoint returns envelope `{ seller, count, data }` — extract `data`
+  - When removing private functions from app code, also check: (1) test imports, (2) other modules that import them (e.g., expenses/closing.py imports from _deps.py)
+  - release_report_sync uses "transfer" direction for PIX withdrawals — map to "transfer_out" for money.signed_amount
+  - financial_closing.py direction mapping: income→'income', transfer+deposit/deposito_avulso→'deposit', else→'expense'
+  - `grep 'def _.*signed_amount'` in `app/` now returns zero results — all sign logic unified in money.py
+  - Full suite: 557 passed, 0 failed (4 fewer tests due to removed `TestReleaseSignedAmount` class)
 ---
 
-## 2026-03-16 - US-008
-- Rewrote `ExtratoTab.tsx` from form-based layout to seller cards grid pattern (matching `ExpensesExportTab`)
-- Rewrote `ExtratoTab.module.css` with card grid, month chips, coverage badges, collapsible history
-- Component now uses `useExtrato` hook (loadSellersStatus, uploadExtratos, loadUploadHistory)
-- Grid shows only dashboard_ca sellers (from `/admin/extrato/sellers-status` endpoint)
-- Each card shows: seller name, ca_start_date, coverage_status badge (complete/partial/missing), month chips (green OK / red missing)
-- Cards with `extrato_missing=true` show "sem extrato" warning badge
-- Upload button per card opens hidden file input (multiple CSVs accepted)
-- Upload result shows inline stats (files, lines ingested, months processed, gdrive status)
-- Collapsible upload history per seller (lazy loaded on expand, same toggle pattern as ExpensesExportTab)
-- Complete cards (coverage_status=complete) are dimmed (opacity: 0.65)
-- Files changed: `dashboard/src/components/ExtratoTab.tsx`, `dashboard/src/components/ExtratoTab.module.css`
-- TypeScript typecheck passes, 554 pytest tests pass
+## 2026-04-08 - US-008
+- Reordered all 8 event+enqueue pairs in processor.py to write-ahead log (WAL) pattern: `record_event()` now executes BEFORE `enqueue_*()` in all 3 functions: `_process_approved`, `_process_partial_refund`, `_process_refunded`
+- Pattern: try record_event → except EventRecordError (skip enqueue) → else try enqueue (catch Exception, log warning)
+- Updated existing `test_event_record_error_does_not_abort` → renamed to `test_event_record_error_skips_enqueue` with WAL semantics
+- Added `test_partial_record_failure_skips_only_failed_enqueue`: one record fails → only that pair's enqueue skipped
+- Added `test_enqueue_failure_after_successful_record`: enqueue fails → record_event still called successfully
+- Files changed:
+  - app/services/processor.py (8 pairs reordered across 3 functions)
+  - testes/integration/test_processor_integration.py (1 test updated, 2 tests added)
 - **Learnings for future iterations:**
-  - `useExtrato` hook returns typed data from the API — no need for inline fetch calls
-  - Hidden file input + button click pattern: `<input style=display:none>` + `ref.click()` in button onClick
-  - `fileInputRefs` uses `Map<string, HTMLInputElement>` via `useRef` for per-card file inputs
-  - Coverage status API already filters to dashboard_ca sellers — no need to filter on frontend
-  - `ExtratoSellerStatus.months_uploaded` can be checked with `.includes(month)` for month chip coloring
+  - The WAL pattern uses try/except/else: `try: record → except: skip → else: try enqueue → except: log warning`
+  - Each event+enqueue pair is independent — failure in one pair doesn't abort subsequent pairs
+  - When testing the WAL pattern, need 3 test scenarios: all-fail, partial-fail, enqueue-fail-after-record
+  - Full suite: 559 passed, 0 failed (2 new tests added)
 ---
 
-## 2026-03-16 - US-009
-- Verified AdminPanel.tsx already has Extratos tab wired in (import, tab state, button, render)
-- All acceptance criteria already met from prior US-007 commit
-- Marked as passes: true (no code changes needed)
-- Files changed: none (already complete)
-- TypeScript typecheck passes, 554 pytest tests pass
+## 2026-04-08 - US-009
+- Moved cash_*/expense_* filters from Python post-fetch to SQL via `.not_.like()` in event_ledger.py
+- `get_payment_statuses()`: added `.not_.like("event_type", "cash_%").not_.like("event_type", "expense_%")` to query builder, removed Python list comprehension
+- `get_dre_summary()`: same SQL filter addition, removed Python list comprehension
+- Updated 8 mock chains across 3 test files to reflect new `.not_.like()` in query chain
+- Files changed:
+  - app/services/event_ledger.py (2 functions: get_payment_statuses, get_dre_summary)
+  - testes/integration/test_event_ledger_integration.py (7 mock chain updates)
+  - testes/unit/test_cash_events.py (2 tests updated: mock chain + data reflects SQL filtering)
+  - testes/unit/test_parity_expenses_source.py (1 test updated: mock chain + data reflects SQL filtering)
 - **Learnings for future iterations:**
-  - Always verify existing state before implementing — US-009 was already done as a side effect of US-007
+  - Supabase `.not_.like()` chains correctly: each `.not_` sets a negate flag for the next filter call
+  - When moving filters from Python to SQL, all mock chains in tests must be updated to include the new SQL filter methods in the correct position
+  - Mock chain protection: if someone removes `.not_.like()` from the code, the mock chain path changes, causing tests to fail with unexpected empty data — this implicitly guards the SQL filter
+  - The pagination bug: `len(rows) < page_limit` used the FILTERED row count, causing early breaks. With SQL filtering, `len(rows)` is the actual DB result count, so pagination works correctly
+  - Full suite: 559 passed, 0 failed
+---
+
+## 2026-04-08 - US-010
+- Removed `and estorno_receita >= amount` guard from refund_fee and refund_shipping conditions in `_process_refunded()`
+- Partial refunds now correctly emit fee/shipping reversal events when `charges_details[].amounts.refunded > 0`
+- Replaced old test `test_partial_refund_amount_no_estorno_taxa` (asserted buggy behavior) with 2 new tests:
+  - `test_partial_refund_with_refunded_fees_creates_estorno_taxa`: ML refunded fees → events ARE created
+  - `test_partial_refund_without_refunded_fees_no_estorno_taxa`: ML did NOT refund fees → events NOT created
+- Files changed:
+  - app/services/processor.py (2 lines: removed `and estorno_receita >= amount` from lines 597, 620)
+  - testes/integration/test_processor_integration.py (1 test replaced with 2 new tests)
+- **Learnings for future iterations:**
+  - The condition for emitting refund_fee/refund_shipping should only check whether ML actually refunded those charges (via `charges_details[].amounts.refunded`), NOT whether it's a full vs partial refund
+  - When fixing a bug in business logic, always update tests that assert the old buggy behavior — don't just add new tests
+  - Full suite: 560 passed, 0 failed (1 net new test)
+---
+
+## 2026-04-08 - US-011
+- Created `testes/unit/test_ledger_invariants.py` with 7 parametrized scenarios and 2 test methods (14 tests total)
+- Scenarios: approved-simple, full-refund-sums-to-zero, partial-refund-by-amount, chargeback-reimbursed, approved-with-subsidy, partial-refund-with-fee-reversal, chargeback-not-reimbursed
+- Each scenario validates: (1) sum(signed_amounts) == expected_balance within 0.01, (2) all events pass validate_event()
+- Files changed:
+  - testes/unit/test_ledger_invariants.py (new)
+- **Learnings for future iterations:**
+  - `validate_event()` enforces sign direction per EVENT_TYPES dict — "positive" must be >= 0, "negative" must be <= 0, "zero" must be == 0, "any" accepts all
+  - Pure algebraic invariant tests are a good smoke test for sign convention changes — if money.py or EVENT_TYPES change, these break immediately
+  - Full suite: 574 passed, 0 failed (14 new tests)
+---
+
+## 2026-04-08 - US-012
+- Added CA payload value assertions to 6 integration tests in test_processor_integration.py
+- Tests now assert `payload["valor"]` and `payload["data_competencia"]` from `call_args[0][2]`
+- Covered: approved (receita+comissao+frete), refund (estorno+estorno_taxa+estorno_frete), subsidy, partial refund with fees
+- Files changed:
+  - testes/integration/test_processor_integration.py (53 lines added to 6 tests)
+- **Learnings for future iterations:**
+  - `enqueue_*` calls use positional args: `(seller_slug, payment_id, payload)` — access payload via `mock.call_args[0][2]`
+  - `enqueue_partial_refund` has 4 args: `(seller_slug, payment_id, index, payload)` — payload is at `[0][3]`
+  - `enqueue_receita` is called twice when subsidy exists — use `call_args_list[1]` for subsidy payload
+  - `_to_brt_date("2026-01-15T10:00:00.000-04:00")` → `"2026-01-15"` (UTC-4 + 1h = BRT, same day at 11:00)
+  - Full suite: 574 passed, 0 failed
 ---

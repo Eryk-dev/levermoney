@@ -168,22 +168,22 @@ class TestClassifyExtratoLine:
         assert exp_type == _CHECK_PAYMENTS
         assert direction == "income"
 
-    # --- Unconditional skips ---
+    # --- Captured (formerly unconditional skips, now have cash impact) ---
 
-    def test_transferencia_pix_skip(self):
+    def test_transferencia_pix_captured(self):
         exp_type, direction, cat = _classify_extrato_line("Transferência Pix para fulano")
-        assert exp_type is None
-        assert direction is None
+        assert exp_type == "transferencia_pix"
+        assert direction == "expense"
 
-    def test_pix_enviado_skip(self):
+    def test_pix_enviado_captured(self):
         exp_type, direction, cat = _classify_extrato_line("Pix enviado para conta X")
-        assert exp_type is None
-        assert direction is None
+        assert exp_type == "pix_enviado"
+        assert direction == "expense"
 
-    def test_pagamento_de_conta_skip(self):
+    def test_pagamento_de_conta_captured(self):
         exp_type, direction, cat = _classify_extrato_line("Pagamento de conta Boleto Itau")
-        assert exp_type is None
-        assert direction is None
+        assert exp_type == "pagamento_conta"
+        assert direction == "expense"
 
     def test_compra_mercado_libre_skip(self):
         exp_type, direction, cat = _classify_extrato_line("Compra Mercado Libre - item X")
@@ -342,9 +342,9 @@ class TestClassifyExtratoLine:
     # --- Rule ordering ---
 
     def test_pagamento_de_conta_before_pagamento(self):
-        """'Pagamento de conta' must skip (not classify as subscription)."""
+        """'Pagamento de conta' must be captured (not classify as subscription)."""
         exp_type, _, _ = _classify_extrato_line("Pagamento de conta Boleto BB")
-        assert exp_type is None  # skip
+        assert exp_type == "pagamento_conta"
 
     def test_pagamento_com_before_pagamento(self):
         """'Pagamento com QR' → _CHECK_PAYMENTS (not subscription)."""

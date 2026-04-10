@@ -1,170 +1,217 @@
 {
-  "project": "LeverMoney",
-  "branchName": "ralph/extrato-obrigatorio-onboarding",
-  "description": "Extrato obrigatorio no onboarding/upgrade para Conta Azul. Upload de CSV 'Dinheiro em conta' do MP como requisito para ativacao com CA, com validacao de cobertura, ingestao, GDrive backup, e aba de gestao no admin.",
+  "project": "Lever Money Conciliador - Architectural Refactor",
+  "branchName": "ralph/architectural-refactor-correctness",
+  "description": "Refactor completo para eliminar classes de bugs recorrentes: unificar sign convention em money.py, inverter event ledger para WAL pattern, mover filtros para SQL, unificar refund handling, e adicionar testes de invariantes financeiras.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Migration: add extrato_missing to sellers",
-      "description": "As a system, I need new columns on the sellers table to track whether a seller was activated without an extrato CSV.",
+      "title": "Fix integration test data paths",
+      "description": "As a developer, I want the 3 integration test files to find their test data correctly, so that 119 test errors are resolved.",
       "acceptanceCriteria": [
-        "Create migration 010_extrato_missing.sql in migrations/",
-        "Add column extrato_missing BOOLEAN DEFAULT FALSE to sellers table",
-        "Add column extrato_uploaded_at TIMESTAMPTZ NULL to sellers table",
-        "Migration uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS for idempotency",
+        "In testes/integration/test_dre_reconciliation.py lines 32-33: change Path(__file__).parent / 'data' to Path(__file__).parent.parent / 'data' for both CACHE_PATH and EXTRATO_PATH",
+        "In testes/integration/test_dre_reconciliation_fev2026.py lines 32-33: same change for CACHE_PATH and EXTRATO_PATH",
+        "In testes/integration/test_event_ledger_backfill.py lines 40-41: same change for CACHE_JAN and CACHE_FEV",
+        "Run: python3 -m pytest testes/integration/ -q --no-header 2>&1 | tail -5 — no FileNotFoundError",
         "python3 -m pytest passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Pattern: see migrations/007_extrato_uploads.sql for style. The extrato_uploads table already exists — this story only adds columns to the sellers table."
+      "notes": "Test data lives at testes/data/ but tests were moved to testes/integration/ without updating paths. This is a 3-line fix across 3 files."
     },
     {
       "id": "US-002",
-      "title": "Backend: validate_extrato_coverage() service function",
-      "description": "As a system, I need a function that validates whether multiple extrato CSVs together cover the full period from ca_start_date to yesterday, detecting gaps.",
+      "title": "Fix time-dependent test failures",
+      "description": "As a developer, I want tests that depend on 'today' to use a mocked date, so they don't break every month.",
       "acceptanceCriteria": [
-        "New function validate_extrato_coverage(csv_texts: list[str], ca_start_date: str) -> dict in app/services/extrato_ingester.py",
-        "Uses existing _parse_account_statement() to extract dates from each CSV",
-        "Returns dict with keys: valid (bool), covered_months (list[str]), missing_months (list[str]), gaps (list[dict with start/end]), min_date, max_date, error (str|None)",
-        "Rejects if min(dates) > ca_start_date with clear error message",
-        "Rejects if max(dates) < yesterday with clear error message",
-        "Detects internal gaps between CSVs (e.g. jan+mar without feb) and reports them",
-        "Accepts overlapping CSVs (e.g. jan+jan is OK, dedup is handled by ingester)",
-        "Validates CSV format — rejects if INITIAL_BALANCE header is missing",
+        "Find all test files that call validate_extrato_coverage or depend on datetime.now() for assertions",
+        "Add monkeypatch to freeze the date to a fixed value within the CSV date range in those test fixtures",
+        "The key function is in app/services/extrato_ingester.py — it computes 'yesterday' via datetime.now(BRT). Mock this in tests",
+        "All 9 previously failing tests in testes/unit/test_extrato_multi_upload.py and testes/unit/test_extrato_classification.py now pass",
+        "Run: python3 -m pytest testes/unit/test_extrato_multi_upload.py testes/unit/test_extrato_classification.py -q — 0 failures",
         "python3 -m pytest passes"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Key context: _parse_account_statement() is at line ~245 in extrato_ingester.py. It returns (summary, transactions) where each transaction has a 'date' field in YYYY-MM-DD format. The CSV format has RELEASE_DATE;TRANSACTION_TYPE;REFERENCE_ID;TRANSACTION_NET_AMOUNT;PARTIAL_BALANCE with dates as DD-MM-YYYY. See sample file at testes/data/extratos/extrato fevereiro 141Air.csv. Tolerance: gaps of up to 1 day are acceptable (weekends without movements). Coverage validation: the function checks that the period ca_start_date to yesterday-BRT is fully covered by the union of all CSV date ranges."
+      "notes": "These tests create CSVs ending in past months but validate_extrato_coverage requires coverage through 'yesterday'. Freezing the date to within the CSV range fixes this. Use monkeypatch on datetime in the extrato_ingester module."
     },
     {
       "id": "US-003",
-      "title": "Backend: multi-file extrato upload endpoint",
-      "description": "As an admin, I want to upload multiple extrato CSVs for a seller at once, with coverage validation and GDrive backup.",
+      "title": "Create unified money.py sign convention module",
+      "description": "As a developer, I want a single authoritative function for converting financial direction+amount to signed amount, so sign bugs can never diverge across modules.",
       "acceptanceCriteria": [
-        "New endpoint POST /admin/sellers/{slug}/extrato/upload in app/routers/admin/extrato.py",
-        "Accepts multiple files via UploadFile (files: list[UploadFile])",
-        "Requires seller to have integration_mode=dashboard_ca and ca_start_date set",
-        "Calls validate_extrato_coverage() from US-002 to validate date coverage",
-        "Returns 422 with clear error if coverage validation fails (gaps, missing months, invalid format)",
-        "On validation pass: calls ingest_extrato_from_csv() for each CSV (one per detected month)",
-        "Records each processed month in extrato_uploads table (existing table, upsert by seller_slug+month)",
-        "Uploads each CSV to Google Drive in background: ROOT/EXTRATOS/{SELLER_NAME}/{YYYY-MM}.csv using gdrive_client.py pattern",
-        "Updates sellers.extrato_missing=false and sellers.extrato_uploaded_at=now() on success",
-        "Returns aggregate stats: total files, total lines ingested, total errors, months processed, gdrive_status",
+        "Create app/services/money.py with function: signed_amount(direction: str, amount: float) -> float",
+        "Supported directions: 'income' -> abs(amount), 'expense' -> -abs(amount), 'transfer_in' -> abs(amount), 'transfer_out' -> -abs(amount), 'deposit' -> abs(amount)",
+        "Any unknown direction raises ValueError with descriptive message",
+        "Create testes/unit/test_money.py with parametrized tests covering all directions",
+        "Test that signed_amount('income', -50.0) returns 50.0 (always abs for income)",
+        "Test that signed_amount('expense', 50.0) returns -50.0 (always negative for expense)",
+        "Test that signed_amount('unknown', 10) raises ValueError",
+        "Test edge cases: amount=0.0 for all directions returns 0.0",
+        "Run: python3 -m pytest testes/unit/test_money.py -v — all pass",
         "python3 -m pytest passes"
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Key files to reference: app/routers/admin/extrato.py (existing upload_extrato endpoint at line 125 — single file per month, use as pattern but create NEW endpoint for multi-file), app/services/extrato_ingester.py (ingest_extrato_from_csv at line 982), app/services/gdrive_client.py (upload_expenses_zip pattern — reuse _build_gdrive_client, _gdrive_ensure_folder, _gdrive_upload_bytes). The existing upload_extrato accepts single file+month via Form fields. The new endpoint should auto-detect months from CSV content. GDrive folder structure: ROOT/EXTRATOS/{seller.dashboard_empresa or seller.name}/{YYYY-MM}.csv. GDrive upload must run in background via asyncio.create_task(asyncio.to_thread(...)) to not block the response. If no LEGACY_DAILY_GOOGLE_DRIVE_ROOT_FOLDER_ID is configured, skip GDrive silently."
+      "notes": "This module replaces 6 independent _signed_amount functions scattered across the codebase. Keep it simple — one function, no classes, no dataclasses. The callers will be updated in subsequent stories."
     },
     {
       "id": "US-004",
-      "title": "Backend: modify activate/upgrade to support extrato_missing flag",
-      "description": "As an admin, I want the activate and upgrade endpoints to accept a skip_extrato flag so I can activate a seller without extrato when needed.",
+      "title": "Update processor.py to use money.signed_amount",
+      "description": "As a developer, I want processor.py to use the unified money.signed_amount function instead of inline sign decisions.",
       "acceptanceCriteria": [
-        "Add optional field skip_extrato: bool = False to ActivateSellerRequest in app/routers/admin/sellers.py",
-        "When integration_mode=dashboard_ca and skip_extrato=True: set sellers.extrato_missing=True in the update payload",
-        "When integration_mode=dashboard_ca and skip_extrato=False (default): set sellers.extrato_missing=False (extrato upload expected separately)",
-        "Apply same logic to upgrade_seller_to_ca endpoint (around line 300 in sellers.py)",
-        "No change to backfill trigger — backfill still starts immediately regardless of extrato status",
+        "Add import: from app.services.money import signed_amount at top of app/services/processor.py",
+        "In _process_approved(): replace signed_amount=amount with signed_amount=signed_amount('income', amount) for sale_approved",
+        "Replace signed_amount=-mp_fee with signed_amount=signed_amount('expense', mp_fee) for fee_charged",
+        "Replace signed_amount=-shipping with signed_amount=signed_amount('expense', shipping) for shipping_charged",
+        "Replace signed_amount=subsidy with signed_amount=signed_amount('income', subsidy) for subsidy_credited",
+        "In _process_refunded(): replace signed_amount=-refund with signed_amount=signed_amount('expense', refund) for refund_created and partial_refund",
+        "Replace signed_amount=refunded_fee with signed_amount=signed_amount('income', refunded_fee) for refund_fee",
+        "Replace signed_amount=refunded_shipping with signed_amount=signed_amount('income', refunded_shipping) for refund_shipping",
+        "Run: python3 -m pytest testes/unit/test_processor_unit.py testes/integration/test_processor_integration.py -v — all pass",
         "python3 -m pytest passes"
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Key file: app/routers/admin/sellers.py. ActivateSellerRequest is at line 168. activate_seller_v2 is at line 179. upgrade_seller_to_ca is around line 295. The backfill is triggered via asyncio.create_task(run_onboarding_backfill(slug)) — do NOT change this. The extrato upload happens separately via US-003 endpoint (before or after activation)."
+      "notes": "Mechanical replacement. The resulting signed values must be identical to before. Do NOT change the event ledger record_event call order yet (that is US-008). Note: the keyword argument name 'signed_amount' clashes with the imported function name. Rename the import to e.g. 'from app.services.money import signed_amount as compute_sign' or use money.signed_amount with a module import."
     },
     {
       "id": "US-005",
-      "title": "Backend: modify onboarding_backfill to log extrato status",
-      "description": "As a system, the onboarding backfill should check and log the extrato status between release report and baixas steps.",
+      "title": "Update expense_classifier.py to use money.signed_amount",
+      "description": "As a developer, I want expense_classifier.py to use the unified sign function, eliminating _expense_signed_amount.",
       "acceptanceCriteria": [
-        "Add new step in _execute_backfill() in app/services/onboarding_backfill.py between release report backfill (step 6b) and baixas (step 7)",
-        "New step queries extrato_uploads table for this seller to find uploads with status=completed",
-        "If uploads exist: logs 'extrato already ingested via upload, N months covered'",
-        "If no uploads and seller has extrato_missing=True: logs 'extrato ingestion skipped (extrato_missing=true)'",
-        "If no uploads and extrato_missing=False: logs warning 'no extrato uploaded yet, coverage may be incomplete'",
-        "Progress dict includes extrato_status key with value 'covered' or 'missing' or 'pending'",
-        "Step is non-fatal: any exception is caught and logged as warning without aborting backfill",
-        "python3 -m pytest passes"
+        "Add import: from app.services.money import signed_amount (or module import) at top of app/services/expense_classifier.py",
+        "Remove the _expense_signed_amount() function (around line 263)",
+        "Keep the _is_incoming_transfer() helper — move its call to BEFORE the signed_amount call so callers determine direction first",
+        "Update all callers: if direction='income' use 'income', if direction='transfer' and _is_incoming_transfer()=True use 'transfer_in', else use 'expense'",
+        "Run: python3 -m pytest testes/unit/test_expense_classifier*.py -v — all pass",
+        "python3 -m pytest passes with no new failures"
       ],
       "priority": 5,
       "passes": true,
-      "notes": "Key file: app/services/onboarding_backfill.py. The _execute_backfill() function is at line 266. Release report backfill is step 6b (lines 421-447). Baixas is step 7 (lines 449-469). Insert the new step between them. The actual ingestion of extrato CSVs happens at upload time (US-003), NOT during backfill. The backfill step just checks status and logs."
+      "notes": "The _is_incoming_transfer() function checks collector_id/payer_id to determine if a transfer is incoming. This logic must be preserved — just move it to determine the direction string before calling the unified signed_amount()."
     },
     {
       "id": "US-006",
-      "title": "Backend: extrato coverage status endpoint for admin dashboard",
-      "description": "As an admin, I need an endpoint that returns the extrato coverage status for all dashboard_ca sellers.",
+      "title": "Update extrato_ingester.py to use money.signed_amount",
+      "description": "As a developer, I want extrato_ingester.py to use the unified sign function, eliminating _extrato_signed_amount.",
       "acceptanceCriteria": [
-        "New endpoint GET /admin/extrato/sellers-status in app/routers/admin/extrato.py",
-        "Returns list of sellers with integration_mode=dashboard_ca",
-        "Each seller entry includes: slug, name, dashboard_empresa, ca_start_date, extrato_missing, extrato_uploaded_at",
-        "Each seller entry includes months_needed: list of YYYY-MM strings from ca_start_date to current month",
-        "Each seller entry includes months_uploaded: list of YYYY-MM strings from extrato_uploads table where status=completed",
-        "Each seller entry includes months_missing: months_needed minus months_uploaded",
-        "Each seller entry includes coverage_status: 'complete' or 'partial' or 'missing'",
-        "Endpoint requires admin auth (Depends(require_admin))",
-        "python3 -m pytest passes"
+        "Add import from app.services.money at top of app/services/extrato_ingester.py",
+        "Remove the _extrato_signed_amount() function (around line 564)",
+        "Update all callers to use the unified signed_amount() with appropriate direction mapping",
+        "Map: direction='income' -> 'income', else -> 'expense'",
+        "Run: python3 -m pytest testes/unit/test_extrato*.py -v — all pass",
+        "python3 -m pytest passes with no new failures"
       ],
       "priority": 6,
       "passes": true,
-      "notes": "Key file: app/routers/admin/extrato.py. To list sellers: db.table('sellers').select('slug, name, dashboard_empresa, ca_start_date, extrato_missing, extrato_uploaded_at, integration_mode, active').eq('integration_mode', 'dashboard_ca').eq('active', True). For months_needed: generate YYYY-MM list from ca_start_date to current month. For months_uploaded: db.table('extrato_uploads').select('seller_slug, month').eq('status', 'completed') then group by seller_slug."
+      "notes": "extrato_ingester.py is 1478 lines but _extrato_signed_amount is a simple function. The replacement is mechanical — find all calls and replace."
     },
     {
       "id": "US-007",
-      "title": "Frontend: useExtrato hook",
-      "description": "As a developer, I need a React hook for extrato API calls (coverage status, multi-file upload, upload history).",
+      "title": "Update remaining 3 files to use money.signed_amount",
+      "description": "As a developer, I want the last 3 files with local _signed_amount copies to use the unified function.",
       "acceptanceCriteria": [
-        "New file dashboard/src/hooks/useExtrato.ts",
-        "Function loadSellersStatus(): fetches GET /admin/extrato/sellers-status, returns typed array",
-        "Function uploadExtratos(sellerSlug: string, files: File[]): POSTs to /admin/sellers/{slug}/extrato/upload as multipart/form-data with multiple files",
-        "Function loadUploadHistory(sellerSlug: string): fetches GET /admin/extrato/uploads/{slug}, returns typed array (extracts .data from envelope)",
-        "All functions include X-Admin-Token header from sessionStorage.getItem('adminToken')",
-        "All functions handle 401 by calling onUnauthorized callback",
-        "TypeScript types exported: ExtratoSellerStatus, ExtratoUploadResult, ExtratoUploadRecord",
-        "Typecheck passes (cd dashboard && npx tsc --noEmit)"
+        "Update app/services/financial_closing.py: remove _signed_amount() (~line 51), replace calls. Map deposit/deposito_avulso expense_type to 'deposit' direction",
+        "Update app/services/release_report_sync.py: remove _release_signed_amount() (~line 161), replace calls",
+        "Update app/routers/expenses/_deps.py: remove _signed_amount() (~line 91), replace calls",
+        "Grep entire codebase for '_signed_amount' or '_expense_signed_amount' or '_extrato_signed_amount' or '_release_signed_amount' — zero results (only money.signed_amount should exist)",
+        "Run: python3 -m pytest -q — no new failures",
+        "python3 -m pytest passes"
       ],
       "priority": 7,
       "passes": true,
-      "notes": "Pattern: follow dashboard/src/hooks/useExpenses.ts exactly for structure. It receives { onUnauthorized } and uses fetch() with X-Admin-Token header. The admin API base URL pattern: in production use relative URLs (/admin/...), in dev use the same origin. ExtratoSellerStatus type should have: slug, name, dashboard_empresa, ca_start_date, extrato_missing, extrato_uploaded_at, months_needed, months_uploaded, months_missing, coverage_status. ExtratoUploadRecord type: id, seller_slug, month, filename, status, lines_total, lines_ingested, lines_skipped, lines_already_covered, initial_balance, final_balance, uploaded_at."
+      "notes": "These are the last 3 copies. After this story, grep for 'def _.*signed_amount' should return 0 results. The financial_closing.py version has special logic for deposit/deposito_avulso — map those to the 'deposit' direction in money.signed_amount."
     },
     {
       "id": "US-008",
-      "title": "Frontend: ExtratoTab component with seller cards",
-      "description": "As an admin, I want a tab showing cards per seller with extrato coverage status and multi-file upload capability.",
+      "title": "Reorder processor.py to write-ahead log pattern",
+      "description": "As a system, I want to record the event in the ledger BEFORE enqueuing the CA job, so the ledger is the real source of truth.",
       "acceptanceCriteria": [
-        "New file dashboard/src/components/ExtratoTab.tsx with CSS module dashboard/src/components/ExtratoTab.module.css",
-        "Component receives sellers[] and onLogout() props (same interface as ExpensesExportTab)",
-        "Shows grid of cards for sellers with integration_mode=dashboard_ca (sorted alphabetically by dashboard_empresa or name)",
-        "Each card shows: seller name, ca_start_date, coverage_status badge (complete=green, partial=yellow, missing=red)",
-        "Each card shows list of months with OK or MISSING indicator per month",
-        "Each card has upload button that opens file picker (accepts multiple .csv files)",
-        "Upload shows inline success/error result on the card",
-        "Card with extrato_missing=true shows 'Sem extrato' warning badge",
-        "Upload history per seller is collapsible (same expand/collapse pattern as ExpensesExportTab batch history)",
-        "Upload history shows: month, filename, lines_ingested, status, uploaded_at",
-        "Sellers without integration_mode=dashboard_ca are not shown",
-        "Typecheck passes (cd dashboard && npx tsc --noEmit)"
+        "In app/services/processor.py _process_approved(): for each of the 4 event+enqueue pairs (sale_approved, fee_charged, shipping_charged, subsidy_credited), move record_event() BEFORE the enqueue_*() call",
+        "In _process_refunded(): for each of the 3 event+enqueue pairs (refund_created, refund_fee, refund_shipping), move record_event() BEFORE enqueue_*()",
+        "In partial refund path: move record_event('partial_refund') BEFORE enqueue_partial_refund()",
+        "If record_event() raises EventRecordError, the corresponding enqueue must NOT execute — let the exception propagate or return early",
+        "If enqueue_*() fails after event is recorded, log a warning with payment_id and event_type for manual retry",
+        "Add test in test_processor_integration.py: mock record_event to raise EventRecordError, assert enqueue_* was NOT called",
+        "Add test: mock enqueue_* to raise Exception, assert record_event WAS called successfully",
+        "Run: python3 -m pytest testes/integration/test_processor_integration.py -v — all pass",
+        "python3 -m pytest passes"
       ],
       "priority": 8,
       "passes": true,
-      "notes": "Pattern: closely follow dashboard/src/components/ExpensesExportTab.tsx for card grid layout (it uses activeSellers sorted alphabetically, Map<string, State> for per-seller state, Set<string> for expandedSlugs). CSS Modules only (no Tailwind). Design tokens in dashboard/src/index.css: --success (#10b981), --attention (#d97706), --danger (#ef4444). File input: accept='.csv,text/csv', multiple=true. Use the useExtrato hook from US-007. Filter sellers by checking if they appear in the sellersStatus response (only dashboard_ca sellers will be there)."
+      "notes": "Currently all 8 pairs do: enqueue first, then record event. If record_event fails, CA gets a duplicate on next sync. The fix swaps the order. The EventRecordError catch blocks after each enqueue need to move — now the try/except wraps the enqueue, not the record_event."
     },
     {
       "id": "US-009",
-      "title": "Frontend: add Extratos tab to AdminPanel",
-      "description": "As an admin, I want a third tab 'Extratos' in the admin panel alongside 'Sellers' and 'Despesas'.",
+      "title": "Move pagination filters to SQL in event_ledger.py",
+      "description": "As a system, I want event_type filters applied in the database query, not post-fetch in Python, so pagination never silently drops data.",
       "acceptanceCriteria": [
-        "AdminPanel.tsx has a third tab option 'Extratos'",
-        "Tab renders ExtratoTab component when selected",
-        "ExtratoTab receives sellers array and onLogout callback (same props as ExpensesExportTab)",
-        "Tab order: Sellers | Despesas | Extratos",
-        "Typecheck passes (cd dashboard && npx tsc --noEmit)"
+        "In get_dre_summary() (event_ledger.py ~line 426): add filter to exclude cash_* and expense_* event_types in the Supabase query builder BEFORE .execute()",
+        "Remove the Python list comprehension that filters rows post-fetch (~lines 451-454)",
+        "In get_payment_statuses() (~line 386): same SQL filter addition and Python filter removal (~lines 410-412)",
+        "If Supabase doesnt support NOT LIKE, use .filter('event_type', 'not.like', 'cash_%') or .not_.like('event_type', 'cash_%')",
+        "The pagination break condition (len(rows) < page_limit) now operates on pre-filtered rows from the DB",
+        "Run: python3 -m pytest testes/unit/test_event_ledger*.py -v — all pass",
+        "python3 -m pytest passes"
       ],
       "priority": 9,
       "passes": true,
-      "notes": "Key file: dashboard/src/components/AdminPanel.tsx. It currently has tab switching logic between 'sellers' and 'expenses'. Add 'extratos' as a third tab value. Import ExtratoTab from ./ExtratoTab. Follow the exact same conditional rendering pattern used for ExpensesExportTab. The tab buttons are in the header area of AdminPanel."
+      "notes": "Current post-fetch filtering causes pagination to exit early when most rows in a page are cash/expense events. This silently drops remaining financial events. Supabase Python SDK supports .not_.like() or .filter('col', 'not.like', 'pattern%')."
+    },
+    {
+      "id": "US-010",
+      "title": "Unify partial and full refund fee/shipping handling",
+      "description": "As a system, I want partial refunds to correctly create fee and shipping reversal events when ML actually refunded those charges.",
+      "acceptanceCriteria": [
+        "In processor.py _process_refunded(): replace 'if refunded_fee > 0 and estorno_receita >= amount' (~line 574) with 'if refunded_fee > 0'",
+        "Same for shipping: replace 'if refunded_shipping > 0 and estorno_receita >= amount' (~line 593) with 'if refunded_shipping > 0'",
+        "The refunded_fee and refunded_shipping values already come from charges_details[].amounts.refunded which is the correct source",
+        "Add integration test: partial refund where ML refunded fees — assert refund_fee event IS created",
+        "Add integration test: partial refund where ML did NOT refund fees (refunded_fee=0) — assert refund_fee event is NOT created",
+        "Run: python3 -m pytest testes/integration/test_processor_integration.py testes/unit/test_processor_unit.py -v — all pass",
+        "python3 -m pytest passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Currently partial refunds (estorno_receita < amount) NEVER emit refund_fee or refund_shipping events, even when ML actually refunded the fees. The condition should only check whether charges_details reports a refund, not whether its a full refund."
+    },
+    {
+      "id": "US-011",
+      "title": "Add zero-sum ledger invariant tests",
+      "description": "As a financial system, I want tests that verify the algebraic sum of events per payment lifecycle equals expected net.",
+      "acceptanceCriteria": [
+        "Create testes/unit/test_ledger_invariants.py with parametrized test scenarios",
+        "Scenario 1 - Approved: sale_approved(+1000) + fee_charged(-150) + shipping_charged(-50) = 800",
+        "Scenario 2 - Full refund: all events sum to 0",
+        "Scenario 3 - Partial refund by amount: sale_approved(+1000) + fee_charged(-150) + partial_refund(-300) = 550",
+        "Scenario 4 - Chargeback reimbursed: sale_approved(+1000) + fee_charged(-150) + charged_back(-1000) + reimbursed(+1000) = 850",
+        "Each scenario validates sum(signed_amounts) matches expected_balance with tolerance 0.01",
+        "All signed_amount values pass event_ledger.validate_event() for their event_type (import and call it)",
+        "Run: python3 -m pytest testes/unit/test_ledger_invariants.py -v — all pass",
+        "python3 -m pytest passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Pure unit tests, no DB needed. They validate that EVENT_TYPES sign conventions produce balanced books. Import validate_event from app.services.event_ledger to verify each amount is valid for its event_type."
+    },
+    {
+      "id": "US-012",
+      "title": "Add CA payload value assertions to integration tests",
+      "description": "As a developer, I want integration tests to verify the actual amounts inside CA payloads, not just call counts.",
+      "acceptanceCriteria": [
+        "In testes/integration/test_processor_integration.py: for every assert_called_once() on enqueue_*, add assertions on call_args payload values",
+        "For enqueue_receita: assert the valor in payload equals payment amount (positive float)",
+        "For enqueue_comissao: assert valor equals mp_fee (positive float)",
+        "For enqueue_frete: assert valor equals shipping cost (positive float)",
+        "For enqueue_estorno: assert valor equals refund amount (positive float)",
+        "For enqueue_estorno_taxa: assert valor equals refunded_fee (positive float)",
+        "Assert data_competencia matches expected BRT date for at least one test case",
+        "Run: python3 -m pytest testes/integration/test_processor_integration.py -v — all pass",
+        "python3 -m pytest passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Access payload via mock.call_args. Pattern: mock_cq.enqueue_receita.call_args — check positional args or kwargs for the payload dict containing 'valor'. The exact payload structure depends on how enqueue_receita is called in processor.py — read the code to determine arg positions."
     }
   ]
 }

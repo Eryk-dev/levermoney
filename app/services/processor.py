@@ -247,6 +247,15 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
         # Tratar como venda normal (receita + despesas, sem estorno).
         logger.info(f"Payment {payment_id} charged_back+reimbursed, treating as approved (no estorno)")
         await _process_approved(seller, payment, existing_event_types)
+    elif status == "refunded" and payment.get("status_detail") in ("bpp_refunded", "bpp_covered"):
+        # BPP: ML refunded buyer from ML's pocket. Seller keeps money,
+        # but DRE must reflect the full cycle: receita + devolução + estorno taxa/frete.
+        # Net effect is zero, but the entries are needed for accurate DRE reporting.
+        logger.info(
+            "Payment %s %s, processing as refund for DRE accuracy (receita + devolução + estornos)",
+            payment_id, payment.get("status_detail"),
+        )
+        await _process_refunded(seller, payment, existing_event_types)
     elif status == "refunded" and payment.get("status_detail") == "by_admin":
         # Kit split: ML cancelled original and created new payments for each package.
         # If already has sale event (was processed), we need the estorno. Otherwise skip.
@@ -292,7 +301,7 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
     amount = payment["transaction_amount"]
     date_approved_raw = payment.get("date_approved") or payment.get("date_created", "")
     competencia = _to_brt_date(date_approved_raw)
-    money_release_date = (payment.get("money_release_date") or date_approved_raw)[:10]
+    money_release_date = _to_brt_date(payment.get("money_release_date") or date_approved_raw)
     net = payment.get("transaction_details", {}).get("net_received_amount", 0)
 
     # 3. Extrair taxas direto do ML charges_details (source of truth)

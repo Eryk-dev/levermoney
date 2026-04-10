@@ -186,17 +186,43 @@ lever money/
 │   └── static/
 │       └── install.html         # Landing page self-service install
 ├── dashboard/                   # React SPA (tem seu proprio CLAUDE.md)
+├── docs/
+│   ├── referencia/              # Docs de referencia permanente
+│   │   ├── TABELAS.md           # Schema de todas as tabelas Supabase
+│   │   ├── ROTAS.md             # Todas as rotas da API
+│   │   ├── CODE_MAP.md          # Assinaturas de funcoes
+│   │   ├── REGRAS_NEGOCIO.md    # Regras de negocio criticas
+│   │   ├── FLUXO_DETALHADO.md   # CaWorker, Baixas, Closing, Pipeline
+│   │   ├── BACKGROUND_TASKS.md  # Background tasks (lifespan)
+│   │   ├── IDEMPOTENCIA.md      # Idempotencia e resiliencia
+│   │   ├── IDS_IMPORTANTES.md   # IDs de producao
+│   │   └── TESTES.md            # Simulacao + checklist
+│   ├── auditorias/              # Auditorias pontuais (por data)
+│   ├── API_DOCUMENTATION.md     # Documentacao completa de endpoints
+│   ├── DIAGRAMA_FLUXO_COMPLETO_API.md
+│   └── PLANO_FUNDACAO.md
+├── testes/
+│   ├── conftest.py              # Fixtures compartilhadas (dados reais 141air)
+│   ├── unit/                    # Testes unitarios (16 arquivos)
+│   ├── integration/             # Testes de integracao + reconciliacao DRE
+│   ├── standalone/              # Scripts de teste autonomos
+│   ├── simulacoes/              # Simulacoes com dados reais
+│   ├── validacao/               # Scripts de validacao (balance, coverage)
+│   ├── migracao/                # Scripts de migracao one-off
+│   ├── data/                    # Dados de teste (extratos, cache JSON)
+│   ├── reports/                 # Relatorios gerados
+│   └── utils/                   # Utilitarios de teste
+├── auditorias/
+│   └── prova-real-141air/       # Auditoria independente de saldo (Apr 2026)
 ├── migrations/
-│   ├── 003_expenses_batches_sync_state.sql    # Expense batch tracking + sync_state
-│   ├── 004_onboarding_v2.sql                  # Onboarding V2 schema
-│   ├── 005_expense_batches_gdrive_snapshot.sql # gdrive_* em expense_batches + snapshot_payload
-│   └── 006_payment_events.sql                 # Event ledger table (append-only)
-├── API_DOCUMENTATION.md         # Documentacao completa da API (endpoints detalhados)
-├── PLANO.md                     # Plano do projeto v1.8
-├── FLUXO-DETALHADO.md           # Fluxo detalhado v3.3
-├── REFERENCIA-APIs-ML-MP.md     # Referencia APIs ML/MP
+│   ├── 003_expenses_batches_sync_state.sql
+│   ├── 004_onboarding_v2.sql
+│   ├── 005_expense_batches_gdrive_snapshot.sql
+│   └── 006_payment_events.sql
+├── rfcs/                        # RFCs + planos de execucao
+├── scripts/                     # Scripts operacionais + Ralph
+├── tasks/                       # PRDs de features
 ├── Dockerfile                   # Multi-stage: dashboard build + Python API
-├── docker-compose.yml           # Services: api (8000) + dashboard (3000)
 ├── requirements.txt             # Deps Python
 └── .env                         # Segredos (NAO commitar)
 ```
@@ -299,7 +325,7 @@ Daily Sync (00:01 BRT, D-1 a D-3) ou Backfill manual
            └─ status = "cancelled" / "rejected" → skip
 ```
 
-> Para detalhes sobre CaWorker, Baixas, Financial Closing e Nightly Pipeline, ver `docs/FLUXO_DETALHADO.md`.
+> Para detalhes sobre CaWorker, Baixas, Financial Closing e Nightly Pipeline, ver `docs/referencia/FLUXO_DETALHADO.md`.
 
 ---
 
@@ -309,16 +335,17 @@ Para detalhes especificos, consulte os docs abaixo:
 
 | Doc | Conteudo |
 |-----|----------|
-| `docs/TABELAS.md` | Schema de todas as tabelas Supabase |
-| `docs/CODE_MAP.md` | Assinaturas de todas as funcoes (por service/router) |
-| `docs/ROTAS.md` | Todas as rotas da API com metodos e parametros |
-| `docs/REGRAS_NEGOCIO.md` | Regras de negocio criticas (comissao, fees, datas, filtros, etc.) |
-| `docs/FLUXO_DETALHADO.md` | Fluxo detalhado: CaWorker, Baixas, Closing, Nightly Pipeline |
-| `docs/BACKGROUND_TASKS.md` | Background tasks (lifespan) |
-| `docs/IDS_IMPORTANTES.md` | IDs de producao (Supabase, ML, CA) |
-| `docs/IDEMPOTENCIA.md` | Idempotencia e resiliencia |
-| `docs/TESTES.md` | Simulacao com dados reais + checklist de validacao |
-| `API_DOCUMENTATION.md` | Documentacao completa de endpoints (request/response) |
+| `docs/referencia/TABELAS.md` | Schema de todas as tabelas Supabase |
+| `docs/referencia/CODE_MAP.md` | Assinaturas de todas as funcoes (por service/router) |
+| `docs/referencia/ROTAS.md` | Todas as rotas da API com metodos e parametros |
+| `docs/referencia/REGRAS_NEGOCIO.md` | Regras de negocio criticas (comissao, fees, datas, filtros, etc.) |
+| `docs/referencia/FLUXO_DETALHADO.md` | Fluxo detalhado: CaWorker, Baixas, Closing, Nightly Pipeline |
+| `docs/referencia/BACKGROUND_TASKS.md` | Background tasks (lifespan) |
+| `docs/referencia/IDS_IMPORTANTES.md` | IDs de producao (Supabase, ML, CA) |
+| `docs/referencia/IDEMPOTENCIA.md` | Idempotencia e resiliencia |
+| `docs/referencia/TESTES.md` | Simulacao com dados reais + checklist de validacao |
+| `docs/API_DOCUMENTATION.md` | Documentacao completa de endpoints (request/response) |
+| `docs/auditorias/` | Auditorias pontuais (Jan 2026, Abr 2026, gap analysis) |
 
 ---
 
@@ -331,7 +358,7 @@ Para detalhes especificos, consulte os docs abaixo:
 - **Logs**: `logging.getLogger(__name__)` em cada modulo
 - **Env vars**: via pydantic-settings (BaseSettings + .env)
 - **Sem ORMs**: queries diretas via Supabase SDK
-- **Testes**: 366 testes pytest offline com dados reais (ver `docs/TESTES.md`). Rodar: `python3 -m pytest`
+- **Testes**: 366 testes pytest offline com dados reais (ver `docs/referencia/TESTES.md`). Rodar: `python3 -m pytest`
 
 ---
 
@@ -392,3 +419,10 @@ Para trabalhar no dashboard, consulte esse arquivo. Resumo:
 - Derivar status de pagamento via `event_ledger.derive_payment_status()` (NUNCA reimplementar localmente)
 - Logar em ingles com payment_id/seller_slug para rastreabilidade
 - Rodar `python3 -m pytest` antes de alterar processor.py ou event_ledger.py
+
+## Active Technologies
+- Python 3.12 + FastAPI 0.115.6, httpx 0.28.1, supabase-py 2.11.0, pydantic-settings 2.7.1 (001-daily-cash-reconciliation)
+- Supabase (PostgreSQL) via supabase-py SDK (001-daily-cash-reconciliation)
+
+## Recent Changes
+- 001-daily-cash-reconciliation: Added Python 3.12 + FastAPI 0.115.6, httpx 0.28.1, supabase-py 2.11.0, pydantic-settings 2.7.1

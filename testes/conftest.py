@@ -1,9 +1,8 @@
 """
 Shared fixtures for LeverMoney test suite.
 
-All fixtures here use REAL payment data extracted from the 141air January 2026
-cache. This ensures tests validate against actual ML API responses, not
-synthetic data that might miss edge cases.
+Fixtures use inline payment data (real structures from 141air Jan 2026).
+Integration tests fetch LIVE data from the ML API via conftest_cash.py.
 """
 import sys
 from pathlib import Path
@@ -17,11 +16,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # ---------------------------------------------------------------------------
 # Exclude standalone scripts, simulacoes, utils from pytest collection
 # ---------------------------------------------------------------------------
-collect_ignore_glob = [
-    "standalone/**",
-    "simulacoes/**",
-    "utils/**",
-]
+collect_ignore_glob = []
 
 
 # ---------------------------------------------------------------------------
