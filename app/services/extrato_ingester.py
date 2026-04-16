@@ -114,6 +114,7 @@ _COMPLEMENTARY_EXPENSE_TYPES: frozenset[str] = frozenset({
     "dinheiro_retido",
     "liberacao_cancelada",
     "dinheiro_recebido_cancelado",
+    "pagamento_qr_cancelado",
     "debito_envio_ml",
     "bonus_envio",
     "debito_troca",
@@ -126,6 +127,7 @@ _COMPLEMENTARY_EXPENSE_TYPES: frozenset[str] = frozenset({
 _SIGN_DRIVEN_EXPENSE_TYPES: frozenset[str] = frozenset({
     "liberacao_cancelada",
     "dinheiro_recebido_cancelado",
+    "pagamento_qr_cancelado",
 })
 
 
@@ -174,6 +176,9 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     # "Liberacao de dinheiro cancelada" must come BEFORE "liberacao de dinheiro"
     ("liberacao de dinheiro cancelada",   "liberacao_cancelada",   "expense",  None),
     ("liberacao de dinheiro",             _CHECK_PAYMENTS,         "income",   None),
+    # "Pagamento com código QR Pix cancelado" reverses a prior QR debit — sign
+    # driven by CSV. Must come BEFORE the generic "pagamento com" rule.
+    ("pagamento com codigo qr pix cancelado", "pagamento_qr_cancelado", "income", None),
     ("pagamento com",                     _CHECK_PAYMENTS,         "income",   None),
     # --- CONDITIONAL SKIPS (PIX received — check if ref_id is in payments) ---
     ("pix recebido",                      _CHECK_PAYMENTS,         "income",   None),
@@ -289,6 +294,7 @@ _EXPENSE_TYPE_ABBREV: dict[str, str] = {
     "pix_enviado":              "pe",
     "reembolso_pix_enviado":    "rpe",
     "dinheiro_recebido_cancelado": "dcc",
+    "pagamento_qr_cancelado":   "qrc",
     "pagamento_conta":          "pg",
 }
 
@@ -325,6 +331,7 @@ _DESCRIPTION_TEMPLATES: dict[str, str] = {
     "pix_enviado":           "PIX Enviado - Ref {ref_id}",
     "reembolso_pix_enviado": "Reembolso PIX Enviado - Ref {ref_id}",
     "dinheiro_recebido_cancelado": "Dinheiro Recebido Cancelado - Ref {ref_id}",
+    "pagamento_qr_cancelado": "Pagamento QR Pix Cancelado - Ref {ref_id}",
     "pagamento_conta":       "Pagamento de Conta - Ref {ref_id}",
 }
 

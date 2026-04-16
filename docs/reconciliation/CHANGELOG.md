@@ -128,6 +128,35 @@ Backfill executado em 141air jan/2026: 26 payments extras processados (+R$ 12.53
 
 ---
 
+## 2026-04-16 (continuação) — ERR-0019 + ERR-0020 (extensão para mar/2026)
+
+### Adicionado
+- `docs/reconciliation/ERRORS.md` — ERR-0019 (release vs extrato amount diff) + ERR-0020 (pagamento QR cancelado misclassified).
+- `docs/reconciliation/DECISIONS.md` — ADR-0009 (release align com extrato liberacao 1-pra-1).
+- `docs/reconciliation/dre_141air_2026-03.json` — DRE simulado de mar (receita líquida R$ 104.463,08; resultado operacional R$ 83.615,04).
+- `testes/e2e/test_reconciliation_141air_mar.py` — gate e2e espelhando jan/fev (5 asserts passing).
+- `scripts/ingest_mar_141air.py` — one-shot para ingerir o extrato CSV de mar.
+- `testes/data/extratos/extrato março 141air.csv` — extrato fornecido pelo usuário.
+
+### Modificado
+- `app/services/reconciliation.py`:
+  - Registra `"2026-03": "março"` em `_PERIOD_TO_MES` e `("141air", "março"): "extrato março 141air.csv"` em `_SELLER_TO_FILENAME`.
+  - `align_refund_created_with_extrato()` ganha **case 5** (ERR-0019): quando extrato tem exatamente 1 linha `liberacao` positiva para um pid e o release group do sistema tem amount divergente, override para o amount do extrato.
+- `app/services/extrato_ingester.py`:
+  - Nova regra `("pagamento com codigo qr pix cancelado", "pagamento_qr_cancelado", "income", None)` antes do `_CHECK_PAYMENTS` genérico (ERR-0020).
+  - `pagamento_qr_cancelado` adicionado a `_SIGN_DRIVEN_EXPENSE_TYPES` + `_COMPLEMENTARY_EXPENSE_TYPES`.
+  - Abbrev `qrc` + template de descrição.
+
+### Runs
+- `run_reconciliation.sh 141air 2026-03`:
+  - Pré-ingest: 93,87% créd / 95,28% déb / 19 orphan ext / 5 amount_diff / daily_diff_max R$ 3.682,99.
+  - Pós-ingest (26 linhas novas): 99,94% créd / 100,00% déb / 2 orphan ext (pagamento_qr cancelado) / 1 amount_diff (ERR-0019).
+  - Final (após ERR-0019 + ERR-0020 fixes, re-ingestão de +2 pagamento_qr_cancelado): **100,00% / 100,00% / 0 orphan / 0 amount_diff / R$ 0,00 daily_diff**.
+- Regressão jan+fev confirmada: **100%/100%** em ambos.
+- 15/15 e2e gates passing (5 jan + 5 fev + 5 mar).
+
+---
+
 ## Template
 ```
 ## YYYY-MM-DD

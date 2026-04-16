@@ -491,6 +491,63 @@ Nova constante `_SIGN_DRIVEN_EXPENSE_TYPES`. Durante a primeira-passagem de clas
 
 ---
 
+## ERR-0019 — Release group com fees extras do MP (amount divergente do extrato)
+**Descoberto:** 2026-04-16, durante reconciliação 141air mar/2026
+**Status:** Resolvido em 2026-04-16. Novo case 5 em `align_refund_created_with_extrato`: quando extrato tem exatamente 1 linha `liberacao` para o pid e o release group do sistema tem amount diferente, override para o amount do extrato.
+
+**Sintoma:**
+Amount_diff em 141air mar/2026:
+- pid 148949991586, 2026-03-18, extrato liberacao +R$ 10,24 vs sistema release group +R$ 16,70, diff R$ 6,46.
+
+Só 1 linha no extrato para o ref (apenas "Liberação de dinheiro"). Mas o event ledger (sale_approved + fee_charged + shipping_charged) calculou net +R$ 16,70. MP deduziu ~R$ 6,46 em taxa/antecipação fora do event ledger.
+
+**Causa raiz:**
+Event ledger computa liberacao como sale - fees - shipping. Mas MP ocasionalmente deduz taxas adicionais (antecipação, IOF, ajuste tributário) que não aparecem como `fee_charged`/`shipping_charged` na ML API. Resultado: sistema superestima o release.
+
+**Fix:**
+Case 5 em `align_refund_created_with_extrato`:
+```python
+if group == "release" and len(ext_liberacao_by_pid.get(pid, [])) == 1:
+    ext_line = ext_liberacao_by_pid[pid][0]
+    if mv.amount != ext_line.amount:
+        # override sys amount with extrato amount
+```
+
+Mantém 1-pra-1: só age quando há exatamente 1 linha `liberacao` positiva no extrato para o pid (evita conflitar com disputas multi-linha).
+
+**Lição:**
+Event ledger é fonte canônica do que ML reportou via API, mas MP pode aplicar deduções silenciosas. Extrato é o ground truth final de caixa — align 1-pra-1 quando diverge.
+
+**Arquivos envolvidos:** `app/services/reconciliation.py::align_refund_created_with_extrato`
+
+---
+
+## ERR-0020 — "Pagamento com código QR Pix cancelado" mal classificado
+**Descoberto:** 2026-04-16, durante reconciliação 141air mar/2026
+**Status:** Resolvido em 2026-04-16. Nova regra classifier + sign-driven.
+
+**Sintoma:**
+Linhas "Pagamento com código QR Pix cancelado" eram classificadas como `_CHECK_PAYMENTS` (regra `("pagamento com", _CHECK_PAYMENTS, ...)`). Como o ref_id é de um payment existente, o check-payments pulava a linha (`skipped_internal`) — o cancelamento nunca entrava em mp_expenses.
+
+Em 141air mar: 2 linhas cancelada (+R$ 24,70 + R$ 49,30) órfãs em extrato.
+
+**Causa raiz:**
+Regra `("pagamento com", _CHECK_PAYMENTS, "income", None)` em `EXTRATO_CLASSIFICATION_RULES` matcha substring. "Pagamento com código QR Pix cancelado" cai nessa regra antes que "cancelado" seja considerado.
+
+**Fix:**
+Regra mais específica antes:
+```python
+("pagamento com codigo qr pix cancelado", "pagamento_qr_cancelado", "income", None),
+```
++ adiciona `pagamento_qr_cancelado` em `_SIGN_DRIVEN_EXPENSE_TYPES` (pode reverter crédito ou débito) e em `_COMPLEMENTARY_EXPENSE_TYPES`.
+
+**Lição:**
+Toda nova variação de TRANSACTION_TYPE no extrato precisa de inspeção: se é reversão/cancelamento, provavelmente precisa de pattern específico + sign-driven. ERR-0017, ERR-0018 e ERR-0020 seguem o mesmo pattern de correção.
+
+**Arquivos envolvidos:** `app/services/extrato_ingester.py::EXTRATO_CLASSIFICATION_RULES`, `_SIGN_DRIVEN_EXPENSE_TYPES`, `_COMPLEMENTARY_EXPENSE_TYPES`
+
+---
+
 ## Template (copiar pra novo erro)
 ```
 ## ERR-NNNN — Título curto

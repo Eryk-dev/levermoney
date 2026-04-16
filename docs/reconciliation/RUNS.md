@@ -402,3 +402,45 @@ ERR-0013 (bonus_envio not ingested) is open but low impact: R$ 10.90 single line
 | Daily diff max | R$ 0.00 |
 | Linhas extrato | 690 |
 
+
+## 2026-04-16 17:47 — 141air 2026-03
+**Commit:** 2a2ec4c
+**Trigger:** manual
+
+| Métrica | Valor |
+|---|---|
+| Cobertura créditos | 100.00% |
+| Cobertura débitos | 100.00% |
+| Orphan extrato | 0 |
+| Orphan sistema | 0 |
+| Daily diff max | R$ 0.00 |
+| Linhas extrato | 713 |
+
+
+## 2026-04-16 17:47 — 141air 2026-02
+**Commit:** 2a2ec4c
+**Trigger:** manual
+
+| Métrica | Valor |
+|---|---|
+| Cobertura créditos | 100.00% |
+| Cobertura débitos | 100.00% |
+| Orphan extrato | 0 |
+| Orphan sistema | 0 |
+| Daily diff max | R$ 0.00 |
+| Linhas extrato | 592 |
+
+
+## 2026-04-16 17:47 — 141air 2026-01
+**Commit:** 2a2ec4c
+**Trigger:** manual
+
+| Métrica | Valor |
+|---|---|
+| Cobertura créditos | 100.00% |
+| Cobertura débitos | 100.00% |
+| Orphan extrato | 0 |
+| Orphan sistema | 0 |
+| Daily diff max | R$ 0.00 |
+| Linhas extrato | 690 |
+

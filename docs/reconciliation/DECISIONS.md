@@ -162,6 +162,26 @@ Payments com `status_detail='bpp_refunded'` tipicamente têm o trio sale_approve
 
 ---
 
+## ADR-0009 — Release group alinha com extrato liberacao quando diverge
+**Data:** 2026-04-16
+**Status:** Aceito (complementa ADR-0003, estende align_refund_created_with_extrato)
+
+**Contexto:**
+O event ledger computa o release de cada pagamento como `sale_approved + fee_charged + shipping_charged`. Normalmente bate com a linha "Liberação de dinheiro" do extrato. Em março/2026, surgiu caso (pid 148949991586) em que MP deduziu ~R$ 6,46 adicionais (antecipação/IOF/ajuste) sem emitir `fee_charged` correspondente na API. Resultado: sistema +R$ 16,70 vs extrato +R$ 10,24 = amount_diff R$ 6,46, que não fecha o gate de `per_day_brl: 0,00`.
+
+**Decisão:** `align_refund_created_with_extrato()` ganha case 5: quando extrato tem exatamente 1 linha `liberacao` positiva para um pid e o release group do sistema tem amount diferente, sobrescrever com o amount do extrato (mantém ref/categoria/data de saída).
+
+**Alternativas rejeitadas:**
+- `PCT_TOLERANCE_BY_CATEGORY` para `liberacao`: aceita drift em vez de zerar, quebra a invariante `daily_diff_max = 0`.
+- Criar `release_fee_adjusted` event pós-hoc baseado no diff: complexo, requer escrita de volta no ledger.
+- Ignorar o diff: quebra o gate.
+
+**Consequência:** Extrato vira source of truth do amount do release para ref com 1 linha de liberacao. Payments com múltiplas liberações (split/partial) não são afetados — case só dispara com `len(ext_liberacao_by_pid[pid]) == 1`.
+
+**Referência:** `ERRORS.md#ERR-0019`, `app/services/reconciliation.py::align_refund_created_with_extrato`
+
+---
+
 ## ADR-NNNN — Título curto
 **Data:** YYYY-MM-DD
 **Status:** Aceito | Superseded por ADR-NNNN | Rejeitado

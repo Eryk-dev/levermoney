@@ -41,12 +41,14 @@ EXTRATOS_DIR = PROJECT_ROOT / "testes" / "data" / "extratos"
 _PERIOD_TO_MES = {
     "2026-01": "janeiro",
     "2026-02": "fevereiro",
+    "2026-03": "março",
 }
 
 _SELLER_TO_FILENAME = {
     # Mapping: (seller_slug, mes) → filename fragment used in the extrato CSV
     ("141air", "janeiro"): "extrato janeiro 141Air.csv",
     ("141air", "fevereiro"): "extrato fevereiro 141Air.csv",
+    ("141air", "março"): "extrato março 141air.csv",
     ("net-air", "janeiro"): "extrato janeiro netair.csv",
     ("net-air", "fevereiro"): "extrato fevereiro netair.csv",
     ("netparts-sp", "janeiro"): "extrato janeiro netparts.csv",
@@ -623,6 +625,16 @@ def align_refund_created_with_extrato(
         if (mv.meta or {}).get("group") in {"refund_debit", "refund_fee"}
     }
 
+    # ERR-0019: extrato releases with MP-deducted extra fees. When the extrato
+    # has a single `liberacao` line for a ref AND the system release group
+    # differs in amount (e.g. MP deducted an additional antecipation discount
+    # or tax that isn't in the event ledger), the extrato is source of truth.
+    # Replace the release group amount with the extrato amount on a 1-to-1 map.
+    ext_liberacao_by_pid: dict[str, list[CashMovement]] = defaultdict(list)
+    for mv in ext_movs:
+        if mv.category == "liberacao" and mv.amount > 0:
+            ext_liberacao_by_pid[mv.ref_id].append(mv)
+
     # ERR-0014: bpp_refunded (or similar) release masked by entrada_dinheiro.
     # When a payment's release group exists in the event ledger BUT the extrato
     # carries the cash as a plain entrada_dinheiro line (Programa de Proteção
@@ -669,6 +681,27 @@ def align_refund_created_with_extrato(
                     meta=new_meta,
                 ))
             continue
+
+        # (5) ERR-0019: release group aligned to extrato liberacao. When the
+        # extrato has exactly one liberacao line for the pid and the sys
+        # release group amount differs (MP deducted fees/discounts outside
+        # the event ledger), trust the extrato amount.
+        if group == "release" and len(ext_liberacao_by_pid.get(pid, [])) == 1:
+            ext_line = ext_liberacao_by_pid[pid][0]
+            if mv.amount != ext_line.amount:
+                new_meta = dict(mv.meta or {})
+                new_meta["aligned_to_extrato"] = True
+                new_meta["original_amount"] = float(mv.amount)
+                aligned.append(CashMovement(
+                    date=ext_line.date,
+                    ref_id=mv.ref_id,
+                    amount=ext_line.amount,
+                    category=mv.category,
+                    source=mv.source,
+                    tx_type=mv.tx_type,
+                    meta=new_meta,
+                ))
+                continue
 
         aligned.append(mv)
 
