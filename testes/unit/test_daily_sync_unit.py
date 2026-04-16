@@ -177,8 +177,8 @@ class TestSyncSellerPayments:
         assert result["total_fetched"] == 2  # deduped: 100 and 200
 
     @pytest.mark.asyncio
-    async def test_skips_cancelled_rejected(self, sync_mocks):
-        """Cancelled and rejected payments are skipped."""
+    async def test_skips_rejected_processes_cancelled(self, sync_mocks):
+        """Rejected → skipped (never completed). Cancelled → processor (matches ML Vendas brutas)."""
         m = sync_mocks
         m["ml_api"].search_payments = AsyncMock(side_effect=[
             {"results": [
@@ -190,8 +190,8 @@ class TestSyncSellerPayments:
 
         result = await sync_seller_payments("141air", "2026-01-15", "2026-01-15")
 
-        assert result["skipped"] == 2
-        assert result["orders_processed"] == 0
+        assert result["skipped"] == 1  # only rejected
+        assert result["orders_processed"] == 1  # cancelled flows to processor
 
     @pytest.mark.asyncio
     async def test_skips_marketplace_shipment(self, sync_mocks):

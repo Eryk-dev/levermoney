@@ -258,16 +258,21 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
         await _process_refunded(seller, payment, existing_event_types)
     elif status == "refunded" and payment.get("status_detail") == "by_admin":
         # Kit split: ML cancelled original and created new payments for each package.
-        # If already has sale event (was processed), we need the estorno. Otherwise skip.
-        if "sale_approved" in existing_event_types:
-            logger.info(f"Payment {payment_id} by_admin but already processed, processing refund")
-            await _process_refunded(seller, payment, existing_event_types)
-        else:
-            logger.info(f"Payment {payment_id} refunded/by_admin (kit split), skipping")
+        # Capture both receita + estorno so DRE reflects ML "Vendas brutas" total.
+        # _process_refunded creates sale_approved if missing, then refund_created (net zero).
+        logger.info(f"Payment {payment_id} refunded/by_admin, processing as refund (receita + estorno)")
+        await _process_refunded(seller, payment, existing_event_types)
     elif status in ("refunded", "charged_back"):
         await _process_refunded(seller, payment, existing_event_types)
-    elif status in ("cancelled", "rejected"):
-        logger.info(f"Payment {payment_id} status={status}, skipping")
+    elif status == "cancelled":
+        # Cancelled sales (by_payer/expired): ML still counts these in "Vendas brutas".
+        # Record receita + estorno (same category as devolução) for DRE accuracy. Net zero in cash.
+        logger.info(f"Payment {payment_id} cancelled, processing as refund (receita + estorno)")
+        await _process_refunded(seller, payment, existing_event_types)
+    elif status == "rejected":
+        # Rejected: payment attempts that never succeeded (card declined, high risk, etc).
+        # Never were real sales — ML dashboard also excludes these from "Vendas brutas".
+        logger.info(f"Payment {payment_id} rejected, skipping (never completed)")
     else:
         logger.info(f"Payment {payment_id} status={status}, no action needed")
 
@@ -525,15 +530,25 @@ async def _process_refunded(seller: dict, payment: dict, existing_event_types: s
     if "sale_approved" not in existing_event_types:
         await _process_approved(seller, payment, existing_event_types)
 
-    date_refunded = datetime.now().strftime("%Y-%m-%d")
     amount = payment["transaction_amount"]
     refunds = payment.get("refunds", [])
 
+    # Date fallback hierarchy: refund.date_created → date_last_updated → date_approved → today
+    fallback_date_raw = (
+        payment.get("date_last_updated")
+        or payment.get("date_approved")
+        or payment.get("date_created")
+        or ""
+    )
+    fallback_date = _to_brt_date(fallback_date_raw) if fallback_date_raw else datetime.now().strftime("%Y-%m-%d")
+
     if refunds:
         total_refunded_raw = sum(r.get("amount", 0) for r in refunds)
-        date_refunded = refunds[-1].get("date_created", date_refunded)[:10]
+        raw = refunds[-1].get("date_created") or fallback_date_raw
+        date_refunded = _to_brt_date(raw) if raw else fallback_date
     else:
         total_refunded_raw = payment.get("transaction_amount_refunded") or amount
+        date_refunded = fallback_date
 
     # Estorno da receita não pode exceder transaction_amount.
     estorno_receita = min(total_refunded_raw, amount)

@@ -86,7 +86,7 @@ async def backfill_payments(
 
     processable = [
         p for p in all_payments
-        if p.get("status") in ("approved", "refunded", "in_mediation", "charged_back")
+        if p.get("status") in ("approved", "refunded", "in_mediation", "charged_back", "cancelled")
         and (
             p["id"] not in already_done
             or (reprocess_missing_fees and p["id"] in done_missing_fees)

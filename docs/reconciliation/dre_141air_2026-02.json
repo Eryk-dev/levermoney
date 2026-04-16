@@ -1,0 +1,104 @@
+{
+  "seller": "141air",
+  "period": "2026-02",
+  "rows": [
+    {
+      "code": "1.1.1",
+      "label": "Vendas Mercado Livre",
+      "section": "receita_bruta",
+      "ca_category_uuid": "78f42170-23f7-41dc-80cd-7886c78fc397",
+      "lancamentos": 402,
+      "valor": 119430.7
+    },
+    {
+      "code": "1.1.2",
+      "label": "Vendas Loja Própria (E-commerce)",
+      "section": "receita_bruta",
+      "ca_category_uuid": "00c0bd64-e37b-4def-a69d-acf01353f0d3",
+      "lancamentos": 0,
+      "valor": 0.0
+    },
+    {
+      "code": "1.2.1",
+      "label": "Devoluções e Cancelamentos",
+      "section": "deducoes",
+      "ca_category_uuid": "713ee216-8abe-4bcd-bc54-34421cb62a06",
+      "lancamentos": 60,
+      "valor": -20420.27
+    },
+    {
+      "code": "1.3.4",
+      "label": "Estornos de Taxas e Tarifas",
+      "section": "outras_receitas",
+      "ca_category_uuid": "c4cc890c-126a-48da-8e47-da7c1492620d",
+      "lancamentos": 121,
+      "valor": 16936.68
+    },
+    {
+      "code": "1.3.7",
+      "label": "Estorno de Frete sobre Vendas",
+      "section": "outras_receitas",
+      "ca_category_uuid": "2c0ef767-4983-4c4e-bfec-119f05708cd4",
+      "lancamentos": 29,
+      "valor": 823.06
+    },
+    {
+      "code": "2.2.3",
+      "label": "DIFAL (Diferencial de Alíquota)",
+      "section": "tributos",
+      "ca_category_uuid": "3b1acab2-9fd6-4fce-b9ac-d418c6355c5d",
+      "lancamentos": 0,
+      "valor": 0.0
+    },
+    {
+      "code": "2.8.2",
+      "label": "Comissões de Marketplace",
+      "section": "despesas_vendas",
+      "ca_category_uuid": "699d6072-031a-47bf-9aeb-563d1c2e8a41",
+      "lancamentos": 400,
+      "valor": -15320.88
+    },
+    {
+      "code": "2.9.4",
+      "label": "MercadoEnvios",
+      "section": "despesas_vendas",
+      "ca_category_uuid": "6ccbf8ed-e174-4da0-ac8d-0ed1b387cb32",
+      "lancamentos": 318,
+      "valor": -7794.24
+    },
+    {
+      "code": "2.9.10",
+      "label": "Frete Full",
+      "section": "despesas_vendas",
+      "ca_category_uuid": "27c8de66-cbb2-4778-94a5-b0de4405ae68",
+      "lancamentos": 0,
+      "valor": 0.0
+    },
+    {
+      "code": "2.11.8",
+      "label": "Tarifas de Pagamento",
+      "section": "despesas_financeiras",
+      "ca_category_uuid": "d77aa9d6-dd63-4d67-a622-64c3a05780a5",
+      "lancamentos": 0,
+      "valor": 0.0
+    },
+    {
+      "code": "2.11.9",
+      "label": "Antecipação de Recebíveis",
+      "section": "despesas_financeiras",
+      "ca_category_uuid": "7e9efb50-6039-4238-b844-a10507c42ff2",
+      "lancamentos": 0,
+      "valor": 0.0
+    }
+  ],
+  "subtotals": {
+    "receita_bruta": 119430.7,
+    "deducoes": -20420.27,
+    "outras_receitas": 17759.74,
+    "tributos": 0.0,
+    "despesas_vendas": -23115.12,
+    "despesas_financeiras": 0.0
+  },
+  "receita_liquida": 116770.17,
+  "resultado_operacional": 93655.05
+}

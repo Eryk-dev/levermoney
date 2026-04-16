@@ -10,6 +10,16 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 markers = [
     "integration: tests that require Supabase connection (deselect with '-m \"not integration\"')",
+    "e2e: end-to-end tests (script + DB + files). Always require integration.",
+    "eval_harness: tests for the reconciliation eval harness (T-001)",
+    "reconciliation: tests for reconciliation coverage vs contract targets (T-002, T-050)",
+    "money_sign: tests for signed_amount convention (T-010)",
+    "stale_data: tests for stale mp_expenses cleanup (T-011)",
+    "architecture: tests for cash-movement-per-event architecture (T-012)",
+    "classifier: tests for extrato_ingester + expense_classifier mapping (T-013, T-020)",
+    "golden: snapshot tests of processor output (T-030)",
+    "invariants: ambient invariant assertions (T-040)",
+    "tooling: tests for scripts/ wrappers and logging (T-003, T-004)",
 ]
 # Default: run only offline (unit) tests
 addopts = "-m 'not integration' -v --tb=short"

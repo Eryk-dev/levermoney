@@ -1,0 +1,4041 @@
+{
+  "seller": "141air",
+  "period": "2026-01-01 to 2026-01-31",
+  "stats": {
+    "extrato_lines": 690,
+    "db_events": 2551,
+    "db_expenses": 231,
+    "match": 486,
+    "orphan_extrato": 158,
+    "orphan_system": 39,
+    "amount_diff": 46,
+    "skip": 0
+  },
+  "results": [
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-01",
+        "ref_id": "139632176183",
+        "amount": "-350.00",
+        "category": "transferencia_pix_out",
+        "source": "extrato",
+        "tx_type": "Transferência Pix enviada LILLIAN DA ROCHA",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-01",
+        "ref_id": "139636302479",
+        "amount": "-1172.33",
+        "category": "pagamento_conta",
+        "source": "extrato",
+        "tx_type": "Pagamento de conta Itaú Unibanco  S.A.",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-01",
+        "ref_id": "139636133731",
+        "amount": "-1120.47",
+        "category": "pagamento_conta",
+        "source": "extrato",
+        "tx_type": "Pagamento de conta Itaú Unibanco  S.A.",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-01",
+        "ref_id": "140284411096",
+        "amount": "-57.00",
+        "category": "pagamento_conta",
+        "source": "extrato",
+        "tx_type": "Pagamento de conta Itaú Unibanco  S.A.",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-01",
+        "ref_id": "140291550258",
+        "amount": "-1288.44",
+        "category": "transferencia_pix_out",
+        "source": "extrato",
+        "tx_type": "Transferência Pix enviada Laura Toczek Teixeira",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "139749344683",
+        "amount": "-4850.00",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-3786.10",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "139749344683",
+        "amount": "4318.05",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-02",
+        "ref_id": "139749344683",
+        "amount": "531.95",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "139749344683"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "139749344683",
+        "amount": "531.95",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Lilian Barbosa Oliveira",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "140422465618",
+        "amount": "-2850.00",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "140422485450",
+        "amount": "-2000.00",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "140422465618",
+        "amount": "2318.05",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "140422485450",
+        "amount": "2000.00",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "13.19",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "139562683028",
+        "amount": "-109.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-02",
+        "ref_id": "139562683028",
+        "amount": "-96.71",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": null,
+          "events": 4
+        }
+      }
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-69.56",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "139562683028",
+        "amount": "82.75",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix MAYCON DOUGLAS MAMEDE DOS SANTOS",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-02",
+        "ref_id": "139562683028",
+        "amount": "13.19",
+        "category": "entrada_dinheiro",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ed",
+          "external": "139562683028"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-02",
+        "ref_id": "139562683028",
+        "amount": "13.19",
+        "category": "entrada_dinheiro",
+        "source": "extrato",
+        "tx_type": "Entrada de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "170.58",
+      "extrato": {
+        "date": "2026-01-04",
+        "ref_id": "137943496999",
+        "amount": "-797.70",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-04",
+        "ref_id": "137943496999",
+        "amount": "-627.12",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": null,
+          "events": 6
+        }
+      }
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-456.54",
+      "extrato": {
+        "date": "2026-01-04",
+        "ref_id": "137943496999",
+        "amount": "627.12",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-04",
+        "ref_id": "137943496999",
+        "amount": "170.58",
+        "category": "reembolso_generico",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rg",
+          "external": "137943496999"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-04",
+        "ref_id": "137943496999",
+        "amount": "170.58",
+        "category": "reembolso_generico",
+        "source": "extrato",
+        "tx_type": "Reembolso",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-05",
+        "ref_id": "140087737157",
+        "amount": "-333.86",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-206.84",
+      "extrato": {
+        "date": "2026-01-05",
+        "ref_id": "140087737157",
+        "amount": "270.35",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-05",
+        "ref_id": "140087737157",
+        "amount": "63.51",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "140087737157"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-05",
+        "ref_id": "140087737157",
+        "amount": "63.51",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Valdemir Francisco Da Silva",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-06",
+        "ref_id": "140880408350",
+        "amount": "-29.00",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-06",
+        "ref_id": "140228706789",
+        "amount": "-57.99",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-06",
+        "ref_id": "140880408350",
+        "amount": "29.00",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-11.37",
+      "extrato": {
+        "date": "2026-01-06",
+        "ref_id": "140228706789",
+        "amount": "34.68",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix Jamile Cardoso Batista",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-06",
+        "ref_id": "140228706789",
+        "amount": "23.31",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "140228706789"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-06",
+        "ref_id": "140228706789",
+        "amount": "23.31",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Jamile Cardoso Batista",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-06",
+        "ref_id": "140132250075",
+        "amount": "-832.71",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-627.05",
+      "extrato": {
+        "date": "2026-01-06",
+        "ref_id": "140132250075",
+        "amount": "729.88",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix LIDER LOCACAO DE MAQUINAS LTDA",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-06",
+        "ref_id": "140132250075",
+        "amount": "102.83",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "140132250075"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-06",
+        "ref_id": "140132250075",
+        "amount": "102.83",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a LIDER LOCACAO DE MAQUINAS LTDA",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-07",
+        "ref_id": "141009085184",
+        "amount": "-521.70",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-07",
+        "ref_id": "141009085184",
+        "amount": "405.23",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-07",
+        "ref_id": "139026984141",
+        "amount": "10.90",
+        "category": "bonus_envio",
+        "source": "extrato",
+        "tx_type": "Bônus por envio Mercado Envios",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "5.72",
+      "extrato": {
+        "date": "2026-01-08",
+        "ref_id": "140496724089",
+        "amount": "-169.03",
+        "category": "subscription",
+        "source": "extrato",
+        "tx_type": "Pagamento Supabase",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-10",
+        "ref_id": "140496724089",
+        "amount": "-163.31",
+        "category": "subscription",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": null,
+          "external": "4a0b0a59-343c-4d88-b7c9-287de2ee2139-1767872803923"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-08",
+        "ref_id": "141199931294",
+        "amount": "-500.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-333.78",
+      "extrato": {
+        "date": "2026-01-08",
+        "ref_id": "141199931294",
+        "amount": "417.34",
+        "category": "dinheiro_recebido",
+        "source": "extrato",
+        "tx_type": "Dinheiro recebido",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-08",
+        "ref_id": "141199931294",
+        "amount": "83.56",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "141199931294"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-08",
+        "ref_id": "141199931294",
+        "amount": "83.56",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Pablo Augusto Dudar",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "19.25",
+      "extrato": {
+        "date": "2026-01-08",
+        "ref_id": "141215405790",
+        "amount": "-569.25",
+        "category": "subscription",
+        "source": "extrato",
+        "tx_type": "Pagamento Claude.ai subscription",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-10",
+        "ref_id": "141215405790",
+        "amount": "-550.00",
+        "category": "subscription",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": null,
+          "external": "e3699c66-b7fd-4b90-98e9-0845fdd778a2-1767902659026"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-10",
+        "ref_id": "140794107861",
+        "amount": "-149.10",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-66.48",
+      "extrato": {
+        "date": "2026-01-10",
+        "ref_id": "140794107861",
+        "amount": "107.79",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-10",
+        "ref_id": "140794107861",
+        "amount": "41.31",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "140794107861"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-10",
+        "ref_id": "140794107861",
+        "amount": "41.31",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a MECANICA ITATIBA",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-12",
+        "ref_id": "140915607218",
+        "amount": "-119.37",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-12",
+        "ref_id": "140915607218",
+        "amount": "73.20",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-12",
+        "ref_id": "140500440771",
+        "amount": "-134.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-70.60",
+      "extrato": {
+        "date": "2026-01-12",
+        "ref_id": "140500440771",
+        "amount": "102.75",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix LUCAS EDUARDO PACHECO",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-12",
+        "ref_id": "140500440771",
+        "amount": "32.15",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "140500440771"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-12",
+        "ref_id": "140500440771",
+        "amount": "32.15",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a LUCAS EDUARDO PACHECO",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "140453365536",
+        "amount": "-401.75",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-258.43",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "140453365536",
+        "amount": "330.09",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix HERACLITO XAVIER PAIVA",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-13",
+        "ref_id": "140453365536",
+        "amount": "71.66",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "140453365536"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "140453365536",
+        "amount": "71.66",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a HERACLITO XAVIER PAIVA",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "138580747200",
+        "amount": "39.40",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "139967880194",
+        "amount": "344.97",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "138829029705",
+        "amount": "227.26",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix Ademir Pereira Borges",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "140145789304",
+        "amount": "227.26",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "40.39",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "138801389025",
+        "amount": "-131.95",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-12",
+        "ref_id": "138801389025",
+        "amount": "-91.56",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": null,
+          "events": 11
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "138801389025",
+        "amount": "91.56",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-13",
+        "ref_id": "139125735193",
+        "amount": "128.04",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-14",
+        "ref_id": "139966584410",
+        "amount": "29.49",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-14",
+        "ref_id": "139903567974",
+        "amount": "17.17",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "140250142885",
+        "amount": "-165.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-90.18",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "140250142885",
+        "amount": "128.04",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix MARCOS ROBERTO BASTOS",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-15",
+        "ref_id": "140250142885",
+        "amount": "37.86",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "140250142885"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "140250142885",
+        "amount": "37.86",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a MARCOS ROBERTO BASTOS",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "140043405498",
+        "amount": "98.59",
+        "category": "dinheiro_recebido",
+        "source": "extrato",
+        "tx_type": "Dinheiro recebido",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "141451914771",
+        "amount": "-21.89",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-1.95",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "141451914771",
+        "amount": "11.92",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix HENRIQUE CEZAR DE PAIVA",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-15",
+        "ref_id": "141451914771",
+        "amount": "9.97",
+        "category": "entrada_dinheiro",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ed",
+          "external": "141451914771"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "141451914771",
+        "amount": "9.97",
+        "category": "entrada_dinheiro",
+        "source": "extrato",
+        "tx_type": "Entrada de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "140062875396",
+        "amount": "159.08",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "138918142027",
+        "amount": "135.08",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "141555524687",
+        "amount": "-162.92",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-60.18",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "141555524687",
+        "amount": "111.55",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-15",
+        "ref_id": "141555524687",
+        "amount": "51.37",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "141555524687"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-15",
+        "ref_id": "141555524687",
+        "amount": "51.37",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Washington Alexandre Dos Santos",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "139039262394",
+        "amount": "21.01",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "140245920492",
+        "amount": "125.69",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix 59.614.188 MARCELLO SCHUENG ALVES DE OLIVEIRA",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "141095814009",
+        "amount": "-148.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-81.24",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "141095814009",
+        "amount": "115.07",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-16",
+        "ref_id": "141095814009",
+        "amount": "33.83",
+        "category": "reembolso_generico",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rg",
+          "external": "141095814009"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "141095814009",
+        "amount": "33.83",
+        "category": "reembolso_generico",
+        "source": "extrato",
+        "tx_type": "Reembolso",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "140021184146",
+        "amount": "854.38",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "139955824830",
+        "amount": "186.46",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix WARLEY IDELFONSO FERREIRA",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "140150665598",
+        "amount": "94.03",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix IMOBILIARIA PORTAL DOS SONHOS",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "91.05",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "141703950922",
+        "amount": "-294.02",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-16",
+        "ref_id": "141703950922",
+        "amount": "-202.97",
+        "category": "dinheiro_retido",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "dr",
+          "external": "141703950922"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "141703950922",
+        "amount": "-202.97",
+        "category": "dinheiro_retido",
+        "source": "extrato",
+        "tx_type": "Dinheiro retido Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "9.55",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "140770707157",
+        "amount": "-28.70",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-16",
+        "ref_id": "140770707157",
+        "amount": "-19.15",
+        "category": "dinheiro_retido",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "dr",
+          "external": "140770707157"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "140770707157",
+        "amount": "-19.15",
+        "category": "dinheiro_retido",
+        "source": "extrato",
+        "tx_type": "Dinheiro retido Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "141703950922",
+        "amount": "202.97",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-16",
+        "ref_id": "140770707157",
+        "amount": "19.15",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-5.66",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "141609371619",
+        "amount": "14.78",
+        "category": "dinheiro_recebido",
+        "source": "extrato",
+        "tx_type": "Dinheiro recebido",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-17",
+        "ref_id": "141609371619",
+        "amount": "9.12",
+        "category": "entrada_dinheiro",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ed",
+          "external": "141609371619"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "141609371619",
+        "amount": "-14.78",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "141609371619",
+        "amount": "-9.12",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "141609371619",
+        "amount": "9.12",
+        "category": "entrada_dinheiro",
+        "source": "extrato",
+        "tx_type": "Entrada de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "139418035561",
+        "amount": "46.67",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix Thais Lemos Candido Pimenta da Silva",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "140507536799",
+        "amount": "-274.99",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "140507536799",
+        "amount": "202.97",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix LEONARDO FERREIRA DA LUZ SANTOS",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "137801994937",
+        "amount": "56.18",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix Fábio da Silva Oliveira",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "139374897181",
+        "amount": "11.01",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix JEAN CARLOS BATISTA RIBEIRO",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-83.48",
+      "extrato": {
+        "date": "2026-01-17",
+        "ref_id": "141085645218",
+        "amount": "97.47",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-17",
+        "ref_id": "141085645218",
+        "amount": "13.99",
+        "category": "liberacao",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 7
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-18",
+        "ref_id": "139977496192",
+        "amount": "241.73",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-18",
+        "ref_id": "139388729817",
+        "amount": "300.54",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-18",
+        "ref_id": "139372712227",
+        "amount": "11.01",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-18",
+        "ref_id": "139954665364",
+        "amount": "11.01",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "29.83",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "139348906355",
+        "amount": "-117.70",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-16",
+        "ref_id": "139348906355",
+        "amount": "-87.87",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": null,
+          "events": 12
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "139348906355",
+        "amount": "87.87",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "140494466821",
+        "amount": "-387.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-244.90",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "140494466821",
+        "amount": "316.40",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-19",
+        "ref_id": "140494466821",
+        "amount": "71.50",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "140494466821"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "140494466821",
+        "amount": "71.50",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Fernando Antonio Alves Alipio Junior",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "142646872378",
+        "amount": "-121.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-58.32",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "142646872378",
+        "amount": "90.11",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-19",
+        "ref_id": "142646872378",
+        "amount": "31.79",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "142646872378"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "142646872378",
+        "amount": "31.79",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Breno Henrique Colares Silva",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "139549946052",
+        "amount": "543.20",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-19",
+        "ref_id": "139556522094",
+        "amount": "4166.30",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix M C Da Silva Skopinski",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "140238915792",
+        "amount": "45.28",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "138438608281",
+        "amount": "10.38",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "141218053725",
+        "amount": "-259.00",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-146.94",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "141218053725",
+        "amount": "202.97",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix Valdecir de Quadros",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-20",
+        "ref_id": "141218053725",
+        "amount": "56.03",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "141218053725"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "141218053725",
+        "amount": "56.03",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Valdecir de Quadros",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "140563976561",
+        "amount": "1133.78",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix ELETRIZA BRASIL LTDA",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "139911202778",
+        "amount": "543.44",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "139959098708",
+        "amount": "59.85",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "17.04",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "136565909343",
+        "amount": "-37.80",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-19",
+        "ref_id": "136565909343",
+        "amount": "-20.76",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": null,
+          "events": 9
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "136565909343",
+        "amount": "20.76",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-20",
+        "ref_id": "140249927464",
+        "amount": "251.73",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-21",
+        "ref_id": "140240998217",
+        "amount": "-458.65",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-21",
+        "ref_id": "140240998217",
+        "amount": "541.69",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-21",
+        "ref_id": "139380061139",
+        "amount": "219.49",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-21",
+        "ref_id": "141223348545",
+        "amount": "-854.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-475.34",
+      "extrato": {
+        "date": "2026-01-21",
+        "ref_id": "141223348545",
+        "amount": "665.12",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-21",
+        "ref_id": "141223348545",
+        "amount": "189.78",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "141223348545"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-21",
+        "ref_id": "141223348545",
+        "amount": "189.78",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a EFRATA VEICULOS",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-21",
+        "ref_id": "142952947024",
+        "amount": "-309.00",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-187.94",
+      "extrato": {
+        "date": "2026-01-21",
+        "ref_id": "142952947024",
+        "amount": "248.47",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-21",
+        "ref_id": "142952947024",
+        "amount": "60.53",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "142952947024"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-21",
+        "ref_id": "142952947024",
+        "amount": "60.53",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Ivone Aparecida Ferreira Leite",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "2775723042",
+        "amount": "-612.97",
+        "category": "faturas_ml",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Faturas vencidas do Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142380038891",
+        "amount": "-79.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-24.60",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142380038891",
+        "amount": "52.25",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-22",
+        "ref_id": "142380038891",
+        "amount": "27.65",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "142380038891"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142380038891",
+        "amount": "27.65",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Camila Simoes Campos",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "140806214821",
+        "amount": "93.95",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "11.59",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142651949400",
+        "amount": "-39.99",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-22",
+        "ref_id": "142651949400",
+        "amount": "-28.40",
+        "category": "debito_envio_ml",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "de",
+          "external": "142651949400"
+        }
+      }
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-13.39",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142651949400",
+        "amount": "26.69",
+        "category": "dinheiro_recebido",
+        "source": "extrato",
+        "tx_type": "Dinheiro recebido",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-22",
+        "ref_id": "142651949400",
+        "amount": "13.30",
+        "category": "entrada_dinheiro",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ed",
+          "external": "142651949400"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142651949400",
+        "amount": "13.30",
+        "category": "entrada_dinheiro",
+        "source": "extrato",
+        "tx_type": "Entrada de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142038148246",
+        "amount": "-136.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142038148246",
+        "amount": "103.31",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix GELOMEC AR CONDICIONADO AUTOMOTIVO LTDA",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142225887116",
+        "amount": "-583.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-396.86",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142225887116",
+        "amount": "490.38",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-22",
+        "ref_id": "142225887116",
+        "amount": "93.52",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "142225887116"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142225887116",
+        "amount": "93.52",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Lawrence Eugene Kramer",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-22",
+        "ref_id": "142651949400",
+        "amount": "-28.40",
+        "category": "debito_envio_ml",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Envio do Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "4.46",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "143199074090",
+        "amount": "-131.94",
+        "category": "subscription",
+        "source": "extrato",
+        "tx_type": "Pagamento Notion labs, inc.",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-25",
+        "ref_id": "143199074090",
+        "amount": "-127.48",
+        "category": "subscription",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": null,
+          "external": "67d58a04-4120-4c50-abe8-bf53df6c0761-1769174538065"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "141693604662",
+        "amount": "77.26",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "142304307843",
+        "amount": "-797.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-517.50",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "142304307843",
+        "amount": "657.70",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-23",
+        "ref_id": "142304307843",
+        "amount": "140.20",
+        "category": "reembolso_generico",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rg",
+          "external": "142304307843"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "142304307843",
+        "amount": "140.20",
+        "category": "reembolso_generico",
+        "source": "extrato",
+        "tx_type": "Reembolso",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "139930660133",
+        "amount": "-454.47",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "139930660133",
+        "amount": "352.52",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "140668502871",
+        "amount": "349.60",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "140778735616",
+        "amount": "-209.66",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-23",
+        "ref_id": "140778735616",
+        "amount": "151.57",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-24",
+        "ref_id": "140252805392",
+        "amount": "27.83",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix EVANUS ALVES DUTRA SILVA",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-24",
+        "ref_id": "141747614296",
+        "amount": "719.20",
+        "category": "pagamento_qr",
+        "source": "extrato",
+        "tx_type": "Pagamento com Código QR Pix Geovane Rodrigues Da Silva 01083195042",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-24",
+        "ref_id": "140898783536",
+        "amount": "-317.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-24",
+        "ref_id": "140898783536",
+        "amount": "240.41",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-25",
+        "ref_id": "141979194794",
+        "amount": "96.99",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-25",
+        "ref_id": "141427378366",
+        "amount": "634.52",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-25",
+        "ref_id": "140395321666",
+        "amount": "1369.76",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-25",
+        "ref_id": "143483246774",
+        "amount": "-328.07",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-133.67",
+      "extrato": {
+        "date": "2026-01-25",
+        "ref_id": "143483246774",
+        "amount": "230.87",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-25",
+        "ref_id": "143483246774",
+        "amount": "97.20",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "143483246774"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-25",
+        "ref_id": "143483246774",
+        "amount": "97.20",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Cicera Viviane De Sousa Luna",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "142841935136",
+        "amount": "318.87",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "142841935136",
+        "amount": "-389.00",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "142651643835",
+        "amount": "-236.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-133.14",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "142651643835",
+        "amount": "185.02",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142651643835",
+        "amount": "51.88",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "142651643835"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "142651643835",
+        "amount": "51.88",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Rogerio Machado Da Silva",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "140241282353",
+        "amount": "-111.40",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "140241282353",
+        "amount": "82.62",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "142181590693",
+        "amount": "230.87",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "141385949804",
+        "amount": "405.92",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "143104571692",
+        "amount": "203.89",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-26",
+        "ref_id": "143624212572",
+        "amount": "53000.00",
+        "category": "transferencia_pix_in",
+        "source": "extrato",
+        "tx_type": "Transferência Pix recebida EASY COMERCIO",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "142389527043",
+        "amount": "-309.00",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-187.94",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "142389527043",
+        "amount": "248.47",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-27",
+        "ref_id": "142389527043",
+        "amount": "60.53",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "142389527043"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "142389527043",
+        "amount": "60.53",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Ivone Aparecida Ferreira Leite",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "139809851929",
+        "amount": "-54.77",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "139809851929",
+        "amount": "41.45",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "142005753069",
+        "amount": "-37.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "142005753069",
+        "amount": "26.85",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "142046848116",
+        "amount": "-157.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "142046848116",
+        "amount": "119.65",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "143324328284",
+        "amount": "-566.53",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-480.63",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "143324328284",
+        "amount": "563.54",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-27",
+        "ref_id": "143324328284",
+        "amount": "82.91",
+        "category": "entrada_dinheiro",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ed",
+          "external": "143324328284"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "143324328284",
+        "amount": "82.91",
+        "category": "entrada_dinheiro",
+        "source": "extrato",
+        "tx_type": "Entrada de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "142698519459",
+        "amount": "-99.00",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "142698519459",
+        "amount": "70.20",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "140545137977",
+        "amount": "-513.03",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-27",
+        "ref_id": "140545137977",
+        "amount": "434.45",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "112.25",
+      "extrato": {
+        "date": "2026-01-28",
+        "ref_id": "137614895655",
+        "amount": "-437.45",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-21",
+        "ref_id": "137614895655",
+        "amount": "-325.20",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": null,
+          "events": 14
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-28",
+        "ref_id": "137614895655",
+        "amount": "297.06",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "250.45",
+      "extrato": {
+        "date": "2026-01-29",
+        "ref_id": "141527595509",
+        "amount": "-273.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-29",
+        "ref_id": "141527595509",
+        "amount": "-23.45",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 11
+        }
+      }
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-157.33",
+      "extrato": {
+        "date": "2026-01-29",
+        "ref_id": "141527595509",
+        "amount": "203.89",
+        "category": "dinheiro_recebido",
+        "source": "extrato",
+        "tx_type": "Dinheiro recebido",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-29",
+        "ref_id": "141527595509",
+        "amount": "46.56",
+        "category": "entrada_dinheiro",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ed",
+          "external": "141527595509"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-29",
+        "ref_id": "141527595509",
+        "amount": "46.56",
+        "category": "entrada_dinheiro",
+        "source": "extrato",
+        "tx_type": "Entrada de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "104.14",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "141508375497",
+        "amount": "-122.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-27",
+        "ref_id": "141508375497",
+        "amount": "-18.76",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 16
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "141508375497",
+        "amount": "89.39",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "143415634883",
+        "amount": "-479.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-314.82",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "143415634883",
+        "amount": "397.36",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-30",
+        "ref_id": "143415634883",
+        "amount": "82.54",
+        "category": "reembolso_disputa",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "rd",
+          "external": "143415634883"
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "143415634883",
+        "amount": "82.54",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Envío cancelado a Robinson Luciano Manfro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "amount_diff",
+      "diff": "-45.87",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "143434587855",
+        "amount": "55.86",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": {
+        "date": "2026-01-30",
+        "ref_id": "143434587855",
+        "amount": "9.99",
+        "category": "liberacao",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 14
+        }
+      }
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "143434587855",
+        "amount": "-81.14",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "142100582011",
+        "amount": "407.75",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "142405842346",
+        "amount": "-130.90",
+        "category": "debito_divida_disputa",
+        "source": "extrato",
+        "tx_type": "Débito por dívida Reclamações no Mercado Livre",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "142405842346",
+        "amount": "89.89",
+        "category": "reembolso_disputa",
+        "source": "extrato",
+        "tx_type": "Reembolso Reclamações e devoluções",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_extrato",
+      "diff": "0",
+      "extrato": {
+        "date": "2026-01-30",
+        "ref_id": "142961208182",
+        "amount": "185.02",
+        "category": "liberacao",
+        "source": "extrato",
+        "tx_type": "Liberação de dinheiro",
+        "meta": {}
+      },
+      "system": null
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "140623140222",
+        "amount": "81.88",
+        "category": "liberacao",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "accredited",
+          "events": 5
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-17",
+        "ref_id": "140778735616",
+        "amount": "-22.45",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 16
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-16",
+        "ref_id": "140241282353",
+        "amount": "-19.53",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 16
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-17",
+        "ref_id": "140507536799",
+        "amount": "15.99",
+        "category": "liberacao",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 10
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-23",
+        "ref_id": "140668502871",
+        "amount": "-26.95",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 6
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "141385949804",
+        "amount": "-26.95",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 6
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-22",
+        "ref_id": "140806214821",
+        "amount": "-15.96",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 6
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-25",
+        "ref_id": "141427378366",
+        "amount": "-42.90",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 6
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-23",
+        "ref_id": "141693604662",
+        "amount": "-13.96",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 11
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-22",
+        "ref_id": "142038148246",
+        "amount": "-17.16",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 11
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-25",
+        "ref_id": "141979194794",
+        "amount": "-19.96",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 8
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "143104571692",
+        "amount": "-23.45",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 8
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-27",
+        "ref_id": "143324328284",
+        "amount": "-44.45",
+        "category": "liberacao_negative",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "bpp_refunded",
+          "events": 11
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-29",
+        "ref_id": "143909170600",
+        "amount": "46.99",
+        "category": "liberacao",
+        "source": "payment_events",
+        "tx_type": "",
+        "meta": {
+          "status_detail": "refunded",
+          "events": 6
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-21",
+        "ref_id": "142352059685",
+        "amount": "-612.97",
+        "category": "collection",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": null,
+          "external": "MELIPAYMENTS-COLLECTIONATTEMPT-19633766272026-01-16T00:31:21.352356100"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "143624212572",
+        "amount": "-53000.00",
+        "category": "transfer_intra",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": null,
+          "external": ""
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142919680782",
+        "amount": "2136.71",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "142919680782"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "141969774935",
+        "amount": "115.18",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "141969774935"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142253253608",
+        "amount": "1093.41",
+        "category": "qr_pix_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "qn",
+          "external": "142253253608"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142147169403",
+        "amount": "107.79",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "142147169403"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "141937841529",
+        "amount": "75.94",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "141937841529"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142176183494",
+        "amount": "76.51",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "142176183494"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142421892121",
+        "amount": "229.37",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "142421892121"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142467169052",
+        "amount": "63.68",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "142467169052"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142275241347",
+        "amount": "75.94",
+        "category": "qr_pix_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "qn",
+          "external": "142275241347"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "143062383912",
+        "amount": "230.87",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "143062383912"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "141587118535",
+        "amount": "63.68",
+        "category": "qr_pix_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "qn",
+          "external": "141587118535"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "141234408691",
+        "amount": "63.68",
+        "category": "qr_pix_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "qn",
+          "external": "141234408691"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142037096303",
+        "amount": "204.47",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "142037096303"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142350168888",
+        "amount": "708.02",
+        "category": "qr_pix_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "qn",
+          "external": "142350168888"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142113250388",
+        "amount": "117.87",
+        "category": "qr_pix_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "qn",
+          "external": "142113250388"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142401028865",
+        "amount": "115.95",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "142401028865"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142245565365",
+        "amount": "203.89",
+        "category": "qr_pix_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "qn",
+          "external": "142245565365"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "143061807204",
+        "amount": "25.87",
+        "category": "qr_pix_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "qn",
+          "external": "143061807204"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "141996119325",
+        "amount": "383.81",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "141996119325"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142110483725",
+        "amount": "203.89",
+        "category": "qr_pix_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "qn",
+          "external": "142110483725"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "141320649825",
+        "amount": "519.70",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "141320649825"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "141129363733",
+        "amount": "30.77",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "141129363733"
+        }
+      }
+    },
+    {
+      "status": "orphan_system",
+      "diff": "0",
+      "extrato": null,
+      "system": {
+        "date": "2026-01-26",
+        "ref_id": "142295285552",
+        "amount": "510.16",
+        "category": "liberacao_nao_sync",
+        "source": "mp_expenses",
+        "tx_type": "",
+        "meta": {
+          "suffix": "ln",
+          "external": "142295285552"
+        }
+      }
+    }
+  ]
+}

@@ -294,18 +294,25 @@ class TestStateMachine:
         m["ca_queue"].enqueue_estorno.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_refunded_by_admin_no_existing_skips(self, proc_mocks):
-        """refunded/by_admin with no sale_approved → skip (kit split)."""
+    async def test_refunded_by_admin_no_existing_processes_full_cycle(self, proc_mocks):
+        """refunded/by_admin with no sale_approved → processes receita + estorno (net zero).
+
+        Previously skipped as "kit split", but this caused gross revenue to diverge from
+        ML dashboard "Vendas brutas". Now captures full cycle for DRE accuracy.
+        """
         payment = _make_payment(
             status="refunded", status_detail="by_admin",
+            transaction_amount_refunded=100.0,
         )
         m = proc_mocks
 
         await process_payment_webhook("141air", 12345, payment_data=payment)
 
-        m["event_ledger"].record_event.assert_not_called()
-        m["ca_queue"].enqueue_receita.assert_not_called()
-        m["ca_queue"].enqueue_estorno.assert_not_called()
+        events = _recorded_events(m["event_ledger"])
+        assert "sale_approved" in events
+        assert "refund_created" in events
+        m["ca_queue"].enqueue_receita.assert_called_once()
+        m["ca_queue"].enqueue_estorno.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_refunded_by_admin_with_existing_processes_refund(self, proc_mocks):
@@ -362,8 +369,26 @@ class TestFilters:
         m["event_ledger"].record_event.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_cancelled_skips(self, proc_mocks):
-        payment = _make_payment(status="cancelled")
+    async def test_cancelled_processes_full_cycle(self, proc_mocks):
+        """Cancelled payments create receita + estorno (net zero) to match ML 'Vendas brutas'.
+
+        ML dashboard counts cancelled sales in gross revenue; DRE must mirror that.
+        """
+        payment = _make_payment(status="cancelled", transaction_amount_refunded=100.0)
+        m = proc_mocks
+
+        await process_payment_webhook("141air", 12345, payment_data=payment)
+
+        events = _recorded_events(m["event_ledger"])
+        assert "sale_approved" in events
+        assert "refund_created" in events
+        m["ca_queue"].enqueue_receita.assert_called_once()
+        m["ca_queue"].enqueue_estorno.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rejected_skips(self, proc_mocks):
+        """Rejected payments (card declined, high risk) never were real sales."""
+        payment = _make_payment(status="rejected")
         m = proc_mocks
 
         await process_payment_webhook("141air", 12345, payment_data=payment)

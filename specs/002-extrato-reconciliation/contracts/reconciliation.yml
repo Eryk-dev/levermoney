@@ -1,0 +1,210 @@
+# Contract: Extrato Reconciliation Parameters
+# Versioned. Any change here triggers re-run of full reconciliation suite.
+# Source of truth for numeric parameters and mappings used by tests and the
+# reconciliation engine.
+
+spec: "002-extrato-reconciliation"
+version: 1
+updated: "2026-04-16"
+
+# ---------------------------------------------------------------------------
+# Tolerances
+# ---------------------------------------------------------------------------
+tolerances:
+  per_line_brl: 0.02        # acceptable rounding diff on a single line match
+  per_day_brl: 0.00         # daily totals must match exactly
+  per_period_brl: 0.00      # period totals must match exactly
+
+# ---------------------------------------------------------------------------
+# Coverage targets (used as CI gate thresholds)
+# ---------------------------------------------------------------------------
+coverage:
+  credits_min_pct: 99.5     # minimum % of extrato credit volume that must match
+  debits_min_pct: 99.5      # minimum % of extrato debit volume that must match
+  orphan_extrato_max_count: 3   # max extrato lines without system counterpart
+  orphan_system_max_count: 0    # system entries without extrato counterpart (should be 0)
+
+# ---------------------------------------------------------------------------
+# Sign convention (enforced by app/services/money.py)
+# ---------------------------------------------------------------------------
+sign_convention:
+  income: positive
+  transfer_in: positive
+  expense: negative
+  transfer_out: negative
+
+# ---------------------------------------------------------------------------
+# ID mapping (extrato → system)
+# ---------------------------------------------------------------------------
+id_mapping:
+  # Para payments (sale, liberacao, refund): ref_id do extrato = ml_payment_id
+  payment:
+    extrato_field: reference_id
+    system_table: payment_events
+    system_field: ml_payment_id
+    notes: "Cast para int para match"
+
+  # Para non-payments (bill, pix, dispute, etc.): ref_id do extrato = payment_id (string com possivel sufixo)
+  non_payment:
+    extrato_field: reference_id
+    system_table: mp_expenses
+    system_field: payment_id
+    strip_suffix: true      # ignora ":dr", ":dd", ":rd", ":rg", ":fm"
+    notes: "NÃO usar external_reference (esse é boleto/cobranca_id)"
+
+# ---------------------------------------------------------------------------
+# Event types that contribute to a payment's net cash impact
+# ---------------------------------------------------------------------------
+cash_event_types:
+  - sale_approved
+  - fee_charged
+  - shipping_charged
+  - refund_created
+  - refund_fee
+  - refund_shipping
+  - subsidy_credited
+
+# ---------------------------------------------------------------------------
+# Classifier coverage — every real extrato TRANSACTION_TYPE must map to an expected system category
+# ---------------------------------------------------------------------------
+classifier_coverage:
+  unknown_type_policy: fail   # classifier returning 'other' breaks test
+  # Known types → canonical category (must match what extrato_ingester produces AND what mp_expenses.expense_type stores)
+  known_types:
+    # --- Payments (via _CHECK_PAYMENTS, covered by payment_events when ref is a payment) ---
+    liberacao_de_dinheiro:
+      extrato_type_pattern: "liberacao de dinheiro"
+      category: liberacao
+      primary_source: payment_events
+      fallback_source: mp_expenses
+      fallback_expense_type: liberacao_nao_sync
+    pagamento_com:
+      extrato_type_pattern: "pagamento com"
+      category: pagamento_qr
+      primary_source: payment_events
+      fallback_source: mp_expenses
+      fallback_expense_type: qr_pix_nao_sync
+    pix_recebido:
+      extrato_type_pattern: "pix recebido"
+      category: pix_recebido
+      primary_source: payment_events
+      fallback_source: mp_expenses
+      fallback_expense_type: pix_nao_sync
+    dinheiro_recebido:
+      extrato_type_pattern: "dinheiro recebido"
+      category: dinheiro_recebido
+      primary_source: payment_events
+      fallback_source: mp_expenses
+      fallback_expense_type: dinheiro_recebido
+    reclamacoes_no_mercado_livre:
+      extrato_type_pattern: "reclamacoes no mercado livre"
+      category: debito_divida_disputa
+      primary_source: payment_events  # refund_created event
+      fallback_source: mp_expenses
+      fallback_expense_type: debito_divida_disputa
+
+    # --- Expenses (direct gap → mp_expenses) ---
+    pagamento_de_conta:
+      extrato_type_pattern: "pagamento de conta"
+      category: pagamento_conta
+      source: mp_expenses
+      mp_expense_type: bill_payment       # NAMING MISMATCH: classifier uses "pagamento_conta", storage uses "bill_payment"
+    transferencia_pix_enviada:
+      extrato_type_pattern: "transferencia pix enviada"
+      category: transferencia_pix_out
+      source: mp_expenses
+      mp_expense_type: transfer_pix
+    transferencia_pix_recebida:
+      extrato_type_pattern: "transferencia pix recebida"
+      category: transferencia_pix_in
+      source: mp_expenses
+      mp_expense_type: transferencia_pix_in
+    pix_enviado:
+      extrato_type_pattern: "pix enviado"
+      category: pix_enviado
+      source: mp_expenses
+      mp_expense_type: pix_enviado
+    dinheiro_retido:
+      extrato_type_pattern: "dinheiro retido"
+      category: dinheiro_retido
+      source: mp_expenses
+      mp_expense_type: dinheiro_retido
+      payment_id_suffix: ":dr"
+    reembolso_disputa:
+      extrato_type_pattern: "reembolso reclamacoes|reembolso envio cancelado"
+      category: reembolso_disputa
+      source: mp_expenses
+      mp_expense_type: reembolso_disputa
+      payment_id_suffix: ":rd"
+    reembolso_generico:
+      extrato_type_pattern: "reembolso"
+      category: reembolso_generico
+      source: mp_expenses
+      mp_expense_type: reembolso_generico
+      payment_id_suffix: ":rg"
+    difal:
+      extrato_type_pattern: "difal|diferenca da aliquota"
+      category: difal
+      source: mp_expenses
+      mp_expense_type: difal
+    faturas_ml:
+      extrato_type_pattern: "faturas vencidas"
+      category: faturas_ml
+      source: mp_expenses
+      mp_expense_type: collection
+      payment_id_suffix: ":fm"
+    debito_envio_ml:
+      extrato_type_pattern: "envio do mercado livre"
+      category: debito_envio_ml
+      source: mp_expenses
+      mp_expense_type: debito_envio_ml
+    bonificacao:
+      extrato_type_pattern: "bonificacao|bonus por envio"
+      category: bonus_envio
+      source: mp_expenses
+      mp_expense_type: bonus_envio
+    pagamento_cartao_credito:
+      extrato_type_pattern: "pagamento cartao de credito"
+      category: pagamento_cartao_credito
+      source: mp_expenses
+      mp_expense_type: pagamento_cartao_credito
+    subscription:
+      extrato_type_pattern: "pagamento"              # genérico, deve vir DEPOIS dos mais específicos
+      category: subscription
+      source: mp_expenses
+      mp_expense_type: subscription
+    entrada_dinheiro:
+      extrato_type_pattern: "entrada de dinheiro|transferencia recebida"
+      category: entrada_dinheiro
+      source: mp_expenses
+      mp_expense_type: entrada_dinheiro
+
+    # --- Skips (truly internal, no cash impact) ---
+    liberacao_cancelada:
+      extrato_type_pattern: "liberacao de dinheiro cancelada"
+      action: skip
+      reason: "reversão interna (liberacao + cancelamento = zero)"
+    compra_mercado_livre:
+      extrato_type_pattern: "compra mercado livre|compra mercado libre"
+      action: skip
+      reason: "compra feita pelo próprio seller"
+
+# ---------------------------------------------------------------------------
+# Stale data rule (I-8)
+# ---------------------------------------------------------------------------
+stale_mp_expense:
+  trigger_when: "payment_id ∈ payment_events with sale_approved event"
+  affected_types:
+    - liberacao_nao_sync
+    - qr_pix_nao_sync
+    - pix_nao_sync
+    - dinheiro_recebido
+  action: delete_or_mark_superseded   # decidir na task dedicada
+
+# ---------------------------------------------------------------------------
+# Reconciliation window
+# ---------------------------------------------------------------------------
+window:
+  default_period: calendar_month
+  sellers_pilot: ["141air"]
+  sellers_after_pilot: ["net-air", "netparts-sp", "easy-utilidades", "easypeasy"]

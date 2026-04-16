@@ -336,8 +336,9 @@ async def sync_seller_payments(seller_slug: str, begin_date: str, end_date: str)
         pid = payment["id"]
         status = payment.get("status", "")
 
-        # Skip terminal statuses
-        if status in ("cancelled", "rejected"):
+        # Skip only rejected (card declined etc — never was a real sale).
+        # Cancelled is processed by processor as receita + estorno (matches ML "Vendas brutas").
+        if status == "rejected":
             skipped += 1
             continue
 
@@ -371,7 +372,7 @@ async def sync_seller_payments(seller_slug: str, begin_date: str, end_date: str)
             if (payment.get("collector") or {}).get("id") is not None:
                 skipped += 1
                 continue
-            if status not in ("approved", "refunded", "in_mediation", "charged_back"):
+            if status not in ("approved", "refunded", "in_mediation", "charged_back", "cancelled"):
                 skipped += 1
                 continue
 

@@ -247,17 +247,39 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
 
 
 def _is_incoming_transfer(expense_type: str, payment: dict | None = None) -> bool:
-    """Return True when a transfer-direction expense represents money IN."""
-    if expense_type in ("deposit", "deposito_avulso"):
+    """Return True when a transfer-direction expense represents money IN.
+
+    Sign convention contract (see testes/unit/test_expense_classifier_sign.py):
+      • deposit / deposito_avulso / transferencia_pix_in / entrada_dinheiro:
+        always incoming.
+      • transfer_intra: incoming when the seller is the collector. The MP API
+        exposes the collector via the top-level `collector_id` field; older
+        snapshots may instead nest it under `collector.id`. We accept both,
+        and treat differing collector/payer accounts as incoming by default
+        (matches the dominant case observed in 141air production data).
+    """
+    if expense_type in (
+        "deposit",
+        "deposito_avulso",
+        "transferencia_pix_in",
+        "entrada_dinheiro",
+    ):
         return True
-    # For transfer_intra: check if seller is the collector (receiver)
+
     if expense_type == "transfer_intra" and payment:
-        collector_id = str((payment.get("collector") or {}).get("id") or "")
+        collector_id = str(
+            payment.get("collector_id")
+            or (payment.get("collector") or {}).get("id")
+            or ""
+        )
         payer_id = str((payment.get("payer") or {}).get("id") or "")
-        # If collector != payer, and the payment shows as a money_transfer,
-        # the collector is receiving the money
         if collector_id and payer_id and collector_id != payer_id:
             return True
+        # Default: when we cannot disambiguate, treat as incoming (matches
+        # the bias of real extrato data — see ERR-0001).
+        if not collector_id and not payer_id:
+            return True
+
     return False
 
 

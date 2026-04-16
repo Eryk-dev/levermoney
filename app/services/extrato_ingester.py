@@ -88,6 +88,87 @@ _CA_CATEGORY_CODE_MAP: dict[str, str] = {
 # Sentinel value for conditional skip rules
 _CHECK_PAYMENTS = "_check_payments"
 
+# I-8 stale invariant (spec 002 §3): expense_captured events whose
+# expense_type matches one of these are *stale* once the same payment_id
+# receives a sale_approved event in the ledger. The fallback expense_type
+# was assigned because the payment was missing from the API at ingestion
+# time; once the payment shows up, the row in mp_expenses / payment_events
+# duplicates the canonical record and must be marked superseded.
+STALE_EXPENSE_TYPES: tuple[str, ...] = (
+    "liberacao_nao_sync",
+    "qr_pix_nao_sync",
+    "pix_nao_sync",
+    "dinheiro_recebido",
+)
+
+# Expense types that represent *complementary* cash events on the same
+# reference_id (dispute groups, reversals, fee adjustments). A ref_id may
+# accumulate many of these across days/months. Step (c) of the ingester
+# (plain ref_id already has an expense event) must NOT skip these — each
+# new extrato line is a distinct cash event, not a duplicate.
+_COMPLEMENTARY_EXPENSE_TYPES: frozenset[str] = frozenset({
+    "reembolso_disputa",
+    "reembolso_generico",
+    "reembolso_pix_enviado",
+    "entrada_dinheiro",
+    "dinheiro_retido",
+    "liberacao_cancelada",
+    "dinheiro_recebido_cancelado",
+    "debito_envio_ml",
+    "bonus_envio",
+    "debito_troca",
+    "debito_divida_disputa",
+})
+
+# Types whose direction cannot be inferred from the pattern alone — the
+# underlying line is a reversal/cancellation that can debit OR credit
+# depending on what it reverses. Direction must be taken from the CSV sign.
+_SIGN_DRIVEN_EXPENSE_TYPES: frozenset[str] = frozenset({
+    "liberacao_cancelada",
+    "dinheiro_recebido_cancelado",
+})
+
+
+def find_stale_expense_events(events: list[dict]) -> list[dict]:
+    """Return expense_captured events that violate the I-8 stale invariant.
+
+    A row is stale when:
+      • event_type == 'expense_captured'
+      • metadata.expense_type ∈ STALE_EXPENSE_TYPES
+      • another event for the same ml_payment_id has event_type == 'sale_approved'
+
+    Args:
+        events: payment_events rows. Each must expose ``ml_payment_id``,
+            ``event_type``, and ``metadata`` (with ``expense_type``).
+
+    Returns:
+        List of stale expense_captured events (same dicts as input). The
+        caller is responsible for marking/deleting them.
+    """
+    sale_pids: set[int] = set()
+    candidate_expenses: list[dict] = []
+
+    for evt in events:
+        pid_raw = evt.get("ml_payment_id")
+        if pid_raw is None:
+            continue
+        try:
+            pid = int(pid_raw)
+        except (TypeError, ValueError):
+            continue
+
+        et = evt.get("event_type")
+        if et == "sale_approved":
+            sale_pids.add(pid)
+            continue
+        if et != "expense_captured":
+            continue
+        meta = evt.get("metadata") or {}
+        if meta.get("expense_type") in STALE_EXPENSE_TYPES:
+            candidate_expenses.append((pid, evt))
+
+    return [evt for pid, evt in candidate_expenses if pid in sale_pids]
+
 EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Optional[str]]] = [
     # --- CONDITIONAL SKIPS (check payment_events first) ---
     # "Liberacao de dinheiro cancelada" must come BEFORE "liberacao de dinheiro"
@@ -100,6 +181,12 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("transferencia pix recebida",        "transferencia_pix_in",  "income",   None),
     ("transferencia pix enviada",         "transferencia_pix_out", "expense",  None),
     ("transferencia pix",                 "transferencia_pix",     "expense",  None),
+    # MP refunds a sent PIX back to the seller (pix recipient rejected / bounced).
+    # Extrato records two lines with the same reference_id: the original "Pix enviado"
+    # (expense) and the "Reembolso de Pix enviado" (income). Must come BEFORE "pix enviado"
+    # so the refund line is classified as reembolso_pix_enviado rather than a second
+    # outgoing pix_enviado.
+    ("reembolso de pix enviado",          "reembolso_pix_enviado", "income",   None),
     ("pix enviado",                       "pix_enviado",           "expense",  None),
     ("pagamento de conta",                "pagamento_conta",       "expense",  None),
     # --- INCOME ---
@@ -110,6 +197,10 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("reembolso de tarifas",              "reembolso_generico",    "income",   "1.3.4"),
     ("reembolso",                         "reembolso_generico",    "income",   "1.3.4"),
     ("entrada de dinheiro",               "entrada_dinheiro",      "income",   None),
+    # "Dinheiro recebido cancelado" reverses a prior dinheiro_recebido credit.
+    # Must come BEFORE "dinheiro recebido" so the reversal is classified as its
+    # own type (direction driven by CSV sign — can be + or -).
+    ("dinheiro recebido cancelado",       "dinheiro_recebido_cancelado", "income", None),
     ("dinheiro recebido",                 _CHECK_PAYMENTS,         "income",   None),
     # --- EXPENSES ---
     ("dinheiro retido",                   "dinheiro_retido",       "expense",  None),
@@ -196,6 +287,8 @@ _EXPENSE_TYPE_ABBREV: dict[str, str] = {
     "transferencia_pix_out":    "to",
     "transferencia_pix":        "tp",
     "pix_enviado":              "pe",
+    "reembolso_pix_enviado":    "rpe",
+    "dinheiro_recebido_cancelado": "dcc",
     "pagamento_conta":          "pg",
 }
 
@@ -230,6 +323,8 @@ _DESCRIPTION_TEMPLATES: dict[str, str] = {
     "transferencia_pix_out": "Transferencia PIX Enviada - Ref {ref_id}",
     "transferencia_pix":     "Transferencia PIX - Ref {ref_id}",
     "pix_enviado":           "PIX Enviado - Ref {ref_id}",
+    "reembolso_pix_enviado": "Reembolso PIX Enviado - Ref {ref_id}",
+    "dinheiro_recebido_cancelado": "Dinheiro Recebido Cancelado - Ref {ref_id}",
     "pagamento_conta":       "Pagamento de Conta - Ref {ref_id}",
 }
 
@@ -957,6 +1052,11 @@ async def ingest_extrato_for_seller(
             stats["skipped_internal"] += 1
             continue
 
+        # Categories where the CSV sign is the source of truth (reversals /
+        # cancellations can go either direction depending on what they cancel).
+        if expense_type in _SIGN_DRIVEN_EXPENSE_TYPES:
+            direction = "income" if (tx.get("amount") or 0) >= 0 else "expense"
+
         # _CHECK_PAYMENTS lines need batch lookup before skip/ingest decision.
         # Use a temporary "cp" abbreviation for the composite key.
         if expense_type == _CHECK_PAYMENTS:
@@ -1078,10 +1178,7 @@ async def ingest_extrato_for_seller(
                     continue
                 # Payment exists but was not refunded by processor — ingest the
                 # extrato line (dispute debit not yet reflected in CA).
-            elif expense_type in ("reembolso_disputa", "reembolso_generico",
-                                  "entrada_dinheiro", "dinheiro_retido",
-                                  "liberacao_cancelada", "debito_envio_ml",
-                                  "bonus_envio", "debito_troca"):
+            elif expense_type in _COMPLEMENTARY_EXPENSE_TYPES:
                 pass  # Distinct cash events that complement the payment — always ingest
             else:
                 # For most types, if the ref_id already has a payment record,
@@ -1089,8 +1186,12 @@ async def ingest_extrato_for_seller(
                 stats["already_covered"] += 1
                 continue
 
-        # c. Plain ref_id already captured as expense event (API path)
-        if ref_id in expense_ids_in_db:
+        # c. Plain ref_id already captured as expense event (API path).
+        # Complementary expense types (dispute groups, reversals) may legitimately
+        # produce multiple extrato lines with the same ref_id over time — each one
+        # is a distinct cash event. The composite-key check in step (a) already
+        # prevents duplicate ingestion of the same (ref, type) pair.
+        if ref_id in expense_ids_in_db and expense_type not in _COMPLEMENTARY_EXPENSE_TYPES:
             stats["already_covered"] += 1
             continue
 
@@ -1255,6 +1356,9 @@ async def ingest_extrato_from_csv(
             stats["skipped_internal"] += 1
             continue
 
+        if expense_type in _SIGN_DRIVEN_EXPENSE_TYPES:
+            direction = "income" if (tx.get("amount") or 0) >= 0 else "expense"
+
         if expense_type == _CHECK_PAYMENTS:
             base_key = f"{tx['reference_id']}:cp"
         else:
@@ -1352,17 +1456,16 @@ async def ingest_extrato_from_csv(
                         ref_id,
                     )
                     continue
-            elif expense_type in ("reembolso_disputa", "reembolso_generico",
-                                  "entrada_dinheiro", "dinheiro_retido",
-                                  "liberacao_cancelada", "debito_envio_ml",
-                                  "bonus_envio", "debito_troca"):
+            elif expense_type in _COMPLEMENTARY_EXPENSE_TYPES:
                 pass
             else:
                 stats["already_covered"] += 1
                 continue
 
-        # Plain ref_id already captured as expense event (API path)
-        if ref_id in expense_ids_in_db:
+        # Plain ref_id already captured as expense event (API path).
+        # Complementary types can legitimately repeat on the same ref — skip only
+        # when it is not a complementary type.
+        if ref_id in expense_ids_in_db and expense_type not in _COMPLEMENTARY_EXPENSE_TYPES:
             stats["already_covered"] += 1
             continue
 
