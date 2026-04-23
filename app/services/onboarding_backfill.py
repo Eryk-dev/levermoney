@@ -436,8 +436,11 @@ async def _execute_backfill(
         pid: int = payment["id"]
         status: str = payment.get("status", "")
 
-        # Skip terminal statuses immediately (never need CA events)
-        if status in ("cancelled", "rejected"):
+        # Skip only `rejected` early — payment attempts that never completed
+        # (card declined, high-risk, etc). ML also excludes these from "Vendas brutas".
+        # `cancelled` MUST go through the processor: it records receita + estorno
+        # (net zero cash) so DRE reflects ML's gross sales figure.
+        if status == "rejected":
             progress["skipped"] += 1
             continue
 
@@ -458,7 +461,7 @@ async def _execute_backfill(
             if (payment.get("collector") or {}).get("id") is not None:
                 progress["skipped"] += 1
                 continue
-            if status not in ("approved", "refunded", "in_mediation", "charged_back"):
+            if status not in ("approved", "refunded", "in_mediation", "charged_back", "cancelled"):
                 progress["skipped"] += 1
                 continue
 
@@ -645,54 +648,64 @@ async def _fetch_all_payments(
 ) -> list[dict]:
     """Paginate through all ML payments for the backfill window.
 
-    Uses range_field="money_release_date" so we capture every payment whose
-    cash release falls within the CA accounting window (ca_start_date → yesterday),
-    regardless of when the sale was approved.
+    Queries ML 3x and deduplicates by payment_id so no relevant payment is missed:
+      - `date_approved`: primary — payments whose competencia (DRE date) falls
+        in window. Required because `cancelled` payments have no
+        money_release_date and would otherwise be invisible, dropping gross
+        revenue vs ML's "Vendas brutas".
+      - `money_release_date`: payments whose cash release falls in window
+        (may precede `date_approved` by days/weeks; catches sales approved
+        before `ca_start_date` whose cash lands inside the accounting window).
+      - `date_last_updated`: payments with late status changes (refund,
+        chargeback, mediation) so we re-process stale records.
 
-    Deduplicates by payment_id (last page wins on any collision, which is safe
-    because each payment_id is unique in the ML API).
+    Last-write wins on collision (later range_fields tend to have fresher
+    status snapshots).
     """
     payments_by_id: dict[int, dict] = {}
-    offset = 0
 
-    while True:
-        try:
-            result = await ml_api.search_payments(
+    for range_field in ("date_approved", "money_release_date", "date_last_updated"):
+        offset = 0
+        while True:
+            try:
+                result = await ml_api.search_payments(
+                    seller_slug,
+                    begin_date,
+                    end_date,
+                    offset=offset,
+                    limit=_PAGE_SIZE,
+                    range_field=range_field,
+                )
+            except Exception as exc:
+                logger.error(
+                    "OnboardingBackfill %s: search_payments failed (range=%s) at offset=%d: %s",
+                    seller_slug,
+                    range_field,
+                    offset,
+                    exc,
+                )
+                raise
+
+            batch: list[dict] = result.get("results", [])
+            total: int = result.get("paging", {}).get("total", 0)
+
+            for payment in batch:
+                payments_by_id[payment["id"]] = payment
+
+            offset += len(batch)
+            logger.debug(
+                "OnboardingBackfill %s: %s page fetched %d payments (offset=%d total=%d)",
                 seller_slug,
-                begin_date,
-                end_date,
-                offset=offset,
-                limit=_PAGE_SIZE,
-                range_field="money_release_date",
-            )
-        except Exception as exc:
-            logger.error(
-                "OnboardingBackfill %s: search_payments failed at offset=%d: %s",
-                seller_slug,
+                range_field,
+                len(batch),
                 offset,
-                exc,
+                total,
             )
-            raise
 
-        batch: list[dict] = result.get("results", [])
-        total: int = result.get("paging", {}).get("total", 0)
+            if offset >= total or not batch:
+                break
 
-        for payment in batch:
-            payments_by_id[payment["id"]] = payment
-
-        offset += len(batch)
-        logger.debug(
-            "OnboardingBackfill %s: page fetched %d payments (offset=%d total=%d)",
-            seller_slug,
-            len(batch),
-            offset,
-            total,
-        )
-
-        if offset >= total or not batch:
-            break
-
-        await asyncio.sleep(_PAGE_SLEEP_SECONDS)
+            await asyncio.sleep(_PAGE_SLEEP_SECONDS)
 
     # Return sorted by money_release_date asc, then payment_id asc, for determinism
     return sorted(
