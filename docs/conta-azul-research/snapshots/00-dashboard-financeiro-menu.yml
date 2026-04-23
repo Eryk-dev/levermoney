@@ -1,0 +1,295 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e5]:
+      - generic [ref=e6]:
+        - link [ref=e9] [cursor=pointer]:
+          - /url: "#/ca/visao-geral"
+          - img [ref=e11]
+        - generic:
+          - heading [level=1]
+      - navigation [ref=e16]:
+        - button "Pesquisar" [ref=e18] [cursor=pointer]:
+          - img [ref=e20]
+          - text: Pesquisar
+        - button "Novo registro" [ref=e26] [cursor=pointer]:
+          - img [ref=e28]
+          - text: Novo registro
+          - img [ref=e31]
+        - button [ref=e36] [cursor=pointer]:
+          - img [ref=e38]
+        - button [ref=e42] [cursor=pointer]:
+          - img [ref=e44]
+        - button "unique comercial Configurações e plano" [ref=e48] [cursor=pointer]:
+          - generic [ref=e49]:
+            - img [ref=e53]
+            - generic [ref=e55]:
+              - paragraph [ref=e56]: unique comercial
+              - paragraph [ref=e57]: Configurações e plano
+    - generic [ref=e58]:
+      - complementary [ref=e60]:
+        - button [ref=e61] [cursor=pointer]:
+          - img [ref=e63]
+        - generic [ref=e571]:
+          - list [ref=e572]:
+            - listitem [ref=e573] [cursor=pointer]:
+              - link [ref=e574]:
+                - /url: "#/ca/visao-geral"
+                - img [ref=e576]
+            - listitem [ref=e578] [cursor=pointer]:
+              - img [ref=e580]
+            - listitem [ref=e582] [cursor=pointer]:
+              - link [ref=e583]:
+                - /url: "#/ca/conta-ia/captura"
+                - img [ref=e585]
+            - listitem [ref=e587] [cursor=pointer]:
+              - img [ref=e589]
+            - listitem [ref=e591] [cursor=pointer]:
+              - img [ref=e593]
+            - listitem [ref=e595] [cursor=pointer]:
+              - img [ref=e597]
+            - listitem [ref=e599] [cursor=pointer]:
+              - img [ref=e601]
+            - listitem [ref=e606] [cursor=pointer]:
+              - img [ref=e608]
+            - listitem [ref=e610] [cursor=pointer]:
+              - link [ref=e611]:
+                - /url: "#/ca/antecipacao/antecipacoes-parceiro"
+                - img [ref=e613]
+            - listitem [ref=e617] [cursor=pointer]:
+              - img [ref=e619]
+            - listitem [ref=e621] [cursor=pointer]:
+              - link [ref=e622]:
+                - /url: "#/ca/relatorios"
+                - img [ref=e624]
+            - listitem [ref=e626] [cursor=pointer]:
+              - link [ref=e627]:
+                - /url: "#/ca/integracoes"
+                - img [ref=e629]
+          - list [ref=e631]:
+            - listitem [ref=e632]:
+              - generic "Voltar para menu principal" [ref=e635] [cursor=pointer]:
+                - img [ref=e639]
+                - generic [ref=e642]: Financeiro
+              - tree [ref=e644]:
+                - treeitem "Extrato da Conta PJ Novo" [ref=e645] [cursor=pointer]:
+                  - generic [ref=e646]:
+                    - generic [ref=e647]:
+                      - generic [ref=e649]: Extrato da Conta PJ
+                      - generic [ref=e651]: Novo
+                    - img [ref=e654]
+                - treeitem "Outras contas" [ref=e656] [cursor=pointer]:
+                  - generic [ref=e657]:
+                    - generic [ref=e660]: Outras contas
+                    - img [ref=e663]
+                - treeitem "Visão de competência" [ref=e665] [cursor=pointer]:
+                  - generic [ref=e666]:
+                    - generic [ref=e669]: Visão de competência
+                    - img [ref=e672]
+                - treeitem "Contas a pagar" [ref=e674] [cursor=pointer]:
+                  - generic [ref=e675]:
+                    - generic [ref=e678]: Contas a pagar
+                    - img [ref=e681]
+                - treeitem "DDA Novo" [ref=e683] [cursor=pointer]:
+                  - generic [ref=e684]:
+                    - generic [ref=e685]:
+                      - generic [ref=e687]: DDA
+                      - generic [ref=e689]: Novo
+                    - img [ref=e692]
+                - treeitem "Contas a receber" [ref=e694] [cursor=pointer]:
+                  - generic [ref=e695]:
+                    - generic [ref=e698]: Contas a receber
+                    - img [ref=e701]
+                - treeitem "Inadimplentes Beta" [ref=e703] [cursor=pointer]:
+                  - generic [ref=e704]:
+                    - generic [ref=e705]:
+                      - generic [ref=e707]: Inadimplentes
+                      - generic [ref=e709]: Beta
+                    - img [ref=e712]
+                - treeitem "Extrato de movimentações" [ref=e714] [cursor=pointer]:
+                  - generic [ref=e715]:
+                    - generic [ref=e718]: Extrato de movimentações
+                    - img [ref=e721]
+                - treeitem "Fluxo de caixa" [ref=e723] [cursor=pointer]:
+                  - generic [ref=e724]:
+                    - generic [ref=e727]: Fluxo de caixa
+                    - img [ref=e730]
+                - treeitem "Histórico" [ref=e732] [cursor=pointer]:
+                  - generic [ref=e733]:
+                    - generic [ref=e736]: Histórico
+                    - img [ref=e739]
+                - listitem [ref=e741] [cursor=pointer]:
+                  - generic [ref=e743]:
+                    - generic [ref=e745]: Cadastros
+                    - img [ref=e748]
+      - main [ref=e215]:
+        - generic [ref=e216]:
+          - list [ref=e217]:
+            - listitem [ref=e218] [cursor=pointer]:
+              - generic [ref=e219]: Visão geral
+          - generic [ref=e222]:
+            - generic [ref=e226]:
+              - generic [ref=e228] [cursor=pointer]:
+                - generic [ref=e231]:
+                  - paragraph [ref=e232]:
+                    - text: Plantão ao
+                    - generic [ref=e233]: vivo
+                  - paragraph [ref=e234]: Tire suas dúvidas sobre as funcionalidades com nossos especialistas.
+                - img "Desktop person-m" [ref=e235]
+                - button [ref=e237]:
+                  - img [ref=e239]
+              - generic [ref=e242] [cursor=pointer]:
+                - paragraph [ref=e246]:
+                  - text: A nova tela de relatórios
+                  - generic [ref=e247]: chegou!
+                - img "Report creating" [ref=e248]
+                - button [ref=e250]:
+                  - img [ref=e252]
+            - generic [ref=e257]:
+              - generic [ref=e258]:
+                - button "A receber e a pagar" [ref=e263] [cursor=pointer]:
+                  - generic [ref=e264]: A receber e a pagar
+                  - img [ref=e266]
+                - button "Relação de contas a receber/pagar" [ref=e269] [cursor=pointer]
+              - generic [ref=e270]:
+                - separator [ref=e271]
+                - generic [ref=e272]:
+                  - generic [ref=e274]:
+                    - generic [ref=e276]:
+                      - heading "A receber" [level=3] [ref=e277]
+                      - button "Nova venda" [ref=e279] [cursor=pointer]:
+                        - img [ref=e281]
+                        - text: Nova venda
+                    - generic [ref=e283]:
+                      - button "R$ 176.915,96 Vencidos" [ref=e285]:
+                        - heading "R$ 176.915,96" [level=1] [ref=e286]
+                        - paragraph [ref=e287]: Vencidos
+                      - 'button "R$ 0,00 Vencem hoje Restante do mês: R$ 3.138,79" [ref=e289]':
+                        - heading "R$ 0,00" [level=1] [ref=e290]
+                        - paragraph [ref=e291]: Vencem hoje
+                        - paragraph [ref=e292]: "Restante do mês: R$ 3.138,79"
+                  - generic [ref=e294]:
+                    - generic [ref=e296]:
+                      - heading "A pagar" [level=3] [ref=e297]
+                      - button "Nova despesa" [ref=e298] [cursor=pointer]:
+                        - img [ref=e300]
+                        - text: Nova despesa
+                    - generic [ref=e302]:
+                      - button "R$ 1.143.086,56 Vencidos" [ref=e304]:
+                        - heading "R$ 1.143.086,56" [level=1] [ref=e305]
+                        - paragraph [ref=e306]: Vencidos
+                      - 'button "R$ 23.222,78 Vencem hoje Restante do mês: R$ 263.069,96" [ref=e308]':
+                        - heading "R$ 23.222,78" [level=1] [ref=e309]
+                        - paragraph [ref=e310]: Vencem hoje
+                        - paragraph [ref=e311]: "Restante do mês: R$ 263.069,96"
+            - generic [ref=e312]:
+              - generic [ref=e316]:
+                - heading "Contas financeiras" [level=3] [ref=e319]
+                - generic [ref=e321]:
+                  - heading "R$ -1.049.763,80 Valor total" [level=2] [ref=e324]:
+                    - text: R$ -1.049.763,80
+                    - paragraph [ref=e325]: Valor total
+                  - generic [ref=e326]:
+                    - button "Conta corrente 141AIR - MP Valor R$ 244.024,97 Importe seu extrato" [ref=e328]:
+                      - generic [ref=e329]:
+                        - img [ref=e332]
+                        - generic [ref=e340]:
+                          - paragraph [ref=e341]: Conta corrente
+                          - paragraph [ref=e342]: 141AIR - MP
+                          - paragraph [ref=e343]: Valor R$ 244.024,97
+                      - button "Importe seu extrato" [ref=e348] [cursor=pointer]
+                    - 'button "Cartão de crédito 141AIR - MP - CC Valor R$ 0,00 Vinculada: 141AIR - MP" [ref=e350]':
+                      - generic [ref=e351]:
+                        - img [ref=e354]
+                        - generic [ref=e362]:
+                          - paragraph [ref=e363]: Cartão de crédito
+                          - paragraph [ref=e364]: 141AIR - MP - CC
+                          - paragraph [ref=e365]: Valor R$ 0,00
+                          - paragraph [ref=e370]:
+                            - img [ref=e372]
+                            - text: "Vinculada: 141AIR - MP"
+                    - button "Conta corrente 141AIR - SD Valor R$ -56.321,02 12 Conciliações pendentes" [ref=e375]:
+                      - generic [ref=e376]:
+                        - img [ref=e379]
+                        - generic [ref=e384]:
+                          - paragraph [ref=e385]: Conta corrente
+                          - paragraph [ref=e386]: 141AIR - SD
+                          - paragraph [ref=e387]: Valor R$ -56.321,02
+                      - link "12 Conciliações pendentes" [ref=e393] [cursor=pointer]:
+                        - /url: "#/ca/financeiro/contas/corrente/4a0ad3b4-bd9c-4937-a036-2be9779d2753?source=Dashboard&tab=RECONCILIATION"
+                    - 'button "Cartão de crédito 141AIR - SD - CC Valor R$ 3.140,58 Vinculada: 141AIR - SD" [ref=e395]':
+                      - generic [ref=e396]:
+                        - img [ref=e399]
+                        - generic [ref=e404]:
+                          - paragraph [ref=e405]: Cartão de crédito
+                          - paragraph [ref=e406]: 141AIR - SD - CC
+                          - paragraph [ref=e407]: Valor R$ 3.140,58
+                          - paragraph [ref=e412]:
+                            - img [ref=e414]
+                            - text: "Vinculada: 141AIR - SD"
+                    - 'button "Investimento 141 - MP LEVER TALENTS Valor R$ 11.457,53 Vinculada: 141AIR - MP" [ref=e417]':
+                      - generic [ref=e418]:
+                        - img [ref=e421]
+                        - generic [ref=e429]:
+                          - paragraph [ref=e430]: Investimento
+                          - paragraph [ref=e431]: 141 - MP LEVER TALENTS
+                          - paragraph [ref=e432]: Valor R$ 11.457,53
+                          - paragraph [ref=e437]:
+                            - img [ref=e439]
+                            - text: "Vinculada: 141AIR - MP"
+                    - button "Outro tipo de conta 141 SD - COTAS DE COOPERATIVA Valor R$ 48,00" [ref=e442]:
+                      - generic [ref=e443]:
+                        - img [ref=e446]
+                        - generic [ref=e451]:
+                          - paragraph [ref=e452]: Outro tipo de conta
+                          - paragraph [ref=e453]: 141 SD - COTAS DE COOPERATIVA
+                          - paragraph [ref=e454]: Valor R$ 48,00
+                  - button "Carregar mais" [ref=e459] [cursor=pointer]
+              - generic [ref=e462]:
+                - generic [ref=e464]:
+                  - heading "Fluxo de caixa diário" [level=3] [ref=e465]
+                  - button [ref=e470] [cursor=pointer]:
+                    - img [ref=e472]
+                - generic [ref=e475]:
+                  - img [ref=e480]:
+                    - generic [ref=e503]:
+                      - generic [ref=e505] [cursor=pointer]: Recebimentos
+                      - generic [ref=e508] [cursor=pointer]: Pagamentos
+                      - generic [ref=e512] [cursor=pointer]: Saldo
+                    - generic [ref=e513]:
+                      - generic [ref=e514]: 17 abr
+                      - generic [ref=e515]: 18 abr
+                      - generic [ref=e516]: 19 abr
+                      - generic [ref=e517]: 20 abr
+                      - generic [ref=e518]: 21 abr
+                    - generic [ref=e519]:
+                      - generic [ref=e520]: "-1.250k"
+                      - generic [ref=e521]: "-1.000k"
+                      - generic [ref=e522]: "-750k"
+                      - generic [ref=e523]: "-500k"
+                      - generic [ref=e524]: "-250k"
+                      - generic [ref=e525]: "0"
+                      - generic [ref=e526]: 250k
+                  - button "Atualizar gráfico" [ref=e528] [cursor=pointer]
+                  - paragraph [ref=e530]: "Última atualização: 17/04/2026 às 14h15"
+              - generic [ref=e533]:
+                - generic [ref=e535]:
+                  - heading "Gráfico de vendas" [level=3] [ref=e536]
+                  - button [ref=e541] [cursor=pointer]:
+                    - img [ref=e543]
+                - generic [ref=e546]:
+                  - img [ref=e551]:
+                    - generic [ref=e560] [cursor=pointer]: Faturamento
+                  - button "Atualizar gráfico" [ref=e563] [cursor=pointer]
+                  - paragraph [ref=e565]: "Última atualização: 17/04/2026 às 14h15"
+  - generic:
+    - generic:
+      - generic [ref=e567]:
+        - iframe [ref=e568]:
+          - button "Fechar mensagem da empresa" [ref=f19e4] [cursor=pointer]:
+            - img [ref=f19e5]
+        - iframe [ref=e569]:
+          - button "Olá. Precisa de ajuda?" [ref=f20e5] [cursor=pointer]
+      - iframe [ref=e570]:
+        - button "Abrir janela de mensagens" [ref=f21e5] [cursor=pointer]:
+          - img [ref=f21e7]
+          - img [ref=f21e10]

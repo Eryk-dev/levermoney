@@ -403,6 +403,16 @@ def events_to_payment_movements(
                 if release_date_probe == refund_date_probe and abs(total_net) < Decimal("0.02"):
                     continue  # wash — skip this payment entirely
 
+        # ── ERR-0032: cross-period zero-net wash ─────────────────────────
+        # When the payment was refunded BEFORE release (e.g. buyer cancelled,
+        # status_detail='by_payer' or 'expired'), MP never materialized the
+        # release on the extrato. Sale_approved + refund_created sum to 0 and
+        # the extrato has NO entries for the ref. Emit nothing.
+        if release_evs_all and refund_evs_all and sd in {"by_payer", "expired"}:
+            total_net = _D(sum(_D(e.get("signed_amount")) for e in release_evs_all + refund_evs_all))
+            if abs(total_net) < Decimal("0.02"):
+                continue  # phantom release/refund — skip entire payment
+
         # ── Release group ────────────────────────────────────────────────
         release_evs = release_evs_all
         if release_evs and sd != "by_admin":
@@ -766,6 +776,19 @@ def expenses_to_movements(
         if not date:
             continue
 
+        is_collection_attempt = (
+            expense_type == "collection"
+            and "COLLECTIONATTEMPT" in external.upper()
+        )
+        branch = str(ex.get("business_branch") or "").lower()
+        is_pospaga_internal = (
+            "facturacion pospaga" in branch
+            or (
+                expense_type == "other"
+                and external.startswith("[")
+                and external.endswith("]")
+            )
+        )
         movements.append(CashMovement(
             date=date,
             ref_id=ref_id,
@@ -773,7 +796,9 @@ def expenses_to_movements(
             category=_expense_type_to_category(expense_type),
             source="mp_expenses",
             meta={"suffix": raw_pid.split(":")[1] if ":" in raw_pid else None,
-                  "external": external},
+                  "external": external,
+                  "is_collection_attempt": is_collection_attempt,
+                  "is_pospaga_internal": is_pospaga_internal},
         ))
     return movements
 
@@ -939,6 +964,22 @@ def compute_metrics(
             orphan_ext_by_cat[cat]["count"] += 1
             orphan_ext_by_cat[cat]["amount"] += abs(r.extrato.amount)
         elif r.status == "orphan_system":
+            # ERR-0034: MELIPAYMENTS-COLLECTIONATTEMPT expenses aggregate
+            # multiple fatura debits the extrato lists individually. When
+            # Pass 4 cannot bind the collection to a single fatura line,
+            # ignore it as orphan_system — the itemized ``faturas_ml``
+            # extrato lines already carry the cash movement on the same day.
+            #
+            # ERR-0038: ``Wallet API - Facturacion Pospaga`` rows and their
+            # bracketed-external_reference siblings are MP internal post-paid
+            # billing mirrors (reserved_money / card_validation /
+            # operation_fund). The real fatura debit shows up in the extrato;
+            # ignore the phantom sys movement when Pass 4 could not bind it.
+            meta = r.system.meta or {}
+            if meta.get("is_collection_attempt") or meta.get("is_pospaga_internal"):
+                counters["orphan_system"] -= 1
+                counters["skip"] += 1
+                continue
             cat = r.system.category
             orphan_sys_by_cat[cat]["count"] += 1
             orphan_sys_by_cat[cat]["amount"] += abs(r.system.amount)

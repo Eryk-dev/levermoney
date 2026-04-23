@@ -1,0 +1,252 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e5]:
+      - generic [ref=e6]:
+        - link [ref=e9] [cursor=pointer]:
+          - /url: "#/ca/visao-geral"
+          - img [ref=e11]
+        - heading "Contas financeiras - 141AIR - SD" [level=1] [ref=e751]
+      - navigation [ref=e16]:
+        - button "Pesquisar" [ref=e18] [cursor=pointer]:
+          - img [ref=e20]
+          - text: Pesquisar
+        - button "Novo registro" [ref=e26] [cursor=pointer]:
+          - img [ref=e28]
+          - text: Novo registro
+          - img [ref=e31]
+        - button [ref=e36] [cursor=pointer]:
+          - img [ref=e38]
+        - button [ref=e42] [cursor=pointer]:
+          - img [ref=e44]
+        - button "unique comercial Configurações e plano" [ref=e48] [cursor=pointer]:
+          - generic [ref=e49]:
+            - img [ref=e53]
+            - generic [ref=e55]:
+              - paragraph [ref=e56]: unique comercial
+              - paragraph [ref=e57]: Configurações e plano
+    - generic [ref=e58]:
+      - complementary [ref=e60]:
+        - button [ref=e61] [cursor=pointer]:
+          - img [ref=e63]
+        - generic [ref=e571]:
+          - list [ref=e572]:
+            - listitem [ref=e573] [cursor=pointer]:
+              - link [ref=e574]:
+                - /url: "#/ca/visao-geral"
+                - img [ref=e576]
+            - listitem [ref=e578] [cursor=pointer]:
+              - img [ref=e580]
+            - listitem [ref=e582] [cursor=pointer]:
+              - link [ref=e583]:
+                - /url: "#/ca/conta-ia/captura"
+                - img [ref=e585]
+            - listitem [ref=e587] [cursor=pointer]:
+              - img [ref=e589]
+            - listitem [ref=e591] [cursor=pointer]:
+              - img [ref=e593]
+            - listitem [ref=e595] [cursor=pointer]:
+              - img [ref=e597]
+            - listitem [ref=e599] [cursor=pointer]:
+              - img [ref=e601]
+            - listitem [ref=e606] [cursor=pointer]:
+              - img [ref=e608]
+            - listitem [ref=e610] [cursor=pointer]:
+              - link [ref=e611]:
+                - /url: "#/ca/antecipacao/antecipacoes-parceiro"
+                - img [ref=e613]
+            - listitem [ref=e617] [cursor=pointer]:
+              - img [ref=e619]
+            - listitem [ref=e621] [cursor=pointer]:
+              - link [ref=e622]:
+                - /url: "#/ca/relatorios"
+                - img [ref=e624]
+            - listitem [ref=e626] [cursor=pointer]:
+              - link [ref=e627]:
+                - /url: "#/ca/integracoes"
+                - img [ref=e629]
+          - list [ref=e631]:
+            - listitem [ref=e632]:
+              - generic "Voltar para menu principal" [ref=e635] [cursor=pointer]:
+                - img [ref=e639]
+                - generic [ref=e642]: Financeiro
+              - tree [ref=e644]:
+                - treeitem "Extrato da Conta PJ Novo" [ref=e645] [cursor=pointer]:
+                  - generic [ref=e646]:
+                    - generic [ref=e647]:
+                      - generic [ref=e649]: Extrato da Conta PJ
+                      - generic [ref=e651]: Novo
+                    - img [ref=e654]
+                - treeitem "Outras contas" [ref=e656] [cursor=pointer]:
+                  - generic [ref=e657]:
+                    - generic [ref=e660]: Outras contas
+                    - img [ref=e663]
+                - treeitem "Visão de competência" [ref=e665] [cursor=pointer]:
+                  - generic [ref=e666]:
+                    - generic [ref=e669]: Visão de competência
+                    - img [ref=e672]
+                - treeitem "Contas a pagar" [ref=e674] [cursor=pointer]:
+                  - generic [ref=e675]:
+                    - generic [ref=e678]: Contas a pagar
+                    - img [ref=e681]
+                - treeitem "DDA Novo" [ref=e683] [cursor=pointer]:
+                  - generic [ref=e684]:
+                    - generic [ref=e685]:
+                      - generic [ref=e687]: DDA
+                      - generic [ref=e689]: Novo
+                    - img [ref=e692]
+                - treeitem "Contas a receber" [ref=e694] [cursor=pointer]:
+                  - generic [ref=e695]:
+                    - generic [ref=e698]: Contas a receber
+                    - img [ref=e701]
+                - treeitem "Inadimplentes Beta" [ref=e703] [cursor=pointer]:
+                  - generic [ref=e704]:
+                    - generic [ref=e705]:
+                      - generic [ref=e707]: Inadimplentes
+                      - generic [ref=e709]: Beta
+                    - img [ref=e712]
+                - treeitem "Extrato de movimentações" [ref=e714] [cursor=pointer]:
+                  - generic [ref=e715]:
+                    - generic [ref=e718]: Extrato de movimentações
+                    - img [ref=e721]
+                - treeitem "Fluxo de caixa" [ref=e723] [cursor=pointer]:
+                  - generic [ref=e724]:
+                    - generic [ref=e727]: Fluxo de caixa
+                    - img [ref=e730]
+                - treeitem "Histórico" [ref=e732] [cursor=pointer]:
+                  - generic [ref=e733]:
+                    - generic [ref=e736]: Histórico
+                    - img [ref=e739]
+                - listitem [ref=e741] [cursor=pointer]:
+                  - generic [ref=e743]:
+                    - generic [ref=e745]: Cadastros
+                    - img [ref=e748]
+      - main [ref=e215]:
+        - generic [ref=e754]:
+          - button "Ajuda rápida" [ref=e757] [cursor=pointer]:
+            - img [ref=e759]
+            - text: Ajuda rápida
+          - generic [ref=e763]:
+            - generic [ref=e764]:
+              - button "141AIR - SD" [ref=e768]:
+                - img [ref=e770]
+                - generic [ref=e775]: 141AIR - SD
+                - img [ref=e779]
+              - button "Ações da conta" [ref=e785] [cursor=pointer]:
+                - generic [ref=e786]: Ações da conta
+                - img [ref=e788]
+              - button "Análise por categorias" [ref=e791] [cursor=pointer]:
+                - img [ref=e793]
+                - text: Análise por categorias
+              - generic [ref=e797]:
+                - button [ref=e798] [cursor=pointer]:
+                  - img [ref=e800]
+                - button "Abril de 2026" [ref=e807] [cursor=pointer]:
+                  - generic [ref=e808]: Abril de 2026
+                  - img [ref=e810]
+                - button [ref=e812] [cursor=pointer]:
+                  - img [ref=e814]
+            - generic [ref=e816]:
+              - generic [ref=e817]:
+                - generic [ref=e818]:
+                  - generic [ref=e819]: "Data da última atualização:"
+                  - generic [ref=e820]: 17/04/2026 às 09h15
+                  - img [ref=e822]
+                - generic [ref=e824]:
+                  - generic [ref=e825]: "Data do último lançamento importado:"
+                  - generic [ref=e826]: 10/04/2026
+                  - img [ref=e828]
+              - generic [ref=e832]:
+                - generic [ref=e833]: Saldo atual na ContaAzul
+                - text: R$ -56.321,02
+              - generic [ref=e835]:
+                - generic [ref=e836]:
+                  - text: Valor pendente de conciliação
+                  - img [ref=e839]
+                - text: R$ 0,00
+          - generic [ref=e844]:
+            - list [ref=e845]:
+              - listitem [ref=e846] [cursor=pointer]:
+                - generic [ref=e847]: Conciliações pendentes
+              - listitem [ref=e848] [cursor=pointer]:
+                - generic [ref=e849]: Movimentações
+            - generic [ref=e852]:
+              - generic [ref=e855]:
+                - button [ref=e857] [cursor=pointer]:
+                  - img [ref=e859]
+                - img [ref=e862]
+                - generic [ref=e864]:
+                  - paragraph
+                  - paragraph [ref=e867]:
+                    - generic [ref=e868]:
+                      - text: Existem
+                      - strong [ref=e869]: 12 lançamentos bancários
+                      - text: que não foram conciliados
+                    - text: em março/2026.
+                  - button "Ver conciliações pendentes" [ref=e872] [cursor=pointer]
+              - generic [ref=e875]:
+                - generic [ref=e877]:
+                  - generic [ref=e878]: Pesquise o lançamento bancário
+                  - generic [ref=e883]:
+                    - textbox "Descrição ou valor" [ref=e885]
+                    - button [ref=e889] [cursor=pointer]:
+                      - img [ref=e891]
+                - generic [ref=e896]:
+                  - button "Limpar filtros" [disabled]:
+                    - generic:
+                      - img
+                    - text: Limpar filtros
+                - button "Ver lançamentos arquivados" [ref=e898] [cursor=pointer]
+              - generic [ref=e900]:
+                - list [ref=e901]:
+                  - listitem [ref=e902] [cursor=pointer]:
+                    - generic [ref=e903]: Todos
+                    - generic [ref=e904]: "0"
+                  - listitem [ref=e905] [cursor=pointer]:
+                    - generic [ref=e906]: Recebimentos
+                    - generic [ref=e907]: "0"
+                  - listitem [ref=e908] [cursor=pointer]:
+                    - generic [ref=e909]: Pagamentos
+                    - generic [ref=e910]: "0"
+                - table [ref=e913]:
+                  - rowgroup [ref=e914]:
+                    - row "Selecionar lançamentos Conciliar Editar Desvincular Arquivar Ordenar" [ref=e915]:
+                      - columnheader "Selecionar lançamentos Conciliar Editar Desvincular Arquivar" [ref=e916]:
+                        - generic [ref=e920]:
+                          - generic [ref=e924]:
+                            - button "Selecionar lançamentos" [disabled]:
+                              - generic: Selecionar lançamentos
+                              - generic:
+                                - img
+                          - generic [ref=e927]:
+                            - button "Conciliar" [disabled]:
+                              - generic: Conciliar
+                          - generic [ref=e929]:
+                            - button "Editar" [disabled]
+                          - generic [ref=e930]:
+                            - button "Desvincular" [disabled]
+                          - generic [ref=e932]:
+                            - button "Arquivar" [disabled]:
+                              - generic: Arquivar
+                      - columnheader "Ordenar" [ref=e933]:
+                        - button "Ordenar" [ref=e940] [cursor=pointer]:
+                          - generic [ref=e941]: Ordenar
+                          - img [ref=e943]
+                  - rowgroup
+              - generic [ref=e950]:
+                - img "User relax" [ref=e953]
+                - generic [ref=e955]: Não existem conciliações pendentes no mês.
+                - generic [ref=e956]:
+                  - button "Importar lançamentos automaticamente" [ref=e959] [cursor=pointer]
+                  - button "Importar lançamentos via OFX" [ref=e962] [cursor=pointer]
+  - generic:
+    - generic:
+      - generic [ref=e567]:
+        - iframe [ref=e568]:
+          - button "Fechar mensagem da empresa" [ref=f19e4] [cursor=pointer]:
+            - img [ref=f19e5]
+        - iframe [ref=e569]:
+          - button "Olá. Precisa de ajuda?" [ref=f20e5] [cursor=pointer]
+      - iframe [ref=e570]:
+        - button "Abrir janela de mensagens" [ref=f21e5] [cursor=pointer]:
+          - img [ref=f21e7]
+          - img [ref=f21e10]

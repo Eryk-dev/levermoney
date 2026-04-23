@@ -1,0 +1,33 @@
+{
+  "totalItems": 25,
+  "captured_at": "2026-04-17T17:27:00Z",
+  "company": "unique comercial (141AIR group)",
+  "pattern": "Each empresa has 2 CCs: VARIÁVEL (CC00N.1) + FIXO (CC00N.2)",
+  "items": [
+    { "id": "ea62b7c0-be2f-11f0-b53b-c7780e8df70d", "code": "CC001.1", "name": "NETAIR - VARIÁVEL", "parent": null, "active": true },
+    { "id": "c6154906-f78b-11f0-8a55-a7d4cde47b3d", "code": "CC001.2", "name": "NETAIR - FIXO", "parent": null, "active": true },
+    { "id": "f2157c8c-be2f-11f0-a5d1-1720678d9ade", "code": "CC002.1", "name": "NETPARTS - VARIÁVEL", "parent": null, "active": true },
+    { "id": "03277ef4-f78c-11f0-8753-2b9bd3fd63e1", "code": "CC002.2", "name": "NETPARTS - FIXO", "parent": null, "active": true },
+    { "id": "f7c214a6-be2f-11f0-8080-ab23c683d2a1", "code": "CC003.1", "name": "141AIR - VARIÁVEL", "parent": null, "active": true },
+    { "id": "4d48054e-f78c-11f0-8f17-5ff741445e86", "code": "CC003.2", "name": "141AIR - FIXO", "parent": null, "active": true },
+    { "id": "fe22bdbe-be2f-11f0-b3a4-432a9ff21e7c", "code": "CC004.1", "name": "EASYPEASY - VARIÁVEL", "parent": null, "active": true },
+    { "id": "6dc7bb5c-f78c-11f0-a7a2-c78ab116c047", "code": "CC004.2", "name": "EASYPEASY - FIXO", "parent": null, "active": true },
+    { "id": "04ddd1de-be30-11f0-818a-c3572b802fb1", "code": "CC005.1", "name": "UNIQUE - VARIÁVEL", "parent": null, "active": true },
+    { "id": "860e8a10-f78c-11f0-b44a-8f2fdcca866d", "code": "CC005.2", "name": "UNIQUE - FIXO", "parent": null, "active": true },
+    { "id": "0a76ea72-be30-11f0-8cde-2fd643481fb8", "code": "CC006.1", "name": "BELLATOR - VARIÁVEL", "parent": null, "active": true },
+    { "id": "934151a4-f78c-11f0-8982-0b89fc62071d", "code": "CC006.2", "name": "BELLATOR - FIXO", "parent": null, "active": true },
+    { "id": "0e6a5916-be30-11f0-bf2d-57ebcdeb1fa2", "code": "CC007.1", "name": "LEVER TALENTS - VARIÁVEL", "parent": null, "active": true },
+    { "id": "a4dcf080-f78c-11f0-8ee5-93cc6499e829", "code": "CC007.2", "name": "LEVER TALENTS - FIXO", "parent": null, "active": true },
+    { "id": "194153f8-be30-11f0-9aaf-5b7578694f27", "code": "CC008.1", "name": "GRUPO - VARIÁVEL", "parent": null, "active": true },
+    { "id": "bf7e882c-f78c-11f0-aee1-3f1d8fcb8536", "code": "CC008.2", "name": "GRUPO - FIXO", "parent": null, "active": true },
+    { "id": "428ad31c-d4f9-11f0-9583-efbbf33ae1cb", "code": "CC009.1", "name": "VICTOR - VARIÁVEL", "parent": null, "active": true },
+    { "id": "cf9ddda2-f78c-11f0-974e-2375f5da6713", "code": "CC009.2", "name": "VICTOR - FIXO", "parent": null, "active": true },
+    { "id": "dfe621a6-f179-11f0-9309-2798c0988889", "code": "CC010.1", "name": "EASYPEASY SP - VARIÁVEL", "parent": null, "active": true },
+    { "id": "e0f88b24-f78c-11f0-930e-d3ca7ab74fa4", "code": "CC010.2", "name": "EASYPEASY SP - FIXO", "parent": null, "active": true },
+    { "id": "c275bac8-1659-11f1-8244-071a73efeb4e", "code": "TESTE", "name": "141TESTE", "parent": null, "active": true },
+    { "id": "283849d6-0d9d-11f1-a89d-63a7732f3cd1", "code": null, "name": "TESTE 141AIR", "parent": null, "active": true },
+    { "id": "6eeeae68-0881-11f1-8d77-cf898b71bb8e", "code": null, "name": "NETPARTS TESTE", "parent": null, "active": true },
+    { "id": "852eb9ac-0872-11f1-8ff0-f355670cfe2d", "code": null, "name": "ML NETAIR", "parent": null, "active": true },
+    { "id": "99af6286-cb15-11f0-8448-b3a5ea48e821", "code": null, "name": "UNIQUE EU", "parent": null, "active": true }
+  ]
+}

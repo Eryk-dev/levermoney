@@ -119,6 +119,23 @@ _COMPLEMENTARY_EXPENSE_TYPES: frozenset[str] = frozenset({
     "bonus_envio",
     "debito_troca",
     "debito_divida_disputa",
+    # ERR-0024: _CHECK_PAYMENTS fallbacks must co-exist with other events
+    # for the same ref (e.g. a cashback from release_report_sync that
+    # aggregates a mediation_cancel doesn't remove the need to ingest the
+    # detailed liberacao_nao_sync line from the extrato).
+    "liberacao_nao_sync",
+    "qr_pix_nao_sync",
+    # ERR-0030: dinheiro_recebido / pix_nao_sync are extrato-derived credits
+    # that often coexist with the payment_id's other events (dinheiro_retido,
+    # debito_divida_disputa, refunds). Without this, a refs with a dispute
+    # group has the "Dinheiro recebido" extrato line silently dropped.
+    "dinheiro_recebido",
+    "pix_nao_sync",
+    # ERR-0031: compra_ml / transferencia_saldo reference a payment_id that
+    # may already have other events (e.g. a dispute group); each is a distinct
+    # cash event and must be ingested.
+    "compra_ml",
+    "transferencia_saldo",
 })
 
 # Types whose direction cannot be inferred from the pattern alone — the
@@ -128,6 +145,18 @@ _SIGN_DRIVEN_EXPENSE_TYPES: frozenset[str] = frozenset({
     "liberacao_cancelada",
     "dinheiro_recebido_cancelado",
     "pagamento_qr_cancelado",
+    # ERR-0023: _CHECK_PAYMENTS fallbacks are also ambiguous ("Pagamento com
+    # QR Pix X" can be outgoing or incoming; "Liberação" is usually income
+    # but can be a reversed cancellation for edge cases).
+    "liberacao_nao_sync",
+    "qr_pix_nao_sync",
+    # ERR-0025: cancellation/refund lines can debit or credit depending on
+    # what they reverse. Examples:
+    #   "Pagamento de conta" (-2168,75) vs "Reembolso de pagamento de conta" (+2168,75)
+    #   "Reembolso Reclamações" (+130,89) vs "Cancelamento do reembolso" (-0,89)
+    "pagamento_conta",
+    "reembolso_generico",
+    "reembolso_disputa",
 })
 
 
@@ -220,14 +249,24 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("bonificacao",                       "bonus_envio",           "income",   "1.3.7"),
     ("bonus por envio",                   "bonus_envio",           "income",   "1.3.7"),
     ("bônus por envio",                   "bonus_envio",           "income",   "1.3.7"),
-    ("compra mercado libre",              None,                    None,       None),
-    ("compra mercado livre",              None,                    None,       None),
-    ("transferencia enviada",             None,                    None,       None),
-    ("transferência enviada",             None,                    None,       None),
+    # ERR-0031: "Compra Mercado Livre" = seller purchased on ML as buyer.
+    # Real cash outflow. Previously None (skip), but that left the amount
+    # in extrato totals without a sys_mov → residual daily_diff.
+    ("compra mercado libre",              "compra_ml",             "expense",  None),
+    ("compra mercado livre",              "compra_ml",             "expense",  None),
+    # ERR-0026: outgoing transfers (e.g. "Transferência enviada NETPARTS...")
+    # are real cash outflows to external parties. Previously classified as None
+    # (skipped), which left the R$ amount in extrato totals without any sys_mov
+    # → daily_diff regression. Use sign-driven direction for edge cases.
+    ("transferencia enviada",             "transferencia_pix_out", "expense",  None),
+    ("transferência enviada",             "transferencia_pix_out", "expense",  None),
     ("transferencia recebida",            "entrada_dinheiro",      "income",   None),
     ("transferência recebida",            "entrada_dinheiro",      "income",   None),
-    ("transferencia de saldo",            None,                    None,       None),
-    ("transferência de saldo",            None,                    None,       None),
+    # ERR-0031: "Transferência de saldo" (even with "no seu nome") is a
+    # real debit/credit from the perspective of this MP account. Sign-driven
+    # direction. Previously None (skip) left amount in extrato totals.
+    ("transferencia de saldo",            "transferencia_saldo",   "expense",  None),
+    ("transferência de saldo",            "transferencia_saldo",   "expense",  None),
     # FIX: credit card payments are real debits, not internal transfers.
     # ca_category=None → pending_review (user must assign the correct CA category).
     ("pagamento cartao de credito",       "pagamento_cartao_credito", "expense", None),
@@ -244,9 +283,13 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("dinheiro retirado renda",            "renda_retirada",        "income",   None),
     # Internal transfers to sub-accounts (e.g. Lever Talents)
     ("dinheiro reservado",                 "reserva_subconta",      "expense",  None),
-    # Purchase made via ML (product description embedded in tx_type)
+    # Purchase made via ML (product description embedded in tx_type).
+    # ERR-0037: these are real cash-out transactions — the seller paid for
+    # a purchase inside ML. Classified as compra_ml (same bucket as the
+    # canonical "Compra Mercado Livre" lines above) so reconciliation can
+    # match them to the system side via the payment_id.
     # e.g. "Compra de Adaptador Acelerador Piloto Automático..."
-    ("compra de ",                        None,                    None,       None),
+    ("compra de ",                        "compra_ml",             "expense",  None),
 ]
 
 # Fallback expense_type when _CHECK_PAYMENTS finds a line NOT in the payments
@@ -296,6 +339,9 @@ _EXPENSE_TYPE_ABBREV: dict[str, str] = {
     "dinheiro_recebido_cancelado": "dcc",
     "pagamento_qr_cancelado":   "qrc",
     "pagamento_conta":          "pg",
+    # ERR-0031: new types for previously-skipped extrato lines
+    "compra_ml":                "cml",
+    "transferencia_saldo":      "ts",
 }
 
 
@@ -333,6 +379,9 @@ _DESCRIPTION_TEMPLATES: dict[str, str] = {
     "dinheiro_recebido_cancelado": "Dinheiro Recebido Cancelado - Ref {ref_id}",
     "pagamento_qr_cancelado": "Pagamento QR Pix Cancelado - Ref {ref_id}",
     "pagamento_conta":       "Pagamento de Conta - Ref {ref_id}",
+    # ERR-0031
+    "compra_ml":             "Compra Mercado Livre - Ref {ref_id}",
+    "transferencia_saldo":   "Transferencia de Saldo MP - Ref {ref_id}",
 }
 
 
@@ -826,6 +875,79 @@ def _batch_lookup_expense_payment_ids(
     return found
 
 
+def _batch_lookup_max_suffix_per_base(
+    db,
+    seller_slug: str,
+    base_keys: set[str],
+    before_date: str | None = None,
+) -> dict[str, int]:
+    """For each base_key (e.g. "123456:rd"), return the highest suffix :N
+    already in payment_events. Keys with no DB row → 0. Keys with just the
+    base row → 1. Keys with :2 → 2, etc. Used to seed `_key_counter` so
+    cross-month ingests don't collide on the same base_key (ERR-0029).
+
+    When `before_date` is provided, only events with
+    ``competencia_date < before_date`` are counted. This is required to keep
+    re-ingests of the same month idempotent: if Jan already has `:rd:1..3`,
+    re-running Jan must start the counter at 0 (so composite_ids_in_db dedup
+    catches the existing rows) while cross-month Feb runs must still see the
+    Jan suffixes so their new rows go to `:rd:4..N` without colliding.
+    """
+    result: dict[str, int] = {k: 0 for k in base_keys}
+    if not base_keys:
+        return result
+
+    # Build ref_id → base_keys map (per ref, we scan all its events)
+    refs_to_bases: dict[str, list[str]] = {}
+    for bk in base_keys:
+        base_ref = bk.split(":")[0]
+        refs_to_bases.setdefault(base_ref, []).append(bk)
+
+    numeric_refs: list[int] = []
+    for rid in refs_to_bases:
+        try:
+            numeric_refs.append(int(rid))
+        except (ValueError, TypeError):
+            continue
+
+    if not numeric_refs:
+        return result
+
+    for i in range(0, len(numeric_refs), 100):
+        chunk = numeric_refs[i : i + 100]
+        q = (
+            db.table("payment_events")
+            .select("reference_id, competencia_date")
+            .eq("seller_slug", seller_slug)
+            .eq("event_type", "expense_captured")
+            .in_("ml_payment_id", chunk)
+        )
+        if before_date:
+            q = q.lt("competencia_date", before_date)
+        r = q.range(0, 4999).execute()
+        for row in r.data or []:
+            ref = str(row.get("reference_id") or "")
+            if not ref:
+                continue
+            # ref format: "{pid}:{abbrev}" or "{pid}:{abbrev}:{N}"
+            parts = ref.split(":")
+            if len(parts) < 2:
+                continue
+            base_ref, abbrev = parts[0], parts[1]
+            bk = f"{base_ref}:{abbrev}"
+            if bk not in result:
+                continue
+            if len(parts) == 2:
+                result[bk] = max(result[bk], 1)
+            else:
+                try:
+                    n = int(parts[2])
+                    result[bk] = max(result[bk], n)
+                except (ValueError, TypeError):
+                    pass
+    return result
+
+
 def _batch_lookup_composite_expense_ids(
     db,
     seller_slug: str,
@@ -887,12 +1009,19 @@ def _fuzzy_match_expense(
     amount: float,
     date: str,
     expense_types: list[str],
+    extrato_ref_id: str | None = None,
 ) -> bool:
     """Check if an expense_captured event exists with matching amount, date, and type.
 
     Used to deduplicate faturas ML and similar charges that appear in the
     extrato with internal ML IDs (e.g. 27xxxxx) while an existing event stores
     them with collection IDs (e.g. 14xxxxxxxxxx). Same charge, different IDs.
+
+    ERR-0033: the dedup only fires when the extrato ref_id and the candidate
+    stored ref_id live in different ID namespaces (short legacy bill-id ≤10
+    digits vs long payment-id ≥11 digits). If both refs share the same
+    namespace they are distinct charges that happen to share a value and
+    must each be ingested.
 
     Matches by: seller_slug + approximate amount (within R$ 0.01) +
     competencia_date within ±7 days + expense_type in the given list.
@@ -904,6 +1033,15 @@ def _fuzzy_match_expense(
     """
     if not expense_types:
         return False
+
+    def _namespace(ref: str) -> str:
+        """'short' for ≤10-digit legacy bill IDs, 'long' for ≥11-digit payment IDs."""
+        digits = "".join(ch for ch in (ref or "") if ch.isdigit())
+        if not digits:
+            return "unknown"
+        return "short" if len(digits) <= 10 else "long"
+
+    ext_ns = _namespace(extrato_ref_id) if extrato_ref_id else None
 
     try:
         from datetime import datetime, timedelta
@@ -926,13 +1064,18 @@ def _fuzzy_match_expense(
             if row_expense_type not in expense_types:
                 continue
             existing_amount = abs(float(row.get("signed_amount") or 0))
-            if abs(existing_amount - amount) < 0.02:
-                logger.debug(
-                    "fuzzy_match_expense: found match for amount=%.2f date=%s "
-                    "type=%s → existing reference_id=%s",
-                    amount, date, expense_types, row["reference_id"],
-                )
-                return True
+            if abs(existing_amount - amount) >= 0.02:
+                continue
+            if ext_ns is not None:
+                stored_ns = _namespace(str(row.get("reference_id") or ""))
+                if stored_ns == ext_ns:
+                    continue
+            logger.debug(
+                "fuzzy_match_expense: found match for amount=%.2f date=%s "
+                "type=%s → existing reference_id=%s",
+                amount, date, expense_types, row["reference_id"],
+            )
+            return True
     except Exception as exc:
         logger.warning("fuzzy_match_expense: query failed — %s", exc)
 
@@ -1049,6 +1192,30 @@ async def ingest_extrato_for_seller(
     # for the same dispute).  Key format: "{ref}:{abbrev}" → count seen so far.
     _key_counter: dict[str, int] = defaultdict(int)
 
+    # ERR-0029: seed _key_counter from existing DB state so cross-month
+    # ingests don't collide on the same base_key (e.g. Jan's ":rd" blocking
+    # Feb's fresh reembolso_disputa for the same ref).
+    prospective_base_keys: set[str] = set()
+    for tx in transactions:
+        et, _d, _c = _classify_extrato_line(tx["transaction_type"])
+        if et is None and _d is None:
+            continue
+        if et == _CHECK_PAYMENTS:
+            prospective_base_keys.add(f"{tx['reference_id']}:cp")
+            # Also seed the likely fallback abbrev, since _CHECK_PAYMENTS lines
+            # resolve to e.g. liberacao_nao_sync/:ln or qr_pix_nao_sync/:qn.
+            fallback_et, _ = _resolve_check_payments(tx["transaction_type"])
+            fb_abbrev = _EXPENSE_TYPE_ABBREV.get(fallback_et, "xx")
+            prospective_base_keys.add(f"{tx['reference_id']}:{fb_abbrev}")
+        else:
+            abbrev = _EXPENSE_TYPE_ABBREV.get(et, "xx") if et else "xx"
+            prospective_base_keys.add(f"{tx['reference_id']}:{abbrev}")
+    existing_max_per_base = _batch_lookup_max_suffix_per_base(
+        db, seller_slug, prospective_base_keys, before_date=begin_date,
+    )
+    for bk, n in existing_max_per_base.items():
+        _key_counter[bk] = n
+
     for tx in transactions:
         expense_type, direction, ca_category_uuid = _classify_extrato_line(
             tx["transaction_type"]
@@ -1089,6 +1256,7 @@ async def ingest_extrato_for_seller(
         stats["skipped_internal"],
     )
 
+
     if not classified:
         return {
             "seller":           seller_slug,
@@ -1120,15 +1288,30 @@ async def ingest_extrato_for_seller(
                 continue
             # Payment NOT in DB — ML API gap, resolve to fallback type
             fallback_type, fallback_dir = _resolve_check_payments(tx["transaction_type"])
+            # ERR-0023: CHECK_PAYMENTS fallbacks (liberacao_nao_sync / qr_pix_nao_sync)
+            # have ambiguous direction — "Pagamento com QR Pix X" can be outgoing
+            # (seller pays X) or incoming (customer pays seller). Honor CSV sign.
+            if fallback_type in _SIGN_DRIVEN_EXPENSE_TYPES:
+                fallback_dir = "income" if (tx.get("amount") or 0) >= 0 else "expense"
             abbrev = _EXPENSE_TYPE_ABBREV.get(fallback_type, "xx")
-            payment_id_key = f"{ref_id}:{abbrev}"
+            base_key = f"{ref_id}:{abbrev}"
+            # ERR-0021: apply _key_counter disambiguation for sequential
+            # occurrences of the same ref+fallback (e.g. 3x "Débito por dívida
+            # Reclamações" for the same dispute). Without this, lines 2..N
+            # collide on base_key and get silently dropped by ON CONFLICT.
+            _key_counter[base_key] += 1
+            if _key_counter[base_key] == 1:
+                payment_id_key = base_key
+            else:
+                payment_id_key = f"{base_key}:{_key_counter[base_key]}"
             logger.warning(
                 "extrato_ingester %s: ref_id %s NOT in payments (type=%r) — "
-                "ingesting as %s (ML API gap)",
+                "ingesting as %s (ML API gap) [key=%s]",
                 seller_slug,
                 ref_id,
                 tx["transaction_type"],
                 fallback_type,
+                payment_id_key,
             )
             resolved.append((tx, fallback_type, fallback_dir, None, payment_id_key))
         else:
@@ -1211,6 +1394,7 @@ async def ingest_extrato_for_seller(
             if _fuzzy_match_expense(
                 db, seller_slug, extrato_amount, tx["date"],
                 ["faturas_ml", "collection"],
+                extrato_ref_id=str(ref_id),
             ):
                 stats["already_covered"] += 1
                 logger.debug(
@@ -1354,6 +1538,26 @@ async def ingest_extrato_from_csv(
     stats = Counter()
     _key_counter: dict[str, int] = defaultdict(int)
 
+    # ERR-0029: seed _key_counter from existing DB state (cross-month collisions)
+    prospective_base_keys: set[str] = set()
+    for tx in transactions:
+        et, _d, _c = _classify_extrato_line(tx["transaction_type"])
+        if et is None and _d is None:
+            continue
+        if et == _CHECK_PAYMENTS:
+            prospective_base_keys.add(f"{tx['reference_id']}:cp")
+            fallback_et, _ = _resolve_check_payments(tx["transaction_type"])
+            fb_abbrev = _EXPENSE_TYPE_ABBREV.get(fallback_et, "xx")
+            prospective_base_keys.add(f"{tx['reference_id']}:{fb_abbrev}")
+        else:
+            abbrev = _EXPENSE_TYPE_ABBREV.get(et, "xx") if et else "xx"
+            prospective_base_keys.add(f"{tx['reference_id']}:{abbrev}")
+    existing_max_per_base = _batch_lookup_max_suffix_per_base(
+        db, seller_slug, prospective_base_keys
+    )
+    for bk, n in existing_max_per_base.items():
+        _key_counter[bk] = n
+
     for tx in transactions:
         expense_type, direction, ca_category_uuid = _classify_extrato_line(
             tx["transaction_type"]
@@ -1414,15 +1618,25 @@ async def ingest_extrato_from_csv(
                 stats["skipped_internal"] += 1
                 continue
             fallback_type, fallback_dir = _resolve_check_payments(tx["transaction_type"])
+            # ERR-0023: honor CSV sign for sign-driven fallbacks
+            if fallback_type in _SIGN_DRIVEN_EXPENSE_TYPES:
+                fallback_dir = "income" if (tx.get("amount") or 0) >= 0 else "expense"
             abbrev = _EXPENSE_TYPE_ABBREV.get(fallback_type, "xx")
-            payment_id_key = f"{ref_id}:{abbrev}"
+            base_key = f"{ref_id}:{abbrev}"
+            # ERR-0021: disambiguate sequential occurrences of same ref+fallback
+            _key_counter[base_key] += 1
+            if _key_counter[base_key] == 1:
+                payment_id_key = base_key
+            else:
+                payment_id_key = f"{base_key}:{_key_counter[base_key]}"
             logger.warning(
                 "extrato_ingester %s: ref_id %s NOT in payments (type=%r) — "
-                "ingesting as %s (ML API gap)",
+                "ingesting as %s (ML API gap) [key=%s]",
                 seller_slug,
                 ref_id,
                 tx["transaction_type"],
                 fallback_type,
+                payment_id_key,
             )
             resolved.append((tx, fallback_type, fallback_dir, None, payment_id_key))
         else:
@@ -1482,6 +1696,7 @@ async def ingest_extrato_from_csv(
             if _fuzzy_match_expense(
                 db, seller_slug, extrato_amount, tx["date"],
                 ["faturas_ml", "collection"],
+                extrato_ref_id=str(ref_id),
             ):
                 stats["already_covered"] += 1
                 logger.debug(

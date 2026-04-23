@@ -184,6 +184,26 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
     if op_type == "payment_addition":
         return "payment_addition", "skip", None, False, ""
 
+    # 2b. ERR-0022: pos_payment (presencial sale via MP POS terminal) → SKIP.
+    # The seller receives money, so it's a sale, not an expense. The cash is
+    # reflected in the extrato as "Liberação de dinheiro" (net after fees),
+    # which extrato_ingester picks up as liberacao_nao_sync. Creating an
+    # expense_captured event here would double-count (and with wrong sign).
+    if op_type == "pos_payment":
+        return "pos_payment", "skip", None, False, ""
+
+    # 2c. ERR-0027: loan disbursement (MP's "Dinheiro Express"). The extrato
+    # already captures the loan approval as `Aprovação do Dinheiro Express`
+    # (mapped to emprestimo_mp), so the money_transfer that represents the
+    # MP→bank disbursement leg is a duplicate perspective. Skip it.
+    ext_ref = (payment.get("external_reference") or "")
+    desc_lower = description.lower()
+    if (
+        op_type == "money_transfer"
+        and (ext_ref.startswith("loan-") or "loan origination" in desc_lower)
+    ):
+        return "loan_disbursement", "skip", None, False, ""
+
     # 3. money_transfer + Cashback → INCOME
     if op_type == "money_transfer" and branch == "Cashback":
         description_lower = description.lower()
@@ -200,19 +220,22 @@ def _classify(payment: dict) -> tuple[str, str, str | None, bool, str]:
             return "cashback", "income", "1.3.4 Descontos e Estornos de Taxas e Tarifas", True, f"Bonificacao Flex ML - {description}"[:200]
         return "cashback", "income", "1.3.4 Descontos e Estornos de Taxas e Tarifas", True, f"Ressarcimento ML - {description}"[:200]
 
-    # 4. money_transfer + Intra MP → TRANSFER
-    if op_type == "money_transfer" and branch == "Intra MP":
-        bi = _extract_bank_info(payment)
-        dest = bi["collector_alias"] or bi["payer_id_number"] or ""
-        dest_label = f" p/ {dest}" if dest else ""
-        return "transfer_intra", "transfer", None, False, f"Transferencia Intra MP{dest_label} - R$ {amount}"[:200]
-
-    # 5. money_transfer + other → TRANSFER
+    # 4. money_transfer (Intra MP, PIX, etc.) → SKIP. The extrato captures
+    # these as "Transferência Pix enviada/recebida" with the correct sign
+    # driven by the CSV direction. Classifier mp_expenses for these refs
+    # duplicate the extrato cash flow (and the `_is_incoming_transfer` sign
+    # heuristic produces false positives for outgoing PIX transfers where
+    # collector != payer but the seller is the payer). ERR-0028.
     if op_type == "money_transfer":
-        bi = _extract_bank_info(payment)
-        dest = bi["collector_alias"] or bi["payer_id_number"] or ""
-        dest_label = f" p/ {dest}" if dest else ""
-        return "transfer_pix", "transfer", None, False, f"Transferencia{dest_label} - {description or f'R$ {amount}'}"[:200]
+        return "money_transfer", "skip", None, False, ""
+
+    # 5. ERR-0038: ``Wallet API - Facturacion Pospaga`` payments are MP
+    # internal post-paid billing accounting mirrors (reserved_money holds,
+    # card_validation auths, operation_fund totals). They do not represent
+    # cash leaving the seller's wallet — the real fatura debit appears in
+    # the extrato under ``Débito por dívida Faturas vencidas``. Skip them.
+    if "facturacion pospaga" in branch.lower():
+        return "pospaga_internal", "skip", None, False, ""
 
     # 6. branch contains "Bill Payment" → check auto-rules (DARF), else EXPENSE
     if "bill payment" in branch.lower():

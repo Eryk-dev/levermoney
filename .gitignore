@@ -11,3 +11,4 @@ keys/
 api nova/
 legado.py/
 exports/
+.playwright-mcp/

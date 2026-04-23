@@ -444,3 +444,59 @@ ERR-0013 (bonus_envio not ingested) is open but low impact: R$ 10.90 single line
 | Daily diff max | R$ 0.00 |
 | Linhas extrato | 690 |
 
+
+## 2026-04-16 17:57 — net-air 2026-01
+**Commit:** 98c0d7f
+**Trigger:** manual
+
+| Métrica | Valor |
+|---|---|
+| Cobertura créditos | 0.00% |
+| Cobertura débitos | 0.00% |
+| Orphan extrato | 7468 |
+| Orphan sistema | 0 |
+| Daily diff max | R$ 45599.90 |
+| Linhas extrato | 7470 |
+
+
+## 2026-04-16 18:26 — net-air 2026-01
+**Commit:** 98c0d7f
+**Trigger:** manual
+
+| Métrica | Valor |
+|---|---|
+| Cobertura créditos | 98.38% |
+| Cobertura débitos | 96.54% |
+| Orphan extrato | 190 |
+| Orphan sistema | 53 |
+| Daily diff max | R$ 7355.70 |
+| Linhas extrato | 7470 |
+
+
+## 2026-04-17 10:09 — net-air 2026-01
+**Commit:** 98c0d7f
+**Trigger:** manual
+
+| Métrica | Valor |
+|---|---|
+| Cobertura créditos | 100.00% |
+| Cobertura débitos | 100.00% |
+| Orphan extrato | 0 |
+| Orphan sistema | 0 |
+| Daily diff max | R$ 0.00 |
+| Linhas extrato | 7470 |
+
+
+## 2026-04-17 11:29 — net-air 2026-02
+**Commit:** 98c0d7f
+**Trigger:** manual
+
+| Métrica | Valor |
+|---|---|
+| Cobertura créditos | 100.00% |
+| Cobertura débitos | 100.00% |
+| Orphan extrato | 0 |
+| Orphan sistema | 0 |
+| Daily diff max | R$ 0.00 |
+| Linhas extrato | 7600 |
+
