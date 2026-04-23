@@ -657,20 +657,26 @@ async def _get_or_create_report(
         logger.error("Failed to list release reports for %s: %s", seller_slug, e)
         reports = []
 
-    # Look for a report that covers our date range
+    # Look for a report that covers our date range (begin or end date in filename)
+    def _matches(file_name: str) -> bool:
+        if not file_name:
+            return False
+        return (
+            begin_date.replace("-", "") in file_name
+            or end_date.replace("-", "") in file_name
+        )
+
     for report in reports:
         file_name = report if isinstance(report, str) else (report.get("file_name") or "")
-        if not file_name:
+        if not _matches(file_name):
             continue
-        # Report filenames typically contain date info; try to download the most recent
-        if begin_date.replace("-", "") in file_name or end_date.replace("-", "") in file_name:
-            try:
-                content = await download_release_report(seller_slug, file_name)
-                if content:
-                    logger.info("Downloaded existing release report: %s", file_name)
-                    return content
-            except Exception as e:
-                logger.warning("Failed to download report %s: %s", file_name, e)
+        try:
+            content = await download_release_report(seller_slug, file_name)
+            if content:
+                logger.info("Downloaded existing release report: %s", file_name)
+                return content
+        except Exception as e:
+            logger.warning("Failed to download report %s: %s", file_name, e)
 
     # No matching report found — create a new one
     logger.info("Creating new release report for %s: %s to %s", seller_slug, begin_date, end_date)
@@ -681,27 +687,35 @@ async def _get_or_create_report(
         logger.error("Failed to create release report for %s: %s", seller_slug, e)
         return None
 
-    # The report is generated asynchronously. Try to download it.
-    # Poll the list a few times with short waits.
+    # The report is generated asynchronously. Poll the list and only return a
+    # CSV whose filename matches the requested period — otherwise we return
+    # whatever other report happened to exist, producing mysterious underflows.
     import asyncio
-    for attempt in range(6):
-        await asyncio.sleep(5)  # Wait 5s between attempts (max 30s)
+    max_attempts = 60  # 60 * 5s = 5 minutes max wait
+    for attempt in range(max_attempts):
+        await asyncio.sleep(5)
         try:
-            reports = await list_release_reports(seller_slug, limit=10)
+            reports = await list_release_reports(seller_slug, limit=20)
         except Exception:
             continue
 
         for report in reports:
             file_name = report if isinstance(report, str) else (report.get("file_name") or "")
-            if not file_name:
+            if not _matches(file_name):
                 continue
             try:
                 content = await download_release_report(seller_slug, file_name)
                 if content and len(content) > 100:
-                    logger.info("Downloaded new release report: %s (attempt %d)", file_name, attempt + 1)
+                    logger.info(
+                        "Downloaded new release report: %s (attempt %d)",
+                        file_name, attempt + 1,
+                    )
                     return content
             except Exception:
                 continue
 
-    logger.error("Release report not ready after 30s for %s", seller_slug)
+    logger.error(
+        "Release report not ready after %ds for %s (period %s → %s)",
+        max_attempts * 5, seller_slug, begin_date, end_date,
+    )
     return None

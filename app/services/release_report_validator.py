@@ -85,9 +85,28 @@ def _parse_release_report_with_fees(csv_bytes: bytes) -> list[dict]:
 # Report fetching (reuses ml_api + polling pattern from legacy_daily_export)
 # ---------------------------------------------------------------------------
 
+def _filename_matches_period(file_name: str, begin_date: str, end_date: str) -> bool:
+    """Return True if `file_name` carries either endpoint date of the requested period.
+
+    ML release-report filenames embed dates as YYYYMMDD tokens; we consider a report
+    to cover the period if its name contains begin_date OR end_date in that form.
+    """
+    if not file_name:
+        return False
+    return (
+        begin_date.replace("-", "") in file_name
+        or end_date.replace("-", "") in file_name
+    )
+
+
 async def _get_or_create_report(seller_slug: str, begin_date: str, end_date: str) -> bytes | None:
-    """Get/create a release report and return raw CSV bytes, or None on failure."""
-    # Try to find existing report
+    """Get/create a release report and return raw CSV bytes, or None on failure.
+
+    Both the initial lookup and the post-creation polling filter by filename so
+    we never return a stale report for the wrong period (common source of
+    under-counting validator adjustments).
+    """
+    # Try to find existing report covering this period
     try:
         reports = await ml_api.list_release_reports(seller_slug, limit=50)
     except Exception as e:
@@ -96,15 +115,14 @@ async def _get_or_create_report(seller_slug: str, begin_date: str, end_date: str
 
     for report in reports:
         file_name = report if isinstance(report, str) else (report.get("file_name") or "")
-        if not file_name:
+        if not _filename_matches_period(file_name, begin_date, end_date):
             continue
-        if begin_date.replace("-", "") in file_name or end_date.replace("-", "") in file_name:
-            try:
-                content = await ml_api.download_release_report(seller_slug, file_name)
-                if content and len(content) > 100:
-                    return content
-            except Exception:
-                continue
+        try:
+            content = await ml_api.download_release_report(seller_slug, file_name)
+            if content and len(content) > 100:
+                return content
+        except Exception:
+            continue
 
     # Create new report
     try:
@@ -113,7 +131,7 @@ async def _get_or_create_report(seller_slug: str, begin_date: str, end_date: str
         logger.error("release_report_validator %s: create_report failed: %s", seller_slug, e)
         return None
 
-    # Poll until ready
+    # Poll until a report matching the requested period is ready
     elapsed = 0
     while elapsed < MAX_POLL_SECONDS:
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
@@ -124,7 +142,7 @@ async def _get_or_create_report(seller_slug: str, begin_date: str, end_date: str
             continue
         for report in reports:
             file_name = report if isinstance(report, str) else (report.get("file_name") or "")
-            if not file_name:
+            if not _filename_matches_period(file_name, begin_date, end_date):
                 continue
             try:
                 content = await ml_api.download_release_report(seller_slug, file_name)
