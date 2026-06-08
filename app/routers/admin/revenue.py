@@ -118,3 +118,21 @@ async def dre_seller(seller_slug: str):
         "amount,processor_fee,processor_shipping,ml_status,raw_payment"
     ).eq("seller_slug", seller_slug).execute()
     return build_dre_from_payments(rows.data or [])
+
+
+# ── Pontes de reconciliação ───────────────────────────────────
+
+from app.services.pontes import ponte_caixa_dre, devolucao_diferida
+
+
+@router.get("/pontes/{seller_slug}", dependencies=[Depends(require_admin)])
+async def pontes_seller(seller_slug: str):
+    from app.db.supabase import get_db
+    db = get_db()
+    rows = (db.table("payments").select("amount,processor_fee,processor_shipping,ml_status,raw_payment")
+            .eq("seller_slug", seller_slug).execute()).data or []
+    dre = build_dre_from_payments(rows)
+    caixa = {}
+    return {"caixa_dre": ponte_caixa_dre(dre, caixa),
+            "devolucao_diferida": devolucao_diferida(rows),
+            "nota": "painel ML ≈ DRE.devolucoes do mes da venda + devolucao_diferida + by_admin"}
