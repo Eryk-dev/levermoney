@@ -81,9 +81,25 @@ af227e7 fix(conciliador): Fase 4 guard base do frete
 | 6 DRE por competência | ✅ feito (harness); produtizar falta |
 | 7 Classificação + cobertura 100% | ✅ feito |
 
-## O que falta pra "completamente funcional" (produção)
-1. Produtizar Fase 3-full (wiring baixa↔CA real), Fase 5/6 (relatórios/endpoints).
-2. Fase 4 fee bidirecional (precisa fixture release report).
-3. Ingester formato (aceitar os 3 layouts via conversor) — Fase 1 restante.
-4. Decisões de negócio (ver 08): métrica do painel, tolerância, antecipação, cancela-antes-liberar.
-5. Cutover ao vivo (deploy + escrita habilitada = ambiente do usuário).
+## Plano de finalização — EXECUTADO (jun/2026)
+
+O plano `docs/superpowers/plans/2026-06-08-conciliador-finalizacao.md` foi executado via
+subagentes (TDD, 13 commits, 7 test files em `testes/finalizacao/`, todos PASS):
+
+- ✅ **Fase 1 restante** — `extrato_ingester._normalize_report_bytes` (aceita os 3 layouts via conversor).
+- ✅ **Fase 4 fee bidirecional** — crédito quando release<processor + revalidação (`fee_adjusted_amount`,
+  migration `006`). `_validate_rows` extraído.
+- ✅ **Fase 3-full wiring** — `app/services/baixas_extrato_runner.py` (download extrato → busca parcelas
+  CA → planeja → posta gated por `baixa_extrato_write_sellers`). Endpoint `GET /baixas/extrato/{seller}`.
+  Guard no scheduler legado (`baixa_extrato_driven_sellers`).
+- ✅ **Fase 6 produção** — `app/services/dre_report.py` + endpoint `GET /admin/dre/{seller}`.
+- ✅ **Fase 5 produção** — `app/services/pontes.py` + endpoint `GET /admin/pontes/{seller}`.
+- ✅ Config flags em `app/config.py` (tolerância, rollout por-seller).
+
+## O que falta (só ambiente do usuário — não-código)
+1. Aplicar migration `006_fee_adjusted_amount.sql` no Supabase de produção (DDL).
+2. **Cutover ao vivo** (runbook Parte 5 do plano): dry-run em prod → habilitar escrita só 141air
+   (`baixa_extrato_write_sellers=141air`) → validar no CA → rollout incremental. Deploy + credenciais.
+3. Confirmar as 4 decisões de negócio (defaults já embutidos: painel=vendas líquidas, tol=R$50,
+   antecipação=despesa financeira, cancela-antes-liberar=cancelar).
+4. Fase 4: verificar o crédito bidirecional contra um release report REAL com overcharge (fixture passou).
