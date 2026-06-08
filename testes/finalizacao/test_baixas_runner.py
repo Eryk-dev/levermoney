@@ -42,3 +42,11 @@ def test_run_for_seller_respeita_flag(monkeypatch):
     monkeypatch.setattr(R.settings, "baixa_extrato_write_sellers", "t")
     asyncio.run(R.run_for_seller("t", "2026-01-01", "2026-01-31", {"ca_conta_bancaria": "c"}))
     assert len(posted) == 1 and posted[0][1]["data_pagamento"] == "2026-01-05"
+
+
+def test_scheduler_legado_pula_sellers_extrato(monkeypatch):
+    import asyncio
+    from app.routers import baixas
+    monkeypatch.setattr(baixas.settings, "baixa_extrato_driven_sellers", "141air", raising=False)
+    res = asyncio.run(baixas.processar_baixas_auto("141air"))
+    assert res.get("skipped_reason") == "extrato_driven"
