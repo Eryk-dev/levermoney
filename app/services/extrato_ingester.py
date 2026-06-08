@@ -29,8 +29,18 @@ from typing import Optional
 from app.db.supabase import get_db
 from app.models.sellers import CA_CATEGORIES, get_all_active_sellers, get_seller_config
 from app.services.release_report_sync import _get_or_create_report
+from app.services.legacy.daily_export import _ensure_account_statement_csv
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_report_bytes(report_bytes: bytes) -> bytes:
+    """Normaliza qualquer layout (account_statement nativo, release_report, settlement) para o
+    layout que _parse_account_statement entende. Idempotente no layout nativo."""
+    try:
+        return _ensure_account_statement_csv(report_bytes)
+    except Exception:
+        return report_bytes
 
 BRT = timezone(timedelta(hours=-3))
 
@@ -600,6 +610,7 @@ async def ingest_extrato_for_seller(
         return {"seller": seller_slug, "error": "report_not_available"}
 
     # 2. Parse CSV
+    csv_bytes = _normalize_report_bytes(csv_bytes)
     try:
         csv_text = csv_bytes.decode("utf-8-sig")  # Handle BOM
     except UnicodeDecodeError:

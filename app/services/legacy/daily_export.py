@@ -408,7 +408,10 @@ def _ensure_account_statement_csv(report_bytes: bytes) -> bytes:
         return report_bytes
 
     # release_report raw layout (DATE;SOURCE_ID;...;RECORD_TYPE;DESCRIPTION;NET_CREDIT_AMOUNT;NET_DEBIT_AMOUNT;...)
+    # Handles both with and without EXTERNAL_REFERENCE column.
     if normalized_first_line.upper().startswith("DATE;SOURCE_ID;EXTERNAL_REFERENCE;RECORD_TYPE;DESCRIPTION;"):
+        return _convert_release_to_account_statement_csv(report_bytes)
+    if normalized_first_line.upper().startswith("DATE;SOURCE_ID;RECORD_TYPE;DESCRIPTION;"):
         return _convert_release_to_account_statement_csv(report_bytes)
 
     # Settlement layout variant 1: EXTERNAL_REFERENCE;SOURCE_ID;...
