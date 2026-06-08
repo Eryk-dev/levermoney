@@ -19,11 +19,16 @@ nunca existiu. Resultado: âncora ✓ 4/4 (10/10 com mar-mai), vendas 99,9%.
   offline — precisa estado DB.)
 - 🔴 **falta:** ingester e coverage_checker lerem a MESMA fonte; cobertura por VALOR não contagem.
 
-## Fase 3 — Baixa extrato-dirigida + 3 datas 🟡 PARCIAL
+## Fase 3 — Baixa extrato-dirigida + 3 datas 🟡 CORE FEITO
 - ✅ **data do estorno BRT** (não `datetime.now()`) em `_process_refunded` e
   `_process_partial_refund`. Verificado: sem regressão.
-- 🔴 **falta (redesign maior):** baixa dirigida pelo extrato (data+valor reais); liberação
-  parcial → N baixas; cancela-antes-liberar = não-evento; harness stateful cross-month exato.
+- ✅ **core da baixa extrato-dirigida:** `app/services/baixas_extrato.plan_baixas_from_extrato`
+  (lógica pura) — casa crédito do extrato a parcela CA por payment_id, baixa com DATA+VALOR reais
+  do extrato, ajuste quando difere, liberação parcelada → N baixas, cancela-antes-liberar →
+  nunca_baixou. 4 casos testados ALL PASS (`test_baixas_extrato.py`).
+- 🔴 **falta (wiring de produção):** ligar ao CA real (buscar parcelas abertas + enfileirar via
+  ca_queue), substituindo o scheduler por-promessa em `baixas.py`. + harness stateful exato
+  (precisa dado event-time).
 
 ## Fase 4 — Validação de fee + refund parcial 🟡 PARCIAL
 - ✅ **guard de base do frete:** só ajusta quando `processor_shipping>0` (evita inflar despesa
@@ -36,13 +41,16 @@ nunca existiu. Resultado: âncora ✓ 4/4 (10/10 com mar-mai), vendas 99,9%.
   estorno parcial preciso (usa refund.amount bruto; ML devolve comissão proporcional → fino só
   com baixa extrato-dirigida). Bidirecional precisa fixture do release report (não dá offline).
 
-## Fase 5 — As duas pontes 🔴 NÃO INICIADA
-Ponte caixa↔DRE (recebíveis a liberar) e ponte DRE↔painel ML (drivers nomeados, datada).
-Resolve a dor "explicar a divergência com o painel ML". Precisa das decisões de negócio.
+## Fase 5 — As duas pontes ✅ FEITO (harness)
+Modo `ponte`: Caixa↔DRE (Δ recebíveis a liberar — fecha: soma +R$377/5meses = 0,1%) e
+DRE↔painel ML (devolução DIFERIDA por mês = driver pra explicar a divergência: painel ≈
+DRE_dev + diferida + by_admin). Falta: produtizar (módulo de produção) + plugar o nº do painel
+ML real + decisões #1/#2.
 
-## Fase 6 — DRE D+1 em produção 🔴 NÃO INICIADA
-Virar `testes/simulate_dre*.py` em relatório de produção (competência: receita por
-date_approved, devolução por data do estorno, fees, despesas non-venda).
+## Fase 6 — DRE por competência ✅ FEITO (harness)
+Modo `dre`: DRE mensal por competência a partir dos eventos CA capturados (receita bruta por
+date_approved, devoluções por data do estorno, comissão, frete, estorno taxa, subsídio →
+resultado de vendas). Falta: produtizar como relatório/endpoint + despesas non-venda no DRE.
 
 ## Fase 7 — Cauda de classificação non-venda ✅ FEITO
 `extrato_ingester` rules, verificado contra extratos reais (`test_rules` ALL PASS, juiz 0 bugs):
@@ -61,9 +69,21 @@ af227e7 fix(conciliador): Fase 4 guard base do frete
 ```
 (+ commits de extratos mar-mai e [E] full caixa após este doc.)
 
-## Resumo: o que falta pra "completamente funcional"
-1. Fase 1 (ingester formato), Fase 2 (fonte única), Fase 3-full (baixa extrato-dirigida),
-   Fase 4-full (fee bidirecional), Fase 5 (pontes), Fase 6 (DRE produção).
-2. Harness stateful cross-month exato (precisa dado event-time).
-3. Decisões de negócio (ver 08).
-4. Cutover ao vivo (deploy + escrita habilitada = ambiente do usuário).
+## Resumo: status das 7 fases
+| Fase | Status |
+|---|---|
+| 0 Juiz | ✅ feito |
+| 1 Taxa oculta | ✅ feito |
+| 2 Chave composta | ✅ feito |
+| 3 Data estorno + baixa extrato-dirigida (core) | 🟡 core feito + testado; wiring produção falta |
+| 4 Refund parcial + guard frete | ✅ feito; fee bidirecional falta (fixture) |
+| 5 Pontes caixa↔DRE / DRE↔painel ML | ✅ feito (harness); produtizar falta |
+| 6 DRE por competência | ✅ feito (harness); produtizar falta |
+| 7 Classificação + cobertura 100% | ✅ feito |
+
+## O que falta pra "completamente funcional" (produção)
+1. Produtizar Fase 3-full (wiring baixa↔CA real), Fase 5/6 (relatórios/endpoints).
+2. Fase 4 fee bidirecional (precisa fixture release report).
+3. Ingester formato (aceitar os 3 layouts via conversor) — Fase 1 restante.
+4. Decisões de negócio (ver 08): métrica do painel, tolerância, antecipação, cancela-antes-liberar.
+5. Cutover ao vivo (deploy + escrita habilitada = ambiente do usuário).
