@@ -25,12 +25,16 @@ nunca existiu. Resultado: âncora ✓ 4/4 (10/10 com mar-mai), vendas 99,9%.
 - 🔴 **falta (redesign maior):** baixa dirigida pelo extrato (data+valor reais); liberação
   parcial → N baixas; cancela-antes-liberar = não-evento; harness stateful cross-month exato.
 
-## Fase 4 — Validação de fee bidirecional 🟡 PARCIAL
+## Fase 4 — Validação de fee + refund parcial 🟡 PARCIAL
 - ✅ **guard de base do frete:** só ajusta quando `processor_shipping>0` (evita inflar despesa
   quando comprador paga o frete). `release_report_validator.py`.
-- 🔴 **falta:** ajuste bidirecional (quando release<processor, postar crédito); reset de
-  `fee_adjusted`; estorno de taxa proporcional em refund parcial. Precisa fixture do release
-  report pra verificar (não dá offline).
+- ✅ **estorno de devolução PARCIAL:** o router roteava `approved` → `_process_approved` e
+  `_process_partial_refund` NUNCA era chamado → a parte devolvida não era estornada → líquido no
+  CA maior que o extrato. Agora `approved` + `partially_*refunded` + refunds → estorna o parcial.
+  Verificado: erro de valor real net-air −R$2.091 → +R$274; 141air +160 → +324 (ambos <0,1%).
+- 🔴 **falta:** ajuste de fee bidirecional (release<processor → crédito); reset de `fee_adjusted`;
+  estorno parcial preciso (usa refund.amount bruto; ML devolve comissão proporcional → fino só
+  com baixa extrato-dirigida). Bidirecional precisa fixture do release report (não dá offline).
 
 ## Fase 5 — As duas pontes 🔴 NÃO INICIADA
 Ponte caixa↔DRE (recebíveis a liberar) e ponte DRE↔painel ML (drivers nomeados, datada).
