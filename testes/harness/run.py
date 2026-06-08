@@ -28,14 +28,17 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXTRATO_MAP = {
     ("141air", "jan"): "extratos/extrato janeiro 141Air.csv",
     ("141air", "fev"): "extratos/extrato fevereiro 141Air.csv",
+    ("141air", "mar"): "extratos/extrato marco 141Air.csv",
+    ("141air", "abr"): "extratos/extrato abril 141Air.csv",
+    ("141air", "mai"): "extratos/extrato maio 141Air.csv",
     ("net-air", "jan"): "extratos/extrato janeiro netair.csv",
     ("net-air", "fev"): "extratos/extrato fevereiro netair.csv",
-    ("netparts-sp", "jan"): "extratos/extrato janeiro netparts.csv",
-    ("netparts-sp", "fev"): "extratos/extrato fevereiro netparts.csv",
-    ("easy-utilidades", "jan"): "extratos/extrato janeiro Easyutilidades.csv",
-    ("easy-utilidades", "fev"): "extratos/extrato fevereiro easypeasy.csv",
+    ("net-air", "mar"): "extratos/extrato marco netair.csv",
+    ("net-air", "abr"): "extratos/extrato abril netair.csv",
+    ("net-air", "mai"): "extratos/extrato maio netair.csv",
 }
-MONTH_DIR = {"jan": "cache_jan2026", "fev": "cache_fev2026"}
+MONTH_DIR = {"jan": "cache_jan2026", "fev": "cache_fev2026", "mar": "cache_mar2026",
+             "abr": "cache_abr2026", "mai": "cache_mai2026"}
 
 
 def fmt(v):
@@ -158,6 +161,41 @@ def reconcile(slug, mes, cap, payments=None):
         print(f"    spill (estornos/eventos fora do mes, vao p/ outro mes) = {fmt(spill)}")
         for k, (n, dsum) in bkt.items():
             print(f"      {k:<10} refs={n:>4}  Σdiff={fmt(dsum)}")
+
+        # [E] FULL CAIXA: decompoe TODAS as linhas do extrato e fecha o caixa do mes.
+        # Identidade: FINAL-INITIAL = vendas + non-venda classificado + skip + OTHER.
+        # "Bate" = resíduo de vendas ~0 E OTHER ~0.
+        sale_refs = set(net_jan.keys())
+        venda_ext = nonsale_class = skip_tot = other_tot = 0.0
+        other_lines = []
+        for r in rows:
+            etype, direction, code, pat = judge.classify(r["type"])
+            if etype == "__SALE__":
+                venda_ext += r["net"]
+            elif etype == "__OTHER__":
+                other_tot += r["net"]
+                other_lines.append((abs(r["net"]), r["type"][:42], r["net"]))
+            elif etype is None:
+                skip_tot += r["net"]
+            else:
+                nonsale_class += r["net"]
+        total_mov = header["final"] - header["initial"]
+        ca_vendas = sum(net_jan.values())
+        resid_vendas = venda_ext - ca_vendas
+        # skip = coberto pelo classifier da API (non-order). No harness, mp_expenses capturados.
+        resid_caixa = resid_vendas + other_tot
+        other_lines.sort(reverse=True)
+        print(f"\n[E] FULL CAIXA (fecha o mês inteiro?)")
+        print(f"    movimento total extrato (FINAL-INITIAL) = {fmt(total_mov)}")
+        print(f"    vendas:        extrato {fmt(venda_ext)} | CA(mes) {fmt(ca_vendas)} | resíduo {fmt(resid_vendas)}")
+        print(f"    non-venda classificado (ingester rules)  = {fmt(nonsale_class)}")
+        print(f"    skip (coberto API non-order)             = {fmt(skip_tot)}")
+        print(f"    OTHER (NÃO coberto - precisa regra)      = {fmt(other_tot)}  ({len(other_lines)} linhas)")
+        print(f"    >>> RESÍDUO CAIXA (vendas + OTHER)       = {fmt(resid_caixa)}  {'✓ BATE' if abs(resid_caixa) < 50 else '✗ NÃO BATE'}")
+        if other_lines:
+            print(f"    OTHER top (precisa regra de classificação):")
+            for v, t, net in other_lines[:8]:
+                print(f"      {fmt(net)}  {t}")
 
 
 async def main():
