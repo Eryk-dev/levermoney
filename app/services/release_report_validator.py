@@ -20,11 +20,22 @@ from app.models.sellers import (
 )
 from app.services import ca_queue, ml_api
 from app.services.ca_api import CA_API
-from app.services.processor import _build_despesa_payload
+from app.services.processor import _build_despesa_payload, _build_evento, _build_parcela, CA_CONTATO_ML
 
 logger = logging.getLogger(__name__)
 
 BRT = timezone(timedelta(hours=-3))
+
+
+def _build_credito_estorno(seller: dict, data_competencia: str, data_vencimento: str,
+                            valor: float, descricao: str, observacao: str) -> dict:
+    """Monta evento conta-a-receber para crédito/estorno de taxa (release < processor)."""
+    conta = seller["ca_conta_bancaria"]
+    contato = seller.get("ca_contato_ml") or CA_CONTATO_ML
+    parcela = _build_parcela(descricao, data_vencimento, conta, valor)
+    return _build_evento(data_competencia, valor, descricao, observacao, contato, conta,
+                         CA_CATEGORIES["estorno_taxa"], seller.get("ca_centro_custo_variavel"), parcela)
+
 
 # Polling config for report readiness
 POLL_INTERVAL_SECONDS = 10
@@ -224,9 +235,34 @@ async def validate_release_fees_for_seller(
         for p in (result.data or []):
             payments_by_id[int(p["ml_payment_id"])] = p
 
-    stats = Counter()
+    stats = await _validate_rows(db, seller, seller_slug, payment_rows, payments_by_id)
 
-    for row in payment_rows:
+    result = {
+        "seller": seller_slug,
+        "total_rows": len(rows),
+        "payment_rows": len(payment_rows),
+        "adjustments_created": stats.get("fee_adjustments", 0) + stats.get("shipping_adjustments", 0),
+        "payments_adjusted": stats.get("payments_adjusted", 0),
+        "already_adjusted": stats.get("already_adjusted", 0),
+        "not_in_payments": stats.get("not_in_payments", 0),
+        "no_diff": stats.get("no_diff", 0),
+        "fee_overcharged": stats.get("fee_overcharged", 0),
+        "breakdown": dict(stats),
+    }
+    logger.info("release_report_validator %s: %s", seller_slug, result)
+    return result
+
+
+async def _validate_rows(db, seller: dict, seller_slug: str, rows: list[dict],
+                          payments_by_id: dict) -> Counter:
+    """Per-row validation loop: compare processor fees vs release report fees.
+
+    Returns a Counter with stats keys.
+    Behavior-preserving extraction from validate_release_fees_for_seller.
+    """
+    stats: Counter = Counter()
+
+    for row in rows:
         source_id = row["source_id"]
         if not source_id:
             stats["skipped_no_id"] += 1
@@ -246,7 +282,8 @@ async def validate_release_fees_for_seller(
             stats["not_in_payments"] += 1
             continue
 
-        if payment.get("fee_adjusted"):
+        prev_fee = float(payment.get("fee_adjusted_amount") or 0)
+        if payment.get("fee_adjusted") and abs(abs(row["mp_fee_amount"]) - prev_fee) < 0.01:
             stats["already_adjusted"] += 1
             continue
 
@@ -325,12 +362,27 @@ async def validate_release_fees_for_seller(
                 pid, shipping_diff, processor_shipping, release_shipping,
             )
 
-        # Negative diff (release < processor) — ML charged less than expected
+        # Negative diff (release < processor) — ML overcharged vs report; issue credit
         if fee_diff <= -0.01:
-            stats["fee_overcharged"] += 1
+            competencia = (row.get("approval_date") or row["date"])[:10] or row["date"][:10]
+            credito = abs(fee_diff)
+            credito_payload = _build_credito_estorno(
+                seller, competencia, row["date"][:10], credito,
+                f"Ajuste Comissão (crédito) - Payment {pid}",
+                f"processor={processor_fee}, release={release_fee}, diff={fee_diff}",
+            )
+            await ca_queue.enqueue(
+                seller_slug=seller_slug, job_type="ajuste_fee_credito",
+                ca_endpoint=f"{CA_API}/v1/financeiro/eventos-financeiros/contas-a-receber",
+                ca_payload=credito_payload,
+                idempotency_key=f"{seller_slug}:{pid}:ajuste_fee_credito",
+                group_id=f"{seller_slug}:{pid}:ajustes", priority=25,
+            )
+            adjustments_made += 1
+            stats["fee_credits"] += 1
             logger.info(
-                "Payment %s: processor fee higher than release (processor=%.2f, release=%.2f, diff=%.2f)",
-                pid, processor_fee, release_fee, fee_diff,
+                "Payment %s: fee credit R$%.2f (processor=%.2f, release=%.2f)",
+                pid, credito, processor_fee, release_fee,
             )
 
         if shipping_diff <= -0.01:
@@ -340,26 +392,14 @@ async def validate_release_fees_for_seller(
         if adjustments_made > 0:
             db.table("payments").update({
                 "fee_adjusted": True,
+                "fee_adjusted_amount": abs(row["mp_fee_amount"]),
                 "updated_at": datetime.now().isoformat(),
             }).eq("ml_payment_id", pid).eq("seller_slug", seller_slug).execute()
             stats["payments_adjusted"] += 1
         else:
             stats["no_diff"] += 1
 
-    result = {
-        "seller": seller_slug,
-        "total_rows": len(rows),
-        "payment_rows": len(payment_rows),
-        "adjustments_created": stats.get("fee_adjustments", 0) + stats.get("shipping_adjustments", 0),
-        "payments_adjusted": stats.get("payments_adjusted", 0),
-        "already_adjusted": stats.get("already_adjusted", 0),
-        "not_in_payments": stats.get("not_in_payments", 0),
-        "no_diff": stats.get("no_diff", 0),
-        "fee_overcharged": stats.get("fee_overcharged", 0),
-        "breakdown": dict(stats),
-    }
-    logger.info("release_report_validator %s: %s", seller_slug, result)
-    return result
+    return stats
 
 
 def _save_release_report_fee(db, seller_slug: str, row: dict):
