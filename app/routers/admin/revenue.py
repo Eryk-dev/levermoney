@@ -103,3 +103,18 @@ async def sync_status():
     if not _syncer:
         return {"last_sync": None, "results": []}
     return {"last_sync": _syncer.last_sync, "results": _syncer.last_results}
+
+
+# ── DRE por competência ───────────────────────────────────────
+
+from app.services.dre_report import build_dre_from_payments
+
+
+@router.get("/dre/{seller_slug}", dependencies=[Depends(require_admin)])
+async def dre_seller(seller_slug: str):
+    from app.db.supabase import get_db
+    db = get_db()
+    rows = db.table("payments").select(
+        "amount,processor_fee,processor_shipping,ml_status,raw_payment"
+    ).eq("seller_slug", seller_slug).execute()
+    return build_dre_from_payments(rows.data or [])
