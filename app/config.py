@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     # Admin
     admin_password: str = ""
 
+    # --- Finalização do conciliador ---
+    reconciliation_tolerance_brl: float = 50.0
+    baixa_extrato_driven_sellers: str = ""
+    baixa_extrato_write_sellers: str = ""
+    painel_ml_metric: str = "vendas_liquidas"
+
     # Feature flags
     expenses_api_enabled: bool = True
     nightly_pipeline_enabled: bool = False
