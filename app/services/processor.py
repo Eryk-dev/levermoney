@@ -442,7 +442,9 @@ async def _process_partial_refund(db, seller: dict, payment: dict):
         if refund_amount <= 0:
             continue
 
-        date_refund = refund.get("date_created", datetime.now().isoformat())[:10]
+        date_refund = _to_brt_date(
+            refund.get("date_created") or payment.get("date_last_updated") or ""
+        )
         refund_id = refund.get("id", i)
 
         # Estorno proporcional da receita
@@ -484,13 +486,18 @@ async def _process_refunded(db, seller: dict, payment: dict, existing: list):
     if not already_synced:
         await _process_approved(db, seller, payment, existing)
 
-    date_refunded = datetime.now().strftime("%Y-%m-%d")
+    # Competência do estorno = data REAL do estorno em BRT (doc 11.13), nunca datetime.now()
+    # (now() jogaria o estorno no dia do processamento, quebrando caixa diário e DRE mensal).
+    date_refunded = _to_brt_date(
+        payment.get("date_last_updated") or payment.get("date_approved")
+        or payment.get("date_created", "")
+    )
     amount = payment["transaction_amount"]
     refunds = payment.get("refunds", [])
 
     if refunds:
         total_refunded_raw = sum(r.get("amount", 0) for r in refunds)
-        date_refunded = refunds[-1].get("date_created", date_refunded)[:10]
+        date_refunded = _to_brt_date(refunds[-1].get("date_created") or date_refunded)
     else:
         total_refunded_raw = payment.get("transaction_amount_refunded") or amount
 

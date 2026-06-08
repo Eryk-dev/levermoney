@@ -59,15 +59,34 @@ def _lookup_payment_ids(db, seller_slug: str, source_ids: list[int]) -> set[int]
 
 
 def _lookup_expense_ids(db, seller_slug: str, source_ids: list[int]) -> set[int]:
-    """Look up which source IDs exist in mp_expenses."""
+    """Look up which source IDs exist in mp_expenses.
+
+    mp_expenses.payment_id e TEXT e pode ter chave composta "{ref}:{abbrev}"
+    (ex: "123456:df" quando o mesmo ref tem varios tipos no extrato). Por isso
+    nao da pra filtrar com .in_(int_chunk): escaneia os payment_ids do seller e
+    casa pelo ID BASE (antes do ':'). Evita o crash int("123456:df") e o miss
+    silencioso das linhas de gap ingeridas com chave composta.
+    """
+    want = set(source_ids)
     found: set[int] = set()
-    for i in range(0, len(source_ids), 100):
-        chunk = source_ids[i:i + 100]
+    offset = 0
+    page = 1000
+    while True:
         result = db.table("mp_expenses").select("payment_id").eq(
             "seller_slug", seller_slug
-        ).in_("payment_id", chunk).execute()
-        for r in (result.data or []):
-            found.add(int(r["payment_id"]))
+        ).range(offset, offset + page - 1).execute()
+        rows = result.data or []
+        for r in rows:
+            base = str(r["payment_id"]).split(":")[0]
+            try:
+                bid = int(base)
+            except (ValueError, TypeError):
+                continue
+            if bid in want:
+                found.add(bid)
+        if len(rows) < page:
+            break
+        offset += page
     return found
 
 
