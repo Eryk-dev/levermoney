@@ -76,9 +76,14 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("liberacao de dinheiro",             None,                    None,       None),
     ("transferencia pix",                 None,                    None,       None),
     ("pix enviado",                       None,                    None,       None),
+    # Reembolso de boleto/conta = ENTRADA. DEVE vir antes de "pagamento de conta"
+    # (senao o substring "pagamento de conta" casa primeiro e descarta a entrada).
+    ("reembolso de pagamento",            "reembolso_generico",    "income",   "1.3.4"),
     ("pagamento de conta",                None,                    None,       None),
     ("pagamento com",                     None,                    None,       None),
     # --- INCOME ---
+    # PIX recebido = entrada real de caixa (deposito/cliente). Sem regra antes -> caia em OTHER.
+    ("pix recebido",                      "entrada_dinheiro",      "income",   None),
     ("reembolso reclamacoes",             "reembolso_disputa",     "income",   "1.3.4"),
     ("reembolso reclamações",             "reembolso_disputa",     "income",   "1.3.4"),
     ("reembolso envio cancelado",         "reembolso_disputa",     "income",   "1.3.4"),
@@ -86,6 +91,9 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("reembolso de tarifas",              "reembolso_generico",    "income",   "1.3.4"),
     ("reembolso",                         "reembolso_generico",    "income",   "1.3.4"),
     ("entrada de dinheiro",               "entrada_dinheiro",      "income",   None),
+    # Reversao de credito ("Dinheiro recebido cancelado") = SAIDA. Antes de "dinheiro recebido"
+    # (senao casa income e o sinal fica trocado).
+    ("dinheiro recebido cancelado",       "estorno_recebimento",   "expense",  None),
     ("dinheiro recebido",                 "deposito_avulso",       "income",   None),
     # --- EXPENSES ---
     ("dinheiro retido",                   "dinheiro_retido",       "expense",  None),
@@ -100,6 +108,7 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("bonus por envio",                   "bonus_envio",           "income",   "1.3.7"),
     ("bônus por envio",                   "bonus_envio",           "income",   "1.3.7"),
     ("compra mercado libre",              None,                    None,       None),
+    ("compra mercado livre",              None,                    None,       None),
     ("transferencia enviada",             None,                    None,       None),
     ("transferência enviada",             None,                    None,       None),
     ("transferencia recebida",            "entrada_dinheiro",      "income",   None),
@@ -133,6 +142,7 @@ _EXPENSE_TYPE_ABBREV: dict[str, str] = {
     "debito_troca":          "dt",
     "bonus_envio":           "be",
     "subscription":          "sb",
+    "estorno_recebimento":   "erc",
 }
 
 
@@ -151,6 +161,7 @@ _DESCRIPTION_TEMPLATES: dict[str, str] = {
     "debito_troca":          "Debito Troca Produto ML - Ref {ref_id}",
     "bonus_envio":           "Bonus Envio ML - Ref {ref_id}",
     "subscription":          "Assinatura MP - Ref {ref_id}",
+    "estorno_recebimento":   "Estorno Recebimento MP - Ref {ref_id}",
 }
 
 
