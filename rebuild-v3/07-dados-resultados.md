@@ -62,6 +62,25 @@ Resíduo dominado por cross-month/spill (R$285k = liberações que liberam em m�
 - Resíduo é **timing cross-month + refund parcial**, NÃO erro de cálculo.
 - Cobertura **100%** (0 OTHER) após Fase 7.
 
+## RESULTADO FINAL desta rodada (modo timeline — cada payment processado 1x)
+
+Após Fase 7 estendida (cobertura) + Fase 1/3 (valor):
+
+| Métrica | 141air (jan-mai) | net-air (jan-mar) |
+|---|---|---|
+| Âncora extrato | ✓ ao centavo | ✓ ao centavo |
+| **Cobertura (OTHER)** | **0 linhas (100%)** | **0 linhas (100%)** |
+| Resíduo de VALOR (date-indep.) | −R$4.069 / R$328k = **1,2%** | −R$13.284 / R$1,69M = **0,78%** |
+| Caixa por mês (resíduo) | jan −1,7k, fev −4,6k, mar +3,6k, abr −1,1k, mai +0,2k | jan −6,6k, fev −1,0k, mar −7,3k |
+
+**Cobertura 100% atingida** (toda linha do extrato classificada, jan-mai, 2 sellers) —
+incluindo poupança "Renda", Mercado Crédito (empréstimos), e os bugs de Fase 7.
+
+**Resíduo de valor ~1%** dominado por: (a) boundary (venda liberada antes de jan ou liberando
+após mai → só uma perna no extrato da janela), (b) refund parcial (comissão/frete não revertidos
+= Fase 4), (c) desalinho de data CA(money_release_date promessa) vs extrato real (= Fase 3-full).
+NÃO é erro de cálculo do núcleo — é timing/borda. Não cresce sem limite (meses se compensam).
+
 ## Como reproduzir
 ```
 python3 testes/judge_caixa_jan2026.py                       # âncora + buckets, 4 sellers
