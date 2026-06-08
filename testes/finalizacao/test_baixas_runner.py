@@ -24,3 +24,21 @@ def test_plan_for_seller_monta_baixas(monkeypatch):
     res = asyncio.run(R.plan_for_seller("t", "2026-01-01", "2026-01-31", seller={"ca_conta_bancaria": "c"}))
     assert len(res.baixas) == 1
     assert res.baixas[0].data_pagamento == "2026-01-05" and res.baixas[0].valor == 85.0
+
+
+def test_run_for_seller_respeita_flag(monkeypatch):
+    import asyncio
+    from app.services import baixas_extrato_runner as R
+    from app.services.baixas_extrato import BaixaPlan, BaixaPlanResult
+    plan = BaixaPlanResult(baixas=[BaixaPlan("p1","138199281600","2026-01-05",85.0,0.0)])
+    async def fake_plan(*a, **k): return plan
+    monkeypatch.setattr(R, "plan_for_seller", fake_plan)
+    posted = []
+    async def fake_enqueue_baixa(slug, pid, payload, **k): posted.append((pid, payload)); return {}
+    monkeypatch.setattr(R.ca_queue, "enqueue_baixa", fake_enqueue_baixa)
+    monkeypatch.setattr(R.settings, "baixa_extrato_write_sellers", "")
+    asyncio.run(R.run_for_seller("t", "2026-01-01", "2026-01-31", {"ca_conta_bancaria": "c"}))
+    assert posted == []
+    monkeypatch.setattr(R.settings, "baixa_extrato_write_sellers", "t")
+    asyncio.run(R.run_for_seller("t", "2026-01-01", "2026-01-31", {"ca_conta_bancaria": "c"}))
+    assert len(posted) == 1 and posted[0][1]["data_pagamento"] == "2026-01-05"

@@ -16,9 +16,11 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Query
 
+from app.config import settings
 from app.db.supabase import get_db
 from app.models.sellers import get_missing_ca_launch_fields, get_seller_config
 from app.services import ca_api, ca_queue
+from app.services import baixas_extrato_runner
 from app.services.release_checker import ReleaseChecker, _is_refund_or_estorno
 
 logger = logging.getLogger(__name__)
@@ -239,6 +241,9 @@ async def processar_baixas_auto(seller_slug: str) -> dict:
     """Reusable function called by the daily scheduler.
     Fetches open parcelas and enqueues baixas for all with vencimento <= today.
     Verifies money_release_status before each baixa."""
+    if seller_slug in {s.strip() for s in settings.baixa_extrato_driven_sellers.split(",") if s.strip()}:
+        logger.info("processar_baixas_auto(%s): pulado (baixa extrato-dirigida ativa)", seller_slug)
+        return {"seller": seller_slug, "skipped_reason": "extrato_driven"}
     db = get_db()
     seller = get_seller_config(db, seller_slug)
     if not seller:
@@ -307,3 +312,13 @@ def _summarize(parcela: dict, release_map: dict[str, str] | None = None) -> dict
     if release_map:
         summary["release_status"] = release_map.get(parcela.get("id", ""), "n/a")
     return summary
+
+
+@router.get("/extrato/{seller_slug}")
+async def baixas_extrato(seller_slug: str, data_de: str, data_ate: str):
+    """Baixa extrato-dirigida. NÃO posta no CA a menos que o seller esteja em
+    baixa_extrato_write_sellers (config). Default: dry-run."""
+    seller = get_seller_config(get_db(), seller_slug)
+    if not seller:
+        return {"error": "seller_not_found"}
+    return await baixas_extrato_runner.run_for_seller(seller_slug, data_de, data_ate, seller)
