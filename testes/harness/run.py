@@ -198,11 +198,121 @@ def reconcile(slug, mes, cap, payments=None):
                 print(f"      {fmt(net)}  {t}")
 
 
+ALL_MONTHS = ["jan", "fev", "mar", "abr", "mai"]
+
+
+def ext_month_key(date_ddmmyyyy):
+    """'01-04-2026' -> '2026-04'."""
+    p = date_ddmmyyyy.split("-")
+    return f"{p[2]}-{p[1]}" if len(p) == 3 else ""
+
+
+async def run_timeline(slug, months):
+    """Processa cada payment UMA vez (união dedupada de todos os meses), depois bucketa
+    os eventos CA por mês de caixa (vencimento) e compara contra o extrato de cada mês.
+    Modela produção (payment processado 1x; receita no mês da liberação, estorno no mês
+    do estorno) -> evita o double-processing cross-month dos snapshots."""
+    # 1. merge dedupado (prefere o snapshot com date_last_updated mais recente)
+    merged = {}
+    for mes in months:
+        ps = load_payments(slug, mes)
+        if not ps:
+            continue
+        for p in ps:
+            if not isinstance(p, dict):
+                continue
+            pid = str(p.get("id"))
+            old = merged.get(pid)
+            if old is None or (p.get("date_last_updated") or "") > (old.get("date_last_updated") or ""):
+                merged[pid] = p
+    payments = list(merged.values())
+    print(f"\n{'='*88}\n# {slug}  TIMELINE  ({len(payments)} payments únicos, meses={','.join(months)})\n{'='*88}")
+
+    # 2. processa UMA vez (real processor), estado fresco
+    cap = await run_seller_month(slug, payments, state={})
+    if cap.errors:
+        print(f"  ERROS: {len(cap.errors)} (amostra: {cap.errors[:3]})")
+
+    # 3. CA cash por (mes_vencimento, ref base) e set de refs de venda
+    ca_by_month = {}        # 'YYYY-MM' -> Σ sign*valor
+    ca_by_month_ref = {}    # ('YYYY-MM', ref) -> Σ
+    sale_ids = set()
+    for e in cap.events:
+        base = e.payment_id.split("_")[0]
+        if e.tipo in ("receita", "comissao", "frete"):
+            sale_ids.add(base)
+        m = (e.vencimento or "")[:7]
+        v = SIGN.get(e.tipo, 0.0) * e.valor
+        ca_by_month[m] = ca_by_month.get(m, 0.0) + v
+        ca_by_month_ref[(m, base)] = ca_by_month_ref.get((m, base), 0.0) + v
+
+    # 3b. RESÍDUO DE VALOR (date-independent): Σ extrato por ref (todos meses) vs processor net.
+    # Isola erro de VALOR (taxa oculta + refund parcial) do desalinho de DATA.
+    ext_total_ref = {}
+    for mes in months:
+        ext_path = EXTRATO_MAP.get((slug, mes))
+        if not ext_path or not os.path.exists(os.path.join(BASE, ext_path)):
+            continue
+        _, rows = judge.load_extrato(os.path.join(BASE, ext_path))
+        for r in rows:
+            ref = str(r["ref"])
+            if ref in sale_ids:
+                ext_total_ref[ref] = ext_total_ref.get(ref, 0.0) + r["net"]
+    ca_net_ref = {}
+    for (m, ref), v in ca_by_month_ref.items():
+        ca_net_ref[ref] = ca_net_ref.get(ref, 0.0) + v
+    # só refs que TÊM presença no extrato da janela (venda cujo caixa caiu em jan-mai)
+    val_resid = 0.0
+    val_absdiff = 0.0
+    n_off = 0
+    worst_val = []
+    for ref in ext_total_ref:
+        d = ext_total_ref[ref] - ca_net_ref.get(ref, 0.0)
+        val_resid += d
+        val_absdiff += abs(d)
+        if abs(d) > 0.5:
+            n_off += 1
+            worst_val.append((abs(d), ref, ext_total_ref[ref], ca_net_ref.get(ref, 0.0)))
+    worst_val.sort(reverse=True)
+    print(f"\n  RESÍDUO DE VALOR (date-independent, Σ extrato vs processor por ref c/ caixa na janela):")
+    print(f"    {len(ext_total_ref)} refs | Σ resíduo = {fmt(val_resid)} | Σ|resíduo| = {fmt(val_absdiff)} | refs off>R$0,50: {n_off}")
+    for d, ref, e, c in worst_val[:6]:
+        print(f"      {fmt(d)}  ref={ref:<14} ext={fmt(e)} ca={fmt(c)}")
+
+    # 4. por mês: caixa de vendas (extrato sale-lines vs CA) + cobertura OTHER
+    print(f"\n  {'mes':<8}{'ext_vendas':>13}{'CA_vendas':>13}{'resíduo':>12}{'OTHER':>11}{'status':>10}")
+    tot_resid = 0.0
+    for mes in months:
+        ext_path = EXTRATO_MAP.get((slug, mes))
+        if not ext_path or not os.path.exists(os.path.join(BASE, ext_path)):
+            continue
+        header, rows = judge.load_extrato(os.path.join(BASE, ext_path))
+        mkey = {"jan": "2026-01", "fev": "2026-02", "mar": "2026-03", "abr": "2026-04", "mai": "2026-05"}[mes]
+        ext_sales = 0.0
+        other = 0.0
+        for r in rows:
+            etype, direction, code, pat = judge.classify(r["type"])
+            ref = str(r["ref"])
+            if ref in sale_ids:
+                ext_sales += r["net"]
+            elif etype == "__OTHER__":
+                other += r["net"]
+        ca_sales = sum(v for (m, ref), v in ca_by_month_ref.items() if m == mkey and ref in sale_ids)
+        resid = ext_sales - ca_sales
+        tot_resid += resid
+        ok = abs(resid) + abs(other) < 100
+        print(f"  {mes:<8}{fmt(ext_sales)}{fmt(ca_sales)}{fmt(resid)}{fmt(other)}{'  ✓ BATE' if ok else '  ✗':>10}")
+    print(f"  {'TOTAL':<8}{'':>13}{'':>13}{fmt(tot_resid)}")
+
+
 async def main():
     if len(sys.argv) < 3:
-        print("uso: python3 -m testes.harness.run <slug> <mes[,mes]>")
+        print("uso: python3 -m testes.harness.run <slug> <mes[,mes]|timeline>")
         return
     slug = sys.argv[1]
+    if sys.argv[2] == "timeline":
+        await run_timeline(slug, [m for m in ALL_MONTHS if load_payments(slug, m)])
+        return
     meses = sys.argv[2].split(",")
     state = {}  # idempotencia compartilhada entre meses (em ordem)
     for mes in meses:

@@ -97,12 +97,27 @@ EXTRATO_CLASSIFICATION_RULES: list[tuple[str, Optional[str], Optional[str], Opti
     ("dinheiro recebido",                 "deposito_avulso",       "income",   None),
     # --- EXPENSES ---
     ("dinheiro retido",                   "dinheiro_retido",       "expense",  None),
+    # Poupança/reserva interna MP ("Dinheiro reservado/retirado Renda/Lever Talents") =
+    # transferência de tesouraria (sai/volta do saldo disponível), não P&L.
+    ("dinheiro reservado",                "reserva_renda",         "transfer", None),
+    ("dinheiro retirado",                 "reserva_renda",         "transfer", None),
     ("diferenca da aliquota",             "difal",                 "expense",  "2.2.3"),
     ("difal",                             "difal",                 "expense",  "2.2.3"),
     ("faturas vencidas",                  "faturas_ml",            "expense",  "2.8.2"),
     ("envio do mercado livre",            "debito_envio_ml",       "expense",  "2.9.4"),
     ("reclamacoes no mercado livre",      "debito_divida_disputa", "expense",  None),
     ("reclamações no mercado livre",      "debito_divida_disputa", "expense",  None),
+    # Mercado Crédito (empréstimos): entrada do principal = financiamento (transfer);
+    # parcela de pagamento = transfer (saída). Não são P&L (só o juro seria).
+    ("aprovacao do credito",              "emprestimo_recebido",   "transfer", None),
+    ("aprovação do crédito",              "emprestimo_recebido",   "transfer", None),
+    ("aprovacao do dinheiro express",     "emprestimo_recebido",   "transfer", None),
+    ("aprovação do dinheiro express",     "emprestimo_recebido",   "transfer", None),
+    ("debito por divida emprestimos",     "emprestimo_pagamento",  "transfer", None),
+    ("débito por dívida empréstimos",     "emprestimo_pagamento",  "transfer", None),
+    # Catch-all p/ qualquer "Débito por dívida X" (contestação, etc.) = débito de disputa.
+    ("debito por divida",                 "debito_divida_disputa", "expense",  None),
+    ("débito por dívida",                 "debito_divida_disputa", "expense",  None),
     # Additional types found in real extratos (jan 2026)
     ("troca de produto",                  "debito_troca",          "expense",  None),
     ("bonus por envio",                   "bonus_envio",           "income",   "1.3.7"),
@@ -143,6 +158,9 @@ _EXPENSE_TYPE_ABBREV: dict[str, str] = {
     "bonus_envio":           "be",
     "subscription":          "sb",
     "estorno_recebimento":   "erc",
+    "reserva_renda":         "rr",
+    "emprestimo_recebido":   "ec",
+    "emprestimo_pagamento":  "ep",
 }
 
 
@@ -162,6 +180,9 @@ _DESCRIPTION_TEMPLATES: dict[str, str] = {
     "bonus_envio":           "Bonus Envio ML - Ref {ref_id}",
     "subscription":          "Assinatura MP - Ref {ref_id}",
     "estorno_recebimento":   "Estorno Recebimento MP - Ref {ref_id}",
+    "reserva_renda":         "Reserva/Resgate Renda MP - Ref {ref_id}",
+    "emprestimo_recebido":   "Emprestimo Mercado Credito - Ref {ref_id}",
+    "emprestimo_pagamento":  "Pagamento Emprestimo MC - Ref {ref_id}",
 }
 
 
