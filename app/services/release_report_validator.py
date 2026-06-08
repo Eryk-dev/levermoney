@@ -292,7 +292,12 @@ async def validate_release_fees_for_seller(
             )
 
         # Shipping adjustment (hidden shipping fee)
-        if shipping_diff >= 0.01:
+        # GUARD (Fase 4): processor_shipping = max(0, collector_shipping - buyer_shipping)
+        # é o frete LÍQUIDO do vendedor; release_shipping = abs(SHIPPING_FEE_AMOUNT) é o
+        # repasse BRUTO. Quando o COMPRADOR paga o frete, processor_shipping=0 mas
+        # release_shipping vem cheio -> shipping_diff falso-positivo que INFLA a despesa.
+        # Só ajusta quando o vendedor de fato tem custo de frete (processor_shipping > 0).
+        if shipping_diff >= 0.01 and processor_shipping > 0:
             competencia = (row.get("approval_date") or row["date"])[:10]
             release_date = row["date"][:10]
             if not competencia or competencia == "":
