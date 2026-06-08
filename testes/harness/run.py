@@ -305,13 +305,135 @@ async def run_timeline(slug, months):
     print(f"  {'TOTAL':<8}{'':>13}{'':>13}{fmt(tot_resid)}")
 
 
+async def run_dre(slug, months):
+    """Fase 6 — DRE por COMPETÊNCIA. Processa cada payment 1x e agrega os eventos CA
+    capturados por mês de competência (data_competencia) e tipo. Devolução entra no mês
+    do ESTORNO (não da venda) — divergência intencional vs painel ML (ver ponte DRE↔ML)."""
+    merged = {}
+    for mes in months:
+        ps = load_payments(slug, mes)
+        if not ps:
+            continue
+        for p in ps:
+            if not isinstance(p, dict):
+                continue
+            pid = str(p.get("id"))
+            old = merged.get(pid)
+            if old is None or (p.get("date_last_updated") or "") > (old.get("date_last_updated") or ""):
+                merged[pid] = p
+    cap = await run_seller_month(slug, list(merged.values()), state={})
+    # agrega por (mes_competencia, linha do DRE)
+    LINE = {"receita": "1 Receita bruta", "comissao": "2 (-) Comissão ML",
+            "frete": "3 (-) Frete ML", "estorno": "4 (-) Devoluções",
+            "partial_refund": "4 (-) Devoluções", "estorno_taxa": "5 (+) Estorno de taxa"}
+    dre = {}  # mes -> {linha: valor}
+    for e in cap.events:
+        m = (e.competencia or "")[:7]
+        is_subsidy = e.payment_id.endswith("_subsidy")
+        line = "6 (+) Subsídio ML" if is_subsidy else LINE.get(e.tipo, f"? {e.tipo}")
+        sign = SIGN.get(e.tipo, 0.0)
+        dre.setdefault(m, {}).setdefault(line, 0.0)
+        dre[m][line] += sign * e.valor if e.tipo != "receita" else e.valor
+    mkeys = {"jan": "2026-01", "fev": "2026-02", "mar": "2026-03", "abr": "2026-04", "mai": "2026-05"}
+    cols = [mkeys[m] for m in months if mkeys[m] in dre]
+    print(f"\n{'='*88}\n# {slug}  DRE por COMPETÊNCIA  ({len(merged)} payments)\n{'='*88}")
+    lines = sorted({l for mv in dre.values() for l in mv})
+    hdr = "  " + f"{'linha':<26}" + "".join(f"{c[-2:]+'/26':>14}" for c in cols)
+    print(hdr)
+    for line in lines:
+        row = "  " + f"{line:<26}" + "".join(fmt(dre.get(c, {}).get(line, 0.0)) for c in cols)
+        print(row)
+    # resultado líquido de vendas por mês
+    res = "  " + f"{'= Resultado vendas':<26}"
+    for c in cols:
+        mv = dre.get(c, {})
+        net = (mv.get("1 Receita bruta", 0) + mv.get("2 (-) Comissão ML", 0) + mv.get("3 (-) Frete ML", 0)
+               + mv.get("4 (-) Devoluções", 0) + mv.get("5 (+) Estorno de taxa", 0) + mv.get("6 (+) Subsídio ML", 0))
+        res += fmt(net)
+    print(res)
+
+
+async def run_ponte(slug, months):
+    """Fase 5 — as duas pontes:
+    (1) Caixa↔DRE: diferença = recebíveis a liberar (venda reconhecida por competência num
+        mês, dinheiro cai no extrato em outro).
+    (2) DRE↔painel ML (devoluções): o painel conta a devolução no mês da VENDA; o DRE no mês
+        do ESTORNO. Driver = devoluções DIFERIDAS (estorno em mês != mês da venda)."""
+    merged = {}
+    for mes in months:
+        ps = load_payments(slug, mes) or []
+        for p in ps:
+            if isinstance(p, dict):
+                pid = str(p.get("id")); old = merged.get(pid)
+                if old is None or (p.get("date_last_updated") or "") > (old.get("date_last_updated") or ""):
+                    merged[pid] = p
+    cap = await run_seller_month(slug, list(merged.values()), state={})
+    mkeys = {"jan": "2026-01", "fev": "2026-02", "mar": "2026-03", "abr": "2026-04", "mai": "2026-05"}
+    cols = [mkeys[m] for m in months]
+
+    # DRE resultado de vendas por mês de competência
+    dre_res = {c: 0.0 for c in cols}
+    deferred = {c: 0.0 for c in cols}   # devoluções cujo estorno é mês != venda
+    for e in cap.events:
+        m = (e.competencia or "")[:7]
+        if m not in dre_res:
+            continue
+        if e.tipo == "receita" and not e.payment_id.endswith("_subsidy"):
+            dre_res[m] += e.valor
+        else:
+            dre_res[m] += SIGN.get(e.tipo, 0.0) * e.valor
+        # devolução diferida: compara mês do estorno vs mês da venda (date_approved do payment)
+        if e.tipo in ("estorno", "partial_refund"):
+            p = merged.get(e.payment_id.split("_")[0], {})
+            venda_m = _to_brt_month(p.get("date_approved") or p.get("date_created", ""))
+            if venda_m and venda_m != m:
+                deferred[m] += SIGN.get(e.tipo, 0.0) * e.valor
+
+    # Caixa de vendas por mês (extrato sale lines) — precisa do set de sale refs
+    sale_ids = {e.payment_id.split("_")[0] for e in cap.events if e.tipo in ("receita", "comissao", "frete")}
+    caixa = {c: 0.0 for c in cols}
+    inv = {v: k for k, v in mkeys.items()}
+    for c in cols:
+        mes = inv[c]
+        ext_path = EXTRATO_MAP.get((slug, mes))
+        if not ext_path or not os.path.exists(os.path.join(BASE, ext_path)):
+            continue
+        _, rows = judge.load_extrato(os.path.join(BASE, ext_path))
+        caixa[c] = sum(r["net"] for r in rows if str(r["ref"]) in sale_ids)
+
+    print(f"\n{'='*88}\n# {slug}  PONTES  ({len(merged)} payments)\n{'='*88}")
+    print(f"\n  PONTE CAIXA↔DRE (diferença = recebíveis a liberar / timing)")
+    print(f"  {'':<22}" + "".join(f"{c[-2:]+'/26':>14}" for c in cols))
+    print(f"  {'DRE resultado vendas':<22}" + "".join(fmt(dre_res[c]) for c in cols))
+    print(f"  {'Caixa vendas (extrato)':<22}" + "".join(fmt(caixa[c]) for c in cols))
+    print(f"  {'Δ recebíveis a liberar':<22}" + "".join(fmt(dre_res[c] - caixa[c]) for c in cols))
+    print(f"\n  PONTE DRE↔PAINEL ML (devoluções)")
+    print(f"  {'Devolução diferida*':<22}" + "".join(fmt(deferred[c]) for c in cols))
+    print(f"  * estornos no mês cuja VENDA foi em outro mês. O painel ML conta essas no mês da")
+    print(f"    venda; o DRE no mês do estorno. Plugue o nº do painel: painel ≈ DRE_dev + diferida + by_admin.")
+
+
+def _to_brt_month(iso):
+    try:
+        from datetime import datetime, timezone, timedelta
+        return datetime.fromisoformat(iso).astimezone(timezone(timedelta(hours=-3))).strftime("%Y-%m")
+    except (ValueError, TypeError):
+        return iso[:7] if iso else ""
+
+
 async def main():
     if len(sys.argv) < 3:
-        print("uso: python3 -m testes.harness.run <slug> <mes[,mes]|timeline>")
+        print("uso: python3 -m testes.harness.run <slug> <mes[,mes]|timeline|dre|ponte>")
         return
     slug = sys.argv[1]
     if sys.argv[2] == "timeline":
         await run_timeline(slug, [m for m in ALL_MONTHS if load_payments(slug, m)])
+        return
+    if sys.argv[2] == "dre":
+        await run_dre(slug, [m for m in ALL_MONTHS if load_payments(slug, m)])
+        return
+    if sys.argv[2] == "ponte":
+        await run_ponte(slug, [m for m in ALL_MONTHS if load_payments(slug, m)])
         return
     meses = sys.argv[2].split(",")
     state = {}  # idempotencia compartilhada entre meses (em ordem)
