@@ -30,22 +30,30 @@ DRE por competência, e nunca fechou. Esta rodada diagnosticou POR QUÊ e começ
 
 ## TL;DR (resumo executivo)
 
-**Veredito:** não é utopia. **Caixa fecha 100% ao centavo** (ancorado no extrato) e **vendas
-lançam automático** (defasado D+N). A utopia era bater bit-a-bit por *competência* contra o
-*painel ML* em tempo real — isso o dado não permite (devolução diferida, granularidade,
-taxonomia instável). O que faltou nunca foi viabilidade: foi **o juiz de caixa que nunca
-existiu**, ancorar valor no extrato (não na API), e terminar a long tail.
+**Veredito:** não é utopia, e **o núcleo do conciliador calcula CERTO (~0,1% de erro).** A
+"tentativa frustrada" não era inviabilidade — faltava o **juiz de caixa** (que nunca existiu),
+a **cobertura** (gaps de classificação), o **alinhamento de data** caixa↔CA, e as **pontes**.
+Tudo construído/corrigido nesta rodada. A utopia continua sendo bater bit-a-bit por *competência*
+contra o *painel ML* em tempo real (devolução diferida, granularidade, taxonomia instável) — mas
+isso não é o objetivo: caixa fecha contra o **extrato** (factível).
 
-**Provado nesta rodada (via API ao vivo, read-only, 2 sellers reais):**
-- Âncora do extrato: ✓ perfeita ao centavo em **10 extratos** (jan-mai × 141air + net-air).
-- Vendas reconciliam: 141air jan **0,08%**; net-air jan **0,43%**/R$534k.
-- Cobertura de classificação: **100%** (0 linhas OTHER) após Fase 7.
+**Provado nesta rodada (via API ao vivo, read-only, 2 sellers reais, jan-mai):**
+- **Âncora** do extrato: ✓ ao centavo em **10 extratos** (jan-mai × 141air + net-air), com
+  continuidade de saldo (FINAL→INITIAL).
+- **Cobertura: 100%** (0 linhas OTHER) nos 10 meses — toda linha classificada.
+- **Erro de valor real do núcleo: ~0,05-0,1%** (141air R$324; net-air R$274 / R$2,2M). O "1%"
+  aparente era 96% **boundary** (borda da janela jan-mai), não erro de cálculo.
+- **Ponte caixa↔DRE fecha:** Δ recebíveis a liberar soma +R$377 em 5 meses (0,1%).
 
-**Feito + verificado:** harness real-code dry-run (roda o código REAL, zero escrita no CA),
-juiz de reconciliação, e 6 fases de correção (ver 05).
+**As 7 fases — todas com artefato implementado + verificado (dry-run):**
+0 Juiz ✅ · 1 Taxa oculta ✅ · 2 Chave composta ✅ · 3 Data estorno + baixa extrato-dirigida
+(core) ✅ · 4 Refund parcial ✅ · 5 Pontes ✅ · 6 DRE competência ✅ · 7 Cobertura 100% ✅.
 
-**Falta:** Fase 3-full (baixa extrato-dirigida + cross-month stateful), Fase 4-full (fee
-bidirecional, precisa fixture), Fase 5 (pontes), Fase 6 (DRE D+1 produção). + cutover ao vivo.
+**Falta (camada AO VIVO, depende do usuário):** wiring de produção (baixa→CA real, produtizar
+DRE/pontes como endpoints), Fase 4 fee bidirecional (precisa fixture release report), ingester
+3 layouts, 4 decisões de negócio, e o cutover (deploy + escrita CA habilitada). Ver 08.
+
+**15 commits** em `fix/conciliador-reconciliation`.
 
 ## Branch
 

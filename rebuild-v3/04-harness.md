@@ -48,18 +48,28 @@ jan+fev caches; cross-month EXATO precisa de dado event-time (status ao longo do
 
 ### Rodar
 ```
-python3 -m testes.harness.run 141air jan          # 1 mês
-python3 -m testes.harness.run 141air jan,fev,mar  # vários (estado compartilhado)
-python3 -m testes.harness.run net-air jan
-python3 -m testes.harness.test_rules              # regras de classificação
-python3 -m testes.harness.fetch_all               # busca payments faltantes via API
+python3 -m testes.harness.run 141air jan,fev,mar   # reconcilia mês(es): [A][C][D][E]
+python3 -m testes.harness.run 141air timeline      # cada payment 1x + resíduo de valor + caixa/mês
+python3 -m testes.harness.run 141air dre           # DRE por competência (Fase 6)
+python3 -m testes.harness.run 141air ponte         # pontes caixa↔DRE, DRE↔painel ML (Fase 5)
+python3 -m testes.harness.test_rules               # regras de classificação (Fase 7)
+python3 -m testes.harness.test_baixas_extrato      # baixa extrato-dirigida (Fase 3-full)
+python3 -m testes.harness.fetch_all                # busca payments faltantes via API
 ```
 
-### O que cada seção mede
+### O que cada seção/modo mede
 - **[A]** extrato fecha sozinho? (âncora)
 - **[C]** vendas: Σ CA capturado vs Σ extrato por ref (lifecycle completo). Separa approved/refunded.
 - **[D]** caixa date-aware: só eventos com vencimento no mês (estornos cross-month caem fora = spill).
-- **[E]** full caixa: decompõe TODAS as linhas (vendas + non-venda classificado + skip + OTHER);
-  "bate" = resíduo vendas ~0 E OTHER ~0. **NOTA:** [E] tem refino pendente — compara liberação-only
-  vs CA-net-full e há double-count entre estorno (processor) e refund-debit (ingester); o número
-  de vendas em [E] não é confiável ainda, mas o **OTHER=0** (cobertura) é.
+- **[E]** full caixa: decompõe TODAS as linhas. **OTHER=0 = cobertura 100%** (confiável). O número
+  de "vendas" em [E] tem refino pendente (double-count estorno×refund-debit) — use o modo **timeline**.
+- **timeline** (recomendado): processa cada payment UMA vez (união dedupada) → bucketa por mês de
+  caixa. Mostra **resíduo de VALOR date-independent** (isola erro de valor do desalinho de data) e
+  caixa por mês. Foi aqui que se mediu o erro real ~0,1% (vs boundary).
+- **dre / ponte:** Fase 6 (DRE competência) e Fase 5 (pontes) — ver doc 02 e 05.
+
+### Fase 3-full — baixa extrato-dirigida (`app/services/baixas_extrato.py`)
+Lógica pura `plan_baixas_from_extrato(extrato_lines, parcelas_abertas)`: casa crédito do extrato a
+parcela CA por payment_id, planeja baixa com data+valor REAIS do extrato (não a promessa), trata
+liberação parcelada (N baixas), ajuste de valor, e cancela-antes-de-liberar (nunca_baixou).
+Testado: `test_baixas_extrato.py` 4 casos ALL PASS. Wiring ao CA real = produção.

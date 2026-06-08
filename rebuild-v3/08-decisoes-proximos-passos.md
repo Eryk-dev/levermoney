@@ -11,25 +11,29 @@
 4. **Cancela-antes-de-liberar:** confirmar tratar como NÃO-EVENTO (cancelar as contas, não
    estornar bruto). Hoje o processor pode inflar receita+devolução por um fato que nunca tocou caixa.
 
+## FEITO nesta rodada (todas as 7 fases têm artefato verificado em dry-run)
+- ✅ Juiz + harness real-code (modos: timeline, dre, ponte).
+- ✅ Baseline jan-mai nos 2 sellers; cobertura 100%; erro de valor real ~0,1%.
+- ✅ Fase 3-full **core** (`baixas_extrato.plan_baixas_from_extrato` + 4 testes).
+- ✅ Harness `timeline` (processa cada payment 1x na união dedupada — evita double-count).
+- ✅ Fase 6 DRE por competência (modo `dre`).
+- ✅ Fase 5 pontes (modo `ponte`).
+
 ## Próximos passos (ordem de dependência)
 
 ### Autônomos (não precisam do usuário)
-- **A. Refinar [E] full caixa** no harness: dedup estorno×refund-debit (replicar a regra do
-  ingester real), comparar vendas pelo lifecycle correto. → métrica de "bate/não bate" confiável.
-- **B. Rodar jan-mai nos 2 sellers** com os caches fetchados → baseline completo 5 meses.
-- **C. Fase 1 (ingester formato):** fazer `_parse_account_statement` aceitar os 3 layouts
-  (chamar o conversor de `legacy/daily_export`). → destrava o ingester que pode estar lendo 0 linhas.
-- **D. Fase 3-full (baixa extrato-dirigida):** redesenhar a baixa pra usar data+valor reais do
-  extrato. → fecha o caixa diário de verdade + as 3 datas certas no CA.
-- **E. Harness stateful cross-month exato:** precisa de dado event-time (status histórico) OU
-  processar a união de payments uma vez por timeline. Limite atual: caches são snapshot.
-- **F. Fase 6 (DRE D+1):** virar `simulate_dre*.py` em relatório de produção.
+- **A. Fase 1 (ingester formato):** `_parse_account_statement` aceitar os 3 layouts (chamar o
+  conversor de `legacy/daily_export`). → destrava o ingester que pode estar lendo 0 linhas.
+- **B. Produtizar Fase 3-full:** ligar `baixas_extrato` ao CA real (buscar parcelas abertas +
+  enfileirar baixa via ca_queue), substituindo o scheduler por-promessa em `baixas.py`.
+- **C. Produtizar Fase 6/5:** DRE e pontes como serviço/endpoint (hoje só no harness).
+- **D. Harness stateful cross-month exato:** precisa de dado event-time (status histórico) OU
+  janela maior (incluir dezembro) p/ eliminar boundary.
 
 ### Precisam do usuário
-- **G. Fase 4-full:** fee bidirecional + reset fee_adjusted + estorno proporcional. Precisa de
-  decisão #2 (tolerância) + fixture do release report pra verificar.
-- **H. Fase 5 (pontes):** precisa das decisões #1 e #2.
-- **I. Cutover ao vivo:** deploy + escrita habilitada no CA = ambiente/credenciais do usuário.
+- **E. Fase 4 fee bidirecional** + reset `fee_adjusted`. Precisa fixture do release report.
+- **F. Plugar o nº do painel ML** real na ponte DRE↔ML (decisão #1: qual métrica).
+- **G. Cutover ao vivo:** deploy + escrita habilitada no CA = ambiente/credenciais do usuário.
 
 ## Critério de "completamente funcional"
 
@@ -44,14 +48,28 @@ explicado) + as 2 pontes fechando + doc do cutover ao vivo.
 
 ## Mapa de arquivos (código desta rodada)
 ```
-testes/judge_caixa_jan2026.py          # Juiz Fase 0
-testes/harness/dryrun.py               # core: FakeDB, captura, patches
-testes/harness/run.py                  # CLI: roda + reconcilia ([A][C][D][E])
-testes/harness/test_rules.py           # teste regras Fase 7
-testes/harness/fetch_all.py            # fetch payments via API (read-only)
-app/services/processor.py              # Fase 1 (taxa oculta), Fase 3 (data estorno)
-app/services/extrato_ingester.py       # Fase 7 (regras de classificação)
+testes/judge_caixa_jan2026.py            # Juiz Fase 0 (importa regras REAIS do ingester)
+testes/harness/dryrun.py                 # core: FakeDB stateful, captura, patches
+testes/harness/run.py                    # CLI: modos <meses> | timeline | dre | ponte
+testes/harness/test_rules.py             # teste regras Fase 7 (ALL PASS)
+testes/harness/test_baixas_extrato.py    # teste baixa extrato-dirigida Fase 3-full (ALL PASS)
+testes/harness/fetch_all.py              # fetch payments via API read-only (month-aware)
+app/services/processor.py                # Fase 1 (taxa oculta), 3 (data estorno), 4 (refund parcial)
+app/services/extrato_ingester.py         # Fase 7 (regras: reembolso/pix/cancel/Renda/Mercado Crédito)
 app/services/extrato_coverage_checker.py # Fase 2 (chave composta)
 app/services/release_report_validator.py # Fase 4 (guard frete)
+app/services/baixas_extrato.py           # Fase 3-full core (baixa extrato-dirigida, lógica pura)
 docs/superpowers/specs/2026-06-08-conciliador-harness-fases-design.md  # spec
 ```
+
+## Modos do harness (como rodar)
+```
+python3 -m testes.harness.run <slug> <mes[,mes]>   # reconcilia mês(es): [A]âncora [C]vendas [D]caixa [E]full
+python3 -m testes.harness.run <slug> timeline      # processa cada payment 1x + resíduo de valor + caixa/mês
+python3 -m testes.harness.run <slug> dre           # DRE por competência mensal
+python3 -m testes.harness.run <slug> ponte         # pontes caixa↔DRE e DRE↔painel ML
+python3 -m testes.harness.test_rules               # regras de classificação
+python3 -m testes.harness.test_baixas_extrato      # baixa extrato-dirigida
+python3 testes/judge_caixa_jan2026.py              # âncora + buckets (jan, 4 sellers)
+```
+slug = 141air | net-air. Meses com dado: jan,fev,mar,abr,mai (141air + net-air).
