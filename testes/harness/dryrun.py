@@ -84,14 +84,16 @@ class _Result:
 
 
 class _FakeQuery:
-    def __init__(self, capture, table):
+    def __init__(self, capture, table, state):
         self._cap = capture
         self._table = table
+        self._state = state        # dict pid -> {id, status} (idempotencia cross-month)
+        self._eqs = {}
         self._pending = None  # ('upsert'|'insert'|'update', row)
 
-    # leitura: encadeia e retorna vazio
+    # leitura: encadeia; eq guarda o filtro (pra idempotencia de payments)
     def select(self, *a, **k): return self
-    def eq(self, *a, **k): return self
+    def eq(self, col, val): self._eqs[col] = val; return self
     def neq(self, *a, **k): return self
     def like(self, *a, **k): return self
     def ilike(self, *a, **k): return self
@@ -130,17 +132,30 @@ class _FakeQuery:
             if self._table == "mp_expenses" and row is not None:
                 rows = row if isinstance(row, list) else [row]
                 self._cap.mp_expenses.extend(rows)
+            # idempotencia cross-month: grava status do payment no estado compartilhado
+            if self._table == "payments" and row is not None:
+                rows = row if isinstance(row, list) else [row]
+                for rr in rows:
+                    pid = str(rr.get("ml_payment_id"))
+                    if pid and pid != "None":
+                        self._state[pid] = {"id": pid, "status": rr.get("status")}
             self._pending = None
+            return _Result(data=[row] if row else [])
+        # leitura de payments por ml_payment_id: devolve estado (já processado?)
+        if self._table == "payments" and "ml_payment_id" in self._eqs:
+            pid = str(self._eqs["ml_payment_id"])
+            row = self._state.get(pid)
             return _Result(data=[row] if row else [])
         return _Result(data=[])
 
 
 class FakeDB:
-    def __init__(self, capture):
+    def __init__(self, capture, state=None):
         self._cap = capture
+        self.state = state if state is not None else {}
 
     def table(self, name):
-        return _FakeQuery(self._cap, name)
+        return _FakeQuery(self._cap, name, self.state)
 
 
 # --------------------------------------------------------------------------- #
@@ -158,8 +173,8 @@ def _raise_write(*a, **k):
 
 
 @contextlib.contextmanager
-def patched(cap, seller_fixture):
-    db = FakeDB(cap)
+def patched(cap, seller_fixture, state=None):
+    db = FakeDB(cap, state)
     saved = {}
 
     def save(mod, name):
@@ -209,14 +224,18 @@ def patched(cap, seller_fixture):
 # --------------------------------------------------------------------------- #
 # Runner                                                                       #
 # --------------------------------------------------------------------------- #
-async def run_seller_month(seller_slug: str, payments: list, seller_fixture: dict = None):
-    """Roda o processor/classifier REAL sobre os payments. Retorna Capture."""
+async def run_seller_month(seller_slug: str, payments: list, seller_fixture: dict = None, state: dict = None):
+    """Roda o processor/classifier REAL sobre os payments. Retorna Capture.
+
+    state: dict compartilhado de idempotencia (pid -> {id,status}). Passe o MESMO
+    dict ao rodar meses em ordem -> payment processado em jan nao re-cria receita em fev.
+    """
     fixture = dict(FAKE_SELLER_BASE)
     if seller_fixture:
         fixture.update(seller_fixture)
     cap = Capture()
     errors = []
-    with patched(cap, fixture) as db:
+    with patched(cap, fixture, state) as db:
         for p in payments:
             if not isinstance(p, dict):
                 continue

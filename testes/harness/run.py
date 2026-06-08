@@ -166,12 +166,13 @@ async def main():
         return
     slug = sys.argv[1]
     meses = sys.argv[2].split(",")
+    state = {}  # idempotencia compartilhada entre meses (em ordem)
     for mes in meses:
         payments = load_payments(slug, mes)
         if payments is None:
             print(f"\n!! sem cache de payments pra {slug} {mes} (testes/{MONTH_DIR.get(mes)}/{slug}_payments.json)")
             continue
-        cap = await run_seller_month(slug, payments)
+        cap = await run_seller_month(slug, payments, state=state)
         reconcile(slug, mes, cap, payments=payments)
 
 
