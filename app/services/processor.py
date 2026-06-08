@@ -386,6 +386,22 @@ async def _process_approved(db, seller: dict, payment: dict, existing: list):
         await ca_queue.enqueue_receita(seller_slug, f"{payment_id}_subsidy", subsidy_payload)
         logger.info("Payment %s: ML subsidy detected R$%.2f, enqueued receita 1.3.7", payment_id, subsidy)
 
+    # E) DESPESA - Taxa ML oculta (net < calculado → ML descontou mais que charges_details mostra).
+    # Sem esse lançamento o líquido no CA fica MAIOR que o net liberado e o caixa não bate.
+    # O breakdown fino é reconciliado depois pelo release_report_validator; aqui garantimos o net.
+    hidden_fee = round(reconciled_net - net, 2) if net_diff < 0 else 0.0
+    if hidden_fee >= 0.01:
+        hidden_desc = f"Taxa ML adicional - Payment {payment_id}"
+        hidden_payload = _build_despesa_payload(
+            seller, competencia, money_release_date, hidden_fee,
+            hidden_desc,
+            f"calc_net={reconciled_net}, net_real={net}, taxa_oculta={hidden_fee}",
+            CA_CATEGORIES["comissao_ml"],
+            f"Taxa ML oculta #{payment_id}",
+        )
+        await ca_queue.enqueue_comissao(seller_slug, f"{payment_id}_hiddenfee", hidden_payload)
+        logger.info("Payment %s: hidden ML fee R$%.2f, enqueued despesa 2.8.2", payment_id, hidden_fee)
+
     # Salva no Supabase como queued (worker updates to synced when group completes)
     _upsert_payment(db, seller_slug, payment, "queued",
                     processor_fee=mp_fee, processor_shipping=shipping_cost_seller)

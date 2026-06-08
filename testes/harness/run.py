@@ -66,10 +66,11 @@ def reconcile(slug, mes, cap, payments=None):
         for pid, et, msg in cap.errors[:5]:
             print(f"    payment {pid}: {et}: {msg}")
 
-    # net de caixa capturado por payment
+    # net de caixa capturado por payment (normaliza id base: tira _subsidy/_hiddenfee)
     net_by_pid = {}
     for e in cap.events:
-        net_by_pid[e.payment_id] = net_by_pid.get(e.payment_id, 0.0) + SIGN.get(e.tipo, 0.0) * e.valor
+        base = e.payment_id.split("_")[0]
+        net_by_pid[base] = net_by_pid.get(base, 0.0) + SIGN.get(e.tipo, 0.0) * e.valor
 
     if not ext_path or not os.path.exists(os.path.join(BASE, ext_path)):
         print(f"  [sem extrato pra {slug} {mes}] — recon de vendas pulado")
@@ -122,6 +123,41 @@ def reconcile(slug, mes, cap, payments=None):
         print(f"    piores (|diff|, ref, extrato_lifecycle, CA, status):")
         for d, ref, en, cn, st in worst[:8]:
             print(f"      {fmt(d)}  ref={ref:<14} ext={fmt(en)} ca={fmt(cn)} [{st}]")
+
+    # [D] recon DATE-AWARE: caixa do CA so com eventos cujo vencimento cai no MES do extrato.
+    # Estornos de vendas refunded em mes posterior caem fora -> nao poluem o caixa do mes.
+    month_key = {"jan": "2026-01", "fev": "2026-02", "mar": "2026-03",
+                 "abr": "2026-04", "mai": "2026-05"}.get(mes)
+    if month_key:
+        net_jan = {}
+        spill = 0.0
+        for e in cap.events:
+            base = e.payment_id.split("_")[0]
+            venc = (e.vencimento or "")[:7]
+            val = SIGN.get(e.tipo, 0.0) * e.valor
+            if venc == month_key:
+                net_jan[base] = net_jan.get(base, 0.0) + val
+            else:
+                spill += val
+        sum_ext_d = sum_cap_d = sum_absdiff_d = 0.0
+        bkt = {"approved": [0, 0.0], "refunded": [0, 0.0]}
+        for ref, en in ext_ref.items():
+            cn = net_jan.get(ref)
+            if cn is None:
+                continue
+            sum_ext_d += en
+            sum_cap_d += cn
+            d = en - cn
+            sum_absdiff_d += abs(d)
+            st = (pstat.get(ref) or ("?",))[0]
+            k = "approved" if st in ("approved", "in_mediation") else "refunded"
+            bkt[k][0] += 1
+            bkt[k][1] += d
+        print(f"\n[D] CAIXA DATE-AWARE (so eventos com vencimento em {month_key})")
+        print(f"    Σ extrato = {fmt(sum_ext_d)} | Σ CA(mes) = {fmt(sum_cap_d)} | NET_DIFF = {fmt(sum_ext_d-sum_cap_d)}  Σ|diff|={fmt(sum_absdiff_d)}")
+        print(f"    spill (estornos/eventos fora do mes, vao p/ outro mes) = {fmt(spill)}")
+        for k, (n, dsum) in bkt.items():
+            print(f"      {k:<10} refs={n:>4}  Σdiff={fmt(dsum)}")
 
 
 async def main():
