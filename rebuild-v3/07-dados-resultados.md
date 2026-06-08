@@ -92,6 +92,14 @@ boundary (some com janela maior, ex: incluir dezembro) e 4% erro. **Conclusão: 
 cálculo do conciliador está essencialmente CORRETO.** O que faltava era cobertura (resolvido
 nesta rodada), o juiz de reconciliação (construído), e o alinhamento de data caixa↔CA (Fase 3-full).
 
+Mesma decomposição no **net-air** (jan-abr, 22378 payments, R$2,2M vendas):
+```
+boundary:    1069 refs  Σ −R$25.244   ← borda da janela, NÃO é erro
+erro REAL:     29 refs  Σ −R$2.091    ← 0,095% — alvo da Fase 4 (refund parcial)
+```
+Consistente: **erro de valor do núcleo ~0,05-0,1% nos dois sellers.** Os refs de erro real são
+refunds parciais (comissão/frete não revertidos) — recuperáveis com Fase 4.
+
 ## Como reproduzir
 ```
 python3 testes/judge_caixa_jan2026.py                       # âncora + buckets, 4 sellers
