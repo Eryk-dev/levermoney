@@ -244,6 +244,12 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
 
     if status in ("approved", "in_mediation"):
         await _process_approved(db, seller, payment, existing.data)
+        # Devolução PARCIAL (status fica 'approved' + status_detail partially_*refunded):
+        # estorna a parte devolvida. Sem isso o líquido no CA fica MAIOR que o extrato
+        # (o parcial nunca é descontado). _process_partial_refund é idempotente por refund.
+        if payment.get("status_detail") in ("partially_refunded", "partially_bpp_refunded") \
+                and payment.get("refunds"):
+            await _process_partial_refund(db, seller, payment)
     elif status == "charged_back" and payment.get("status_detail") == "reimbursed":
         # Chargeback coberto pela proteção ML: seller recebeu o dinheiro.
         # Tratar como venda normal (receita + despesas, sem estorno).
