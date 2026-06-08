@@ -81,6 +81,17 @@ após mai → só uma perna no extrato da janela), (b) refund parcial (comissão
 = Fase 4), (c) desalinho de data CA(money_release_date promessa) vs extrato real (= Fase 3-full).
 NÃO é erro de cálculo do núcleo — é timing/borda. Não cresce sem limite (meses se compensam).
 
+### ACHADO DECISIVO — o erro de valor REAL é ínfimo (141air, 5 meses)
+Decompondo as 90 refs com resíduo > R$0,50:
+```
+boundary (perna fora da janela jan-mai):  85 refs  Σ −R$4.230   ← borda do recorte, NÃO é erro
+erro REAL (ambas pernas no extrato):        5 refs  Σ +R$160,62  ← erro de valor de verdade
+```
+**O erro de valor real do processor é R$160 em 5 meses = 0,05% de R$328k.** O "1,2%" é 96%
+boundary (some com janela maior, ex: incluir dezembro) e 4% erro. **Conclusão: o núcleo de
+cálculo do conciliador está essencialmente CORRETO.** O que faltava era cobertura (resolvido
+nesta rodada), o juiz de reconciliação (construído), e o alinhamento de data caixa↔CA (Fase 3-full).
+
 ## Como reproduzir
 ```
 python3 testes/judge_caixa_jan2026.py                       # âncora + buckets, 4 sellers
