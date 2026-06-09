@@ -349,6 +349,20 @@ def _classify_extrato_line(
     return "other", "expense", None
 
 
+def _is_sale_fee_refund(expense_type: Optional[str], transaction_type: str) -> bool:
+    """True if the extrato line is a refund of the SALE's fee/shipping (comissão/frete).
+
+    On a full devolução these mirror the processor's estorno_taxa (1.3.4), so ingesting
+    them double-counts the credit. Distinct from "Reembolso Reclamações" (release of held
+    money, which pairs with a Dinheiro retido debit and must still be ingested).
+    """
+    if expense_type in ("entrada_dinheiro", "reembolso_generico"):
+        return True
+    if expense_type == "reembolso_disputa":
+        return "envio cancelado" in _normalize_text(transaction_type)
+    return False
+
+
 # ---------------------------------------------------------------------------
 # mp_expenses row builder
 # ---------------------------------------------------------------------------
@@ -750,9 +764,27 @@ async def ingest_extrato_for_seller(
                     continue
                 # Payment exists but was not refunded by processor — ingest the
                 # extrato line (dispute debit not yet reflected in CA).
+            elif _is_sale_fee_refund(expense_type, tx["transaction_type"]) \
+                    and ref_id in refunded_payment_ids_in_db:
+                # Fee-refund dedup (mirror do debito_divida): numa devolução TOTAL o processor
+                # já cria estorno_taxa (1.3.4) = taxa que o ML devolveu. As linhas de refund de
+                # TAXA do extrato ("Entrada de dinheiro", "Reembolso de tarifas", "Reembolso
+                # Envío cancelado") representam a MESMA devolução -> ingerir dobraria o crédito.
+                # NÃO casa "Reembolso Reclamações" (liberação de dinheiro retido, pareia c/ retido).
+                stats["already_covered"] += 1
+                logger.debug(
+                    "extrato_ingester %s: %s fee-refund skipped — processor estorno_taxa cobre",
+                    seller_slug,
+                    ref_id,
+                )
+                continue
             elif expense_type in ("reembolso_disputa", "reembolso_generico",
                                   "entrada_dinheiro", "dinheiro_retido",
-                                  "liberacao_cancelada"):
+                                  "liberacao_cancelada",
+                                  # Débito de envio na disputa: clawback do subsídio de frete que
+                                  # o processor NÃO modela (despesa de frete é a do momento da venda).
+                                  # Linha à parte no extrato -> sem essa ingestão vira gap de caixa.
+                                  "debito_envio_ml"):
                 pass  # Distinct cash events that complement the payment — always ingest
             else:
                 # For most types, if the ref_id already has a payment record,

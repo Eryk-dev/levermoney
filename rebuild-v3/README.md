@@ -19,6 +19,7 @@ DRE por competência, e nunca fechou. Esta rodada diagnosticou POR QUÊ e começ
 
 | Doc | Conteúdo |
 |---|---|
+| **[00-SUCESSO-E-TESTES.md](00-SUCESSO-E-TESTES.md)** | ⭐ **LEIA ANTES DE MEXER.** O que é sucesso, a régua oficial (`gabarito`), diretrizes de teste, regra de ouro |
 | [01-objetivo-e-veredito.md](01-objetivo-e-veredito.md) | O objetivo real, e o veredito: o que é factível vs utopia |
 | [02-arquitetura-alvo.md](02-arquitetura-alvo.md) | Os 2 livros, baixa extrato-dirigida, 3 datas, 4 portões, pontes, fonte-da-verdade por relatório |
 | [03-forense-e-bugs.md](03-forense-e-bugs.md) | Forense dos subsistemas + lista de bugs com dinheiro colado |

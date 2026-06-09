@@ -121,6 +121,32 @@ def _extract_processor_charges(payment: dict) -> tuple[float, float, str | None,
     return mp_fee, shipping_cost_seller, shipping_id, reconciled_net, net_diff
 
 
+def _extract_refunded_charges(payment: dict) -> tuple[float, float]:
+    """Sum the fee/shipping charges ML actually REFUNDED to the seller (collector side).
+
+    Mirrors _extract_processor_charges but reads amounts.refunded instead of
+    amounts.original. On a full devolução ML frequently keeps the shipping
+    (shp_*.refunded == 0), so reversing the full ORIGINAL comissao+frete over-credits
+    the CA and inflates net cash. Reverse only what the seller really got back.
+    """
+    refunded_fee = 0.0
+    refunded_shipping = 0.0
+    for charge in payment.get("charges_details", []) or []:
+        accounts = charge.get("accounts", {}) or {}
+        if accounts.get("from") != "collector":
+            continue
+        refunded = _to_float((charge.get("amounts", {}) or {}).get("refunded"))
+        charge_type = charge.get("type")
+        if charge_type == "shipping":
+            refunded_shipping += refunded
+        elif charge_type == "fee":
+            charge_name = (charge.get("name") or "").strip().lower()
+            if charge_name == "financing_fee":
+                continue
+            refunded_fee += refunded
+    return round(refunded_fee, 2), round(refunded_shipping, 2)
+
+
 def _build_parcela(descricao: str, data_vencimento: str, conta_financeira: str, valor: float, nota: str = "") -> dict:
     """Monta parcela no formato correto do CA v2."""
     return {
@@ -525,9 +551,13 @@ async def _process_refunded(db, seller: dict, payment: dict, existing: list):
     )
     await ca_queue.enqueue_estorno(seller_slug, payment_id, estorno_payload)
 
-    # B) Estorno de comissão (ML devolve comissão → receita)
-    net = payment.get("transaction_details", {}).get("net_received_amount", 0)
-    total_fees = round(amount - net, 2) if net > 0 else 0
+    # B) Estorno de comissão/frete: reverte SÓ a taxa que o ML de fato devolveu.
+    # (amount - net) dava a taxa ORIGINAL total; mas em devolução o ML costuma RETER o
+    # frete (shp_*.refunded == 0) e cobrar débito de envio à parte. Reverter o frete
+    # não-devolvido zerava o caixa do CA quando o vendedor de fato perdeu o frete.
+    mp_fee, shipping_cost_seller, _, _, _ = _extract_processor_charges(payment)
+    refunded_fee, refunded_shipping = _extract_refunded_charges(payment)
+    total_fees = round(min(refunded_fee, mp_fee) + min(refunded_shipping, shipping_cost_seller), 2)
 
     if total_fees > 0 and estorno_receita >= amount:
         parcela_est = _build_parcela(f"Estorno taxa ML #{payment_id}", date_refunded, conta, total_fees)
