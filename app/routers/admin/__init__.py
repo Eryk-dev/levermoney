@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from .auth import router as auth_router
 from .sellers import router as sellers_router
 from .closing import router as closing_router
+from .dre import router as dre_router
 from .legacy import router as legacy_router
 from .extrato import router as extrato_router
 from .release_report import router as release_report_router
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 router.include_router(auth_router)
 router.include_router(sellers_router)
 router.include_router(closing_router)
+router.include_router(dre_router)
 router.include_router(legacy_router)
 router.include_router(extrato_router)
 router.include_router(release_report_router)
