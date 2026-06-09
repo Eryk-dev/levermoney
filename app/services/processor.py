@@ -440,6 +440,37 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
                 logger.warning("Payment %s: subsidy_credited recorded but enqueue_receita failed: %s", payment_id, e)
             logger.info("Payment %s: ML subsidy detected R$%.2f, enqueued receita 1.3.7", payment_id, subsidy)
 
+    # E) DESPESA - Taxa ML oculta (net < calculado → ML descontou mais que charges_details mostra).
+    # Sem esse lançamento o líquido no CA fica MAIOR que o net liberado e o caixa não bate.
+    # O breakdown fino é reconciliado depois pelo release_report_validator; aqui garantimos o net.
+    hidden_fee = round(reconciled_net - net, 2) if net_diff < 0 else 0.0
+    if hidden_fee >= 0.01:
+        hidden_payload = _build_despesa_payload(
+            seller, competencia, money_release_date, hidden_fee,
+            f"Taxa ML adicional - Payment {payment_id}",
+            f"calc_net={reconciled_net}, net_real={net}, taxa_oculta={hidden_fee}",
+            CA_CATEGORIES["comissao_ml"],
+            f"Taxa ML oculta #{payment_id}",
+        )
+        try:
+            await event_ledger.record_event(
+                seller_slug=seller_slug, ml_payment_id=payment_id,
+                event_type="fee_charged", signed_amount=money.signed_amount("expense", hidden_fee),
+                competencia_date=competencia, event_date=competencia,
+                ml_order_id=order_id, source="processor",
+                idempotency_key=event_ledger.build_idempotency_key(
+                    seller_slug, payment_id, "fee_charged", "hiddenfee"
+                ),
+            )
+        except EventRecordError as e:
+            logger.error("Event ledger fee_charged(hiddenfee) failed for %s: %s", payment_id, e)
+        else:
+            try:
+                await ca_queue.enqueue_comissao(seller_slug, f"{payment_id}_hiddenfee", hidden_payload)
+            except Exception as e:
+                logger.warning("Payment %s: hidden fee recorded but enqueue_comissao failed: %s", payment_id, e)
+            logger.info("Payment %s: hidden ML fee R$%.2f, enqueued despesa 2.8.2", payment_id, hidden_fee)
+
     logger.info(
         f"Payment {payment_id} queued: receita={amount}, comissão={mp_fee}, "
         f"frete={shipping_cost_seller}, net={net}"

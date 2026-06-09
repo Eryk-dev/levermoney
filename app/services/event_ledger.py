@@ -39,8 +39,10 @@ EVENT_TYPES = {
     "charged_back":      "negative",
     "reimbursed":        "positive",
     # Adjustments (release report validator)
-    "adjustment_fee":      "negative",
-    "adjustment_shipping": "negative",
+    # bidirecional: negativo = ML cobrou MAIS que o processor estimou (despesa de ajuste);
+    # positivo = ML cobrou MENOS (crédito contas-a-receber devolvendo o excesso lançado)
+    "adjustment_fee":      "any",
+    "adjustment_shipping": "any",
     # Expense lifecycle events (source of truth for non-order payments)
     "expense_captured":   "any",    # Despesa/receita identified (signed amount)
     "expense_classified": "zero",   # Auto-classified (metadata: ca_category)

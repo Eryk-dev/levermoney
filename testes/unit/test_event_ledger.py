@@ -122,9 +122,10 @@ class TestValidateEvent:
     def test_adjustment_shipping_negative(self):
         validate_event("adjustment_shipping", -3.20)
 
-    def test_adjustment_fee_rejects_positive(self):
-        with pytest.raises(ValueError, match="negative"):
-            validate_event("adjustment_fee", 5.50)
+    def test_adjustment_fee_accepts_positive_credit(self):
+        # bidirecional: positivo = crédito quando release < processor (ML cobrou menos)
+        validate_event("adjustment_fee", 5.50)
+        validate_event("adjustment_shipping", 3.20)
 
     # --- Zero events (flags) ---
 
@@ -208,7 +209,6 @@ class TestEventTypesCoverage:
         assert set(negative) == {
             "fee_charged", "shipping_charged",
             "refund_created", "partial_refund", "charged_back",
-            "adjustment_fee", "adjustment_shipping",
             "cash_expense", "cash_transfer_out",
         }
 
@@ -222,7 +222,12 @@ class TestEventTypesCoverage:
 
     def test_any_types(self):
         any_types = [k for k, v in EVENT_TYPES.items() if v == "any"]
-        assert set(any_types) == {"cash_internal", "expense_captured"}
+        # adjustment_* são bidirecionais: negativo = ML cobrou mais (despesa de ajuste),
+        # positivo = ML cobrou menos (crédito contas-a-receber)
+        assert set(any_types) == {
+            "cash_internal", "expense_captured",
+            "adjustment_fee", "adjustment_shipping",
+        }
 
     def test_type_count(self):
         assert len(EVENT_TYPES) == 26
