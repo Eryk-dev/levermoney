@@ -112,3 +112,122 @@ def plan_baixas_from_extrato(
                 result.nunca_baixou.append({"parcela_id": str(parc["id"]), "payment_id": ref,
                                             "saldo": float(parc["nao_pago"])})
     return result
+
+
+# ---------------------------------------------------------------------------
+# TRIO — liquidação do grupo de venda dirigida pelo extrato (produção)
+# ---------------------------------------------------------------------------
+# No CA uma venda vira ATÉ 5 parcelas: receita (bruto, a-receber), comissão e
+# frete (a-pagar), taxa oculta (a-pagar) e subsídio (a-receber). O crédito de
+# "Liberação de dinheiro" no extrato é o LÍQUIDO. Pra o fluxo de caixa do CA
+# espelhar o banco, TODO crédito do extrato liquida o grupo proporcionalmente
+# na MESMA data, de modo que Σ(baixas assinadas do dia) == Σ(linhas do dia)
+# EXATO — liberação parcelada incluída. Sobra de over-release vira AJUSTE
+# explícito; shortfall (grupo não fecha) deixa resíduo aberto -> exceção
+# `nunca_baixou` (não dá pra distinguir tranche futura de taxa não-modelada
+# no momento da linha; o caixa do dia continua exato de qualquer forma).
+
+PAPEL_SIGN = {
+    "receita": +1.0,    # contas-a-receber
+    "subsidio": +1.0,   # contas-a-receber (1.3.7)
+    "comissao": -1.0,   # contas-a-pagar
+    "frete": -1.0,      # contas-a-pagar
+    "hiddenfee": -1.0,  # contas-a-pagar (taxa ML oculta)
+}
+
+
+@dataclass
+class TrioBaixa:
+    parcela_id: str
+    payment_id: str
+    papel: str
+    data_pagamento: str   # data REAL do crédito no extrato (YYYY-MM-DD)
+    valor: float          # sempre > 0 (valor da baixa na parcela)
+
+
+@dataclass
+class TrioPlanResult:
+    baixas: list = field(default_factory=list)        # TrioBaixa
+    ajustes: list = field(default_factory=list)       # {payment_id, data, valor(+), motivo}
+    sem_parcela: list = field(default_factory=list)   # crédito sem grupo aberto no CA
+    nunca_baixou: list = field(default_factory=list)  # resíduo aberto sem crédito que cubra
+
+
+def plan_baixas_trio(extrato_lines: list[dict], parcelas: list[dict]) -> TrioPlanResult:
+    """Planeja a liquidação do grupo de venda dirigida pelo extrato.
+
+    extrato_lines: [{ref, net, date}] — SÓ créditos de liberação (net > 0),
+                   em ordem cronológica (o caller filtra/ordena).
+    parcelas:      [{id, payment_id, papel, valor_aberto}] — papel em PAPEL_SIGN.
+
+    Invariante garantida: para cada linha L,
+        Σ(PAPEL_SIGN[papel] * baixa.valor das baixas da linha) + ajuste == L.net
+    => Σ caixa CA do dia == Σ extrato do dia, por construção.
+    """
+    by_payment: dict[str, list] = {}
+    for p in parcelas:
+        papel = p.get("papel")
+        if papel not in PAPEL_SIGN:
+            continue
+        by_payment.setdefault(str(p["payment_id"]), []).append({
+            "id": str(p["id"]), "papel": papel,
+            "rem": round(float(p.get("valor_aberto", 0.0)), 2),
+        })
+
+    result = TrioPlanResult()
+
+    for ln in extrato_lines:
+        net = round(float(ln.get("net", 0.0)), 2)
+        if net <= 0:
+            continue
+        ref = str(ln.get("ref"))
+        data = ln.get("date", "")
+        if ref not in by_payment:
+            result.sem_parcela.append({"ref": ref, "valor": net, "data": data})
+            continue
+        grupo = [p for p in by_payment[ref] if p["rem"] >= 0.01]
+        net_rem = round(sum(PAPEL_SIGN[p["papel"]] * p["rem"] for p in grupo), 2)
+
+        if not grupo or net_rem <= 0.0:
+            # grupo já liquidado (ou líquido restante <= 0) e chegou MAIS crédito:
+            # caixa real sem contrapartida -> ajuste explícito (mantém o dia exato)
+            result.ajustes.append({"payment_id": ref, "data": data, "valor": net,
+                                   "motivo": "credito_sem_liquido_aberto"})
+            continue
+
+        if net >= net_rem - 0.01:
+            # tranche final (ou única): liquida TUDO que resta do grupo
+            for p in grupo:
+                result.baixas.append(TrioBaixa(p["id"], ref, p["papel"], data, p["rem"]))
+                p["rem"] = 0.0
+            excesso = round(net - net_rem, 2)
+            if excesso >= 0.01:
+                # over-release (subsídio não-modelado): caixa real > grupo -> ajuste
+                result.ajustes.append({"payment_id": ref, "data": data, "valor": excesso,
+                                       "motivo": "over_release"})
+        else:
+            # tranche parcial: liquida proporcionalmente (f = net / net_rem) e
+            # corrige o arredondamento na maior parcela pra fechar EXATO
+            f = net / net_rem
+            vals = []
+            for p in grupo:
+                v = round(p["rem"] * f, 2)
+                vals.append(v)
+            soma = round(sum(PAPEL_SIGN[p["papel"]] * v for p, v in zip(grupo, vals)), 2)
+            residuo = round(net - soma, 2)
+            if abs(residuo) >= 0.01:
+                imax = max(range(len(grupo)), key=lambda i: grupo[i]["rem"])
+                vals[imax] = round(vals[imax] + PAPEL_SIGN[grupo[imax]["papel"]] * residuo, 2)
+            for p, v in zip(grupo, vals):
+                if v < 0.01:
+                    continue
+                v = min(v, p["rem"])
+                result.baixas.append(TrioBaixa(p["id"], ref, p["papel"], data, v))
+                p["rem"] = round(p["rem"] - v, 2)
+
+    for ref, grupo in by_payment.items():
+        for p in grupo:
+            if p["rem"] >= 0.01:
+                result.nunca_baixou.append({"parcela_id": p["id"], "payment_id": ref,
+                                            "papel": p["papel"], "saldo": p["rem"]})
+    return result

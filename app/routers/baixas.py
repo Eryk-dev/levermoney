@@ -16,9 +16,11 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Query
 
+from app.config import settings
 from app.db.supabase import get_db
 from app.models.sellers import get_missing_ca_launch_fields, get_seller_config
 from app.services import ca_api, ca_queue
+from app.services import baixas_extrato_runner
 from app.services.release_checker import ReleaseChecker, _is_refund_or_estorno
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,35 @@ router = APIRouter(prefix="/baixas")
 
 # Start date for searching open parcelas (far enough to catch all)
 DEFAULT_LOOKBACK_DAYS = 90
+
+
+@router.get("/extrato/{seller_slug}")
+async def baixas_extrato(
+    seller_slug: str,
+    data_de: str = Query(..., description="Início do período do extrato (YYYY-MM-DD)"),
+    data_ate: str = Query(..., description="Fim do período do extrato (YYYY-MM-DD)"),
+):
+    """Baixa EXTRATO-DIRIGIDA (Fase 3-full): liquida o grupo da venda (receita,
+    comissão, frete, taxa oculta, subsídio) com a DATA e o VALOR reais do crédito
+    de liberação no extrato — Σ caixa CA do dia == Σ extrato do dia por construção.
+
+    Posta via ca_queue SOMENTE se o seller está em `baixa_extrato_write_sellers`
+    (senão é dry-run: loga o plano e retorna o resumo). Ajustes e resíduos voltam
+    como fila de exceção explícita.
+    """
+    db = get_db()
+    seller = get_seller_config(db, seller_slug)
+    if not seller:
+        return {"error": f"Seller {seller_slug} not found"}
+    missing = get_missing_ca_launch_fields(seller)
+    if missing:
+        return {"seller": seller_slug, "status": "skipped",
+                "reason": "missing_ca_launch_config", "missing_fields": missing}
+    try:
+        return await baixas_extrato_runner.run_for_seller(seller_slug, data_de, data_ate, seller)
+    except Exception as e:
+        logger.exception("baixas_extrato(%s) failed", seller_slug)
+        return {"seller": seller_slug, "status": "error", "error": str(e)}
 
 
 @router.get("/processar/{seller_slug}")
@@ -239,6 +270,13 @@ async def processar_baixas_auto(seller_slug: str) -> dict:
     """Reusable function called by the daily scheduler.
     Fetches open parcelas and enqueues baixas for all with vencimento <= today.
     Verifies money_release_status before each baixa."""
+    # Sellers migrados pra baixa extrato-dirigida NÃO usam o fluxo por-promessa
+    driven = {s.strip() for s in settings.baixa_extrato_driven_sellers.split(",") if s.strip()}
+    if seller_slug in driven:
+        logger.info("processar_baixas_auto(%s): skipped, seller usa baixa extrato-dirigida", seller_slug)
+        return {"seller": seller_slug, "queued": 0, "skipped": 0,
+                "status": "skipped", "reason": "baixa_extrato_driven"}
+
     db = get_db()
     seller = get_seller_config(db, seller_slug)
     if not seller:
