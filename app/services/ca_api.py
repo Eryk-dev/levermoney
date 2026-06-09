@@ -484,6 +484,16 @@ async def criar_baixa(parcela_id: str, data_pagamento: str, valor: float, conta_
     return resp.json()
 
 
+async def buscar_parcela(parcela_id: str) -> dict:
+    """GET /v1/financeiro/eventos-financeiros/parcelas/{id} — detalhe da parcela
+    (descricao, vencimento, valor, status)."""
+    resp = await _request_with_retry(
+        "get", f"{CA_API}/v1/financeiro/eventos-financeiros/parcelas/{parcela_id}",
+        headers=await _headers(),
+    )
+    return resp.json()
+
+
 async def saldo_atual(conta_financeira_id: str) -> dict:
     """GET /v1/conta-financeira/{id}/saldo-atual — saldo absoluto da conta no CA.
 

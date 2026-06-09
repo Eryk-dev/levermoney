@@ -16,6 +16,36 @@ from ._deps import require_admin
 router = APIRouter()
 
 
+# ── Retrofit do histórico de baixas ──────────────────────────
+
+@router.get("/baixas-retrofit/{seller_slug}", dependencies=[Depends(require_admin)])
+async def baixas_retrofit_plan(
+    seller_slug: str,
+    data_de: str = Query(..., description="YYYY-MM-DD"),
+    data_ate: str = Query(..., description="YYYY-MM-DD"),
+    limit: int | None = Query(None, description="Limita nº de baixas analisadas (piloto=1)"),
+):
+    """Plano de correção das baixas por-promessa (leitura pura — não escreve).
+    PATCH=re-datar pela liberação real; DELETE=baixa sem liberação; MANUAL=exceção."""
+    from app.services import baixas_retrofit
+    return await baixas_retrofit.plan_retrofit(seller_slug, data_de, data_ate, limit=limit)
+
+
+@router.post("/baixas-retrofit/{seller_slug}/apply", dependencies=[Depends(require_admin)])
+async def baixas_retrofit_apply(
+    seller_slug: str,
+    data_de: str = Query(..., description="YYYY-MM-DD"),
+    data_ate: str = Query(..., description="YYYY-MM-DD"),
+    limit: int | None = Query(None, description="Piloto: aplicar só as N primeiras"),
+):
+    """Aplica o plano (enfileira PATCH/DELETE via ca_queue). Gated:
+    seller precisa estar em baixa_extrato_write_sellers."""
+    from app.services import baixas_retrofit
+    plan = await baixas_retrofit.plan_retrofit(seller_slug, data_de, data_ate, limit=limit)
+    result = await baixas_retrofit.apply_retrofit(seller_slug, plan)
+    return {"plan_resumo": plan["resumo"], **result}
+
+
 # ── Juiz de Caixa (portão P1) ────────────────────────────────
 
 @router.get("/caixa-judge/{seller_slug}", dependencies=[Depends(require_admin)])

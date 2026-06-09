@@ -287,6 +287,10 @@ class CaWorker:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 if method == "post":
                     resp = await client.post(job["ca_endpoint"], headers=headers, json=job["ca_payload"])
+                elif method == "patch":
+                    resp = await client.patch(job["ca_endpoint"], headers=headers, json=job["ca_payload"])
+                elif method == "delete":
+                    resp = await client.delete(job["ca_endpoint"], headers=headers)
                 else:
                     resp = await client.get(job["ca_endpoint"], headers=headers, params=job["ca_payload"])
 
