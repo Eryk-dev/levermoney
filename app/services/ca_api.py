@@ -484,6 +484,18 @@ async def criar_baixa(parcela_id: str, data_pagamento: str, valor: float, conta_
     return resp.json()
 
 
+async def saldo_atual(conta_financeira_id: str) -> dict:
+    """GET /v1/conta-financeira/{id}/saldo-atual — saldo absoluto da conta no CA.
+
+    Base do portão P1: comparar com o PARTIAL_BALANCE/FINAL_BALANCE do extrato MP.
+    """
+    resp = await _request_with_retry(
+        "get", f"{CA_API}/v1/conta-financeira/{conta_financeira_id}/saldo-atual",
+        headers=await _headers(),
+    )
+    return resp.json()
+
+
 async def listar_baixas(parcela_id: str) -> list:
     """GET /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa — baixas da parcela."""
     resp = await _request_with_retry(
