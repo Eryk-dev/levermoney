@@ -57,6 +57,7 @@ def plan_baixas_from_extrato(
 
     result = BaixaPlanResult()
     consumed_payments = set()
+    last_baixa_by_ref = {}   # ref -> última BaixaPlan (p/ alocar over-release de linhas posteriores)
 
     for ln in extrato_lines:
         if not is_credit(ln):
@@ -71,6 +72,7 @@ def plan_baixas_from_extrato(
         consumed_payments.add(ref)
         # consome o crédito contra as parcelas abertas do payment
         restante = valor
+        line_baixas = []
         for parc in parcelas:
             if restante <= 0.009:
                 break
@@ -78,16 +80,28 @@ def plan_baixas_from_extrato(
             if saldo <= 0.009:
                 continue
             usar = min(restante, saldo)
-            ajuste = round(saldo - usar, 2) if abs(saldo - usar) >= 0.01 and usar >= saldo - 0.01 else 0.0
-            result.baixas.append(BaixaPlan(
+            bp = BaixaPlan(
                 parcela_id=str(parc["id"]), payment_id=ref,
                 data_pagamento=data, valor=round(usar, 2),
-                # ajuste = diferença entre o que foi lançado (saldo) e o que caiu (usar),
-                # quando o crédito do extrato fecha a parcela com valor diferente do provisório
+                # ajuste = diferença entre o provisório lançado (saldo) e o que caiu (usar),
+                # quando o crédito do extrato fecha a parcela com valor menor que o provisório
                 ajuste=round(saldo - usar, 2) if usar < saldo - 0.01 else 0.0,
-            ))
+            )
+            result.baixas.append(bp)
+            line_baixas.append(bp)
             parc["nao_pago"] = round(saldo - usar, 2)
             restante = round(restante - usar, 2)
+        if line_baixas:
+            last_baixa_by_ref[ref] = line_baixas[-1]
+        # over-release: ML liberou MAIS que o recebível (subsídio/over-release). Posta o
+        # valor CHEIO do extrato (o caixa REAL), excesso vira ajuste NEGATIVO. Não dropar o
+        # caixa que de fato caiu -> mantém Σbaixa == Σextrato por construção também aqui.
+        # Aloca na última baixa do REF (mesmo de linha anterior, se a parcela já fechou).
+        if restante > 0.009:
+            target = last_baixa_by_ref.get(ref)
+            if target is not None:
+                target.valor = round(target.valor + restante, 2)
+                target.ajuste = round(target.ajuste - restante, 2)
 
     # parcelas que nunca receberam crédito no extrato (cancela-antes-de-liberar / em trânsito)
     for ref, parcelas in by_payment.items():
