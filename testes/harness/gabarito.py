@@ -17,7 +17,6 @@ import importlib.util
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from testes.harness.dryrun import run_seller_month, SIGN
-from app.services.extrato_ingester import _is_sale_fee_refund
 
 _jp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "judge_caixa_jan2026.py")
 _s = importlib.util.spec_from_file_location("judge", _jp)
@@ -32,6 +31,17 @@ EXTSL = {"141air": "141Air", "net-air": "netair"}
 WIN_LO, WIN_HI = "2026-01-01", "2026-05-31"
 ALWAYS_INGEST = {"reembolso_disputa", "reembolso_generico", "entrada_dinheiro",
                  "dinheiro_retido", "liberacao_cancelada", "debito_envio_ml"}
+
+
+def _is_sale_fee_refund(expense_type, transaction_type):
+    """Inline do helper fix3b (rebuild-v3 local): refund de TAXA da venda espelha o
+    estorno_taxa do processor -> ingerir double-conta. "Reembolso Reclamações" (liberacao
+    de retido, pareia com Dinheiro retido) NAO e fee-refund e segue ingerido."""
+    if expense_type in ("entrada_dinheiro", "reembolso_generico"):
+        return True
+    if expense_type == "reembolso_disputa":
+        return "envio cancelado" in judge.norm(transaction_type)
+    return False
 
 
 def fmt(v):

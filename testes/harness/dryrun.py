@@ -15,7 +15,7 @@ Uso:
 import contextlib
 from dataclasses import dataclass, field
 
-from app.services import processor, ca_queue, expense_classifier, ml_api
+from app.services import processor, ca_queue, expense_classifier, ml_api, event_ledger
 from app.models.sellers import CA_CONTATO_ML
 
 # Sinal de caixa por tipo de lancamento (efeito no caixa do CA)
@@ -25,6 +25,7 @@ SIGN = {
     "frete": -1.0,        # contas-a-pagar (saida)
     "estorno": -1.0,      # devolucao da receita (saida)
     "estorno_taxa": +1.0, # estorno de taxa (entrada)
+    "estorno_frete": +1.0,  # estorno de frete (entrada, contas-a-receber) — US-010
     "partial_refund": -1.0,
 }
 
@@ -132,6 +133,22 @@ class _FakeQuery:
             if self._table == "mp_expenses" and row is not None:
                 rows = row if isinstance(row, list) else [row]
                 self._cap.mp_expenses.extend(rows)
+            # event ledger (arquitetura v3): captura evento + idempotencia por
+            # idempotency_key (replica ON CONFLICT DO NOTHING do Supabase)
+            if self._table == "payment_events" and row is not None:
+                rows = row if isinstance(row, list) else [row]
+                out = []
+                events = self._state.setdefault("_events", {})
+                by_pid = self._state.setdefault("_events_by_pid", {})
+                for rr in rows:
+                    key = rr.get("idempotency_key")
+                    if key in events:
+                        continue  # duplicata -> data vazio -> record_event devolve None
+                    events[key] = rr
+                    by_pid.setdefault(str(rr.get("ml_payment_id")), []).append(rr)
+                    out.append(rr)
+                self._pending = None
+                return _Result(data=out)
             # idempotencia cross-month: grava status do payment no estado compartilhado
             if self._table == "payments" and row is not None:
                 rows = row if isinstance(row, list) else [row]
@@ -141,6 +158,10 @@ class _FakeQuery:
                         self._state[pid] = {"id": pid, "status": rr.get("status")}
             self._pending = None
             return _Result(data=[row] if row else [])
+        # leitura do ledger por ml_payment_id: devolve eventos capturados (já processado?)
+        if self._table == "payment_events" and "ml_payment_id" in self._eqs:
+            pid = str(self._eqs["ml_payment_id"])
+            return _Result(data=list(self._state.get("_events_by_pid", {}).get(pid, [])))
         # leitura de payments por ml_payment_id: devolve estado (já processado?)
         if self._table == "payments" and "ml_payment_id" in self._eqs:
             pid = str(self._eqs["ml_payment_id"])
@@ -187,6 +208,12 @@ def patched(cap, seller_fixture, state=None):
     processor.get_seller_config = lambda _db, slug: dict(seller_fixture, slug=slug)
     processor.get_missing_ca_launch_fields = lambda seller: []
 
+    # event_ledger (arquitetura v3): TODAS as funcoes do ledger (record_event,
+    # get_events, record_expense_event, ...) resolvem get_db() nos globals do
+    # modulo -> 1 patch cobre tudo; record_event REAL roda (validacao + key).
+    save(event_ledger, "get_db")
+    event_ledger.get_db = lambda: db
+
     # ml_api.get_order -> None (fallback 404, titulo nao afeta valor)
     save(ml_api, "get_order")
     async def _no_order(*a, **k):
@@ -198,6 +225,7 @@ def patched(cap, seller_fixture, state=None):
         "enqueue_receita": "receita", "enqueue_comissao": "comissao",
         "enqueue_frete": "frete", "enqueue_estorno": "estorno",
         "enqueue_estorno_taxa": "estorno_taxa",
+        "enqueue_estorno_frete": "estorno_frete",
     }
     for fn, tipo in enqueue_map.items():
         save(ca_queue, fn)
