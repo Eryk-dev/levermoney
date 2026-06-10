@@ -16,6 +16,29 @@ from ._deps import require_admin
 router = APIRouter()
 
 
+# ── Lançador de complemento (lançamentos categorizados extrato-driven) ───────
+
+@router.get("/complemento/{seller_slug}", dependencies=[Depends(require_admin)])
+async def complemento_seller(
+    seller_slug: str,
+    data_de: str = Query(..., description="YYYY-MM-DD"),
+    data_ate: str = Query(..., description="YYYY-MM-DD"),
+    apply: bool = Query(False, description="True = posta via ca_queue (gated por baixa_extrato_write_sellers)"),
+):
+    """Política disputa=cancelamento: zera categorias da venda lançada + resultado
+    real do banco categorizado (perda/ganho disputa, dívida ML, estorno parcial).
+    Sem apply = só o plano (leitura pura)."""
+    from app.services import complemento_runner
+    seller = get_seller_config(get_db(), seller_slug)
+    if not seller:
+        return {"error": f"Seller {seller_slug} not found"}
+    if apply:
+        return await complemento_runner.run_for_seller(seller_slug, data_de, data_ate, seller)
+    plan = await complemento_runner.plan_for_seller(seller_slug, data_de, data_ate)
+    plan["complementos"] = [vars(c) for c in plan["complementos"]]
+    return plan
+
+
 # ── Retrofit do histórico de baixas ──────────────────────────
 
 @router.get("/baixas-retrofit/{seller_slug}", dependencies=[Depends(require_admin)])

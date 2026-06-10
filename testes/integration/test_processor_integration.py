@@ -217,8 +217,10 @@ class TestStateMachine:
         m["ca_queue"].enqueue_partial_refund.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_refunded_never_processed_creates_approval_first(self, proc_mocks):
-        """Refunded payment with no existing events → approval + refund."""
+    async def test_refunded_never_processed_skips_phantom_pair(self, proc_mocks):
+        """POLÍTICA jun/2026: disputa nunca-lançada NÃO cria par receita+estorno
+        fantasma — "nunca virou venda". Movimento real de caixa entra pela lane
+        do extrato (trio/complemento) como resultado de disputa."""
         payment = _make_payment(
             status="refunded", status_detail="bpp_refunded",
             refunds=[{"id": 1, "amount": 100.0, "date_created": "2026-02-01T10:00:00.000-04:00"}],
@@ -230,24 +232,10 @@ class TestStateMachine:
         await process_payment_webhook("141air", 12345, payment_data=payment)
 
         events = _recorded_events(m["event_ledger"])
-        # Must create approval events first, then refund events
-        assert "sale_approved" in events
-        assert "refund_created" in events
-        m["ca_queue"].enqueue_receita.assert_called_once()
-        m["ca_queue"].enqueue_estorno.assert_called_once()
-
-        # Payload value assertions
-        receita_payload = m["ca_queue"].enqueue_receita.call_args[0][2]
-        assert receita_payload["valor"] == 100.0
-
-        estorno_payload = m["ca_queue"].enqueue_estorno.call_args[0][2]
-        assert estorno_payload["valor"] == 100.0
-
-        estorno_taxa_payload = m["ca_queue"].enqueue_estorno_taxa.call_args[0][2]
-        assert estorno_taxa_payload["valor"] == 15.0
-
-        estorno_frete_payload = m["ca_queue"].enqueue_estorno_frete.call_args[0][2]
-        assert estorno_frete_payload["valor"] == 5.0
+        assert "sale_approved" not in events
+        assert "refund_created" not in events
+        m["ca_queue"].enqueue_receita.assert_not_called()
+        m["ca_queue"].enqueue_estorno.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_refunded_already_approved_only_refunds(self, proc_mocks):
@@ -294,12 +282,10 @@ class TestStateMachine:
         m["ca_queue"].enqueue_estorno.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_refunded_by_admin_no_existing_processes_full_cycle(self, proc_mocks):
-        """refunded/by_admin with no sale_approved → processes receita + estorno (net zero).
-
-        Previously skipped as "kit split", but this caused gross revenue to diverge from
-        ML dashboard "Vendas brutas". Now captures full cycle for DRE accuracy.
-        """
+    async def test_refunded_by_admin_no_existing_skips(self, proc_mocks):
+        """POLÍTICA jun/2026: by_admin (kit split) nunca-lançado NÃO cria par
+        fantasma — os payments do split cobrem a receita real. A ponte
+        DRE↔painel ML explica a diferença vs "Vendas brutas"."""
         payment = _make_payment(
             status="refunded", status_detail="by_admin",
             transaction_amount_refunded=100.0,
@@ -309,10 +295,10 @@ class TestStateMachine:
         await process_payment_webhook("141air", 12345, payment_data=payment)
 
         events = _recorded_events(m["event_ledger"])
-        assert "sale_approved" in events
-        assert "refund_created" in events
-        m["ca_queue"].enqueue_receita.assert_called_once()
-        m["ca_queue"].enqueue_estorno.assert_called_once()
+        assert "sale_approved" not in events
+        assert "refund_created" not in events
+        m["ca_queue"].enqueue_receita.assert_not_called()
+        m["ca_queue"].enqueue_estorno.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_refunded_by_admin_with_existing_processes_refund(self, proc_mocks):
@@ -369,21 +355,19 @@ class TestFilters:
         m["event_ledger"].record_event.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_cancelled_processes_full_cycle(self, proc_mocks):
-        """Cancelled payments create receita + estorno (net zero) to match ML 'Vendas brutas'.
-
-        ML dashboard counts cancelled sales in gross revenue; DRE must mirror that.
-        """
+    async def test_cancelled_skips_phantom_pair(self, proc_mocks):
+        """POLÍTICA jun/2026: cancelado nunca-lançado = não-evento ("nunca virou
+        venda"). Sai do DRE; ponte DRE↔painel explica vs "Vendas brutas"."""
         payment = _make_payment(status="cancelled", transaction_amount_refunded=100.0)
         m = proc_mocks
 
         await process_payment_webhook("141air", 12345, payment_data=payment)
 
         events = _recorded_events(m["event_ledger"])
-        assert "sale_approved" in events
-        assert "refund_created" in events
-        m["ca_queue"].enqueue_receita.assert_called_once()
-        m["ca_queue"].enqueue_estorno.assert_called_once()
+        assert "sale_approved" not in events
+        assert "refund_created" not in events
+        m["ca_queue"].enqueue_receita.assert_not_called()
+        m["ca_queue"].enqueue_estorno.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_rejected_skips(self, proc_mocks):

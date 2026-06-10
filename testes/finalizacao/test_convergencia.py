@@ -132,3 +132,72 @@ def test_ponte_devolucao_diferida(monkeypatch):
     d = pontes._devolucao_diferida("x", "2026-01-01", "2026-02-28")
     assert d["saiu_do_mes"].get("2026-01") == 1000.0     # painel ML conta em jan
     assert d["entrou_no_mes"].get("2026-02") == 1000.0   # DRE conta em fev
+
+
+# ── complemento: política disputa=cancelamento ──────────────────────────────
+
+def _soma(grupo, comps):
+    return round(sum(grupo.values()) + sum(c.valor for c in comps), 2)
+
+
+def test_complemento_disputa_ja_lancada_zera_e_boka_perda():
+    """Venda JÁ entrou (approved antes) e virou chargeback perdido: antis zeram
+    cada categoria + perda real do banco em 1.2.1. Σ == extrato."""
+    from app.services.complemento import plan_complemento
+    grupo = {"receita": 100.0, "comissao": -12.0, "frete": -8.0}   # lançado
+    extrato = -20.0  # banco: liberou +80, tomou de volta -100 (perdeu principal)
+    comps = plan_complemento("1", {"status": "charged_back", "status_detail": ""},
+                             grupo, extrato, "2026-02-05")
+    antis = {c.categoria: c.valor for c in comps if c.motivo == "disputa_cancelamento"}
+    assert antis["venda"] == -100.0      # zera venda -> "nunca virou venda"
+    assert antis["comissao"] == 12.0     # zera comissão
+    assert antis["frete"] == 8.0
+    perda = [c for c in comps if c.motivo == "disputa_resultado"]
+    assert len(perda) == 1 and perda[0].valor == -20.0
+    assert perda[0].ca_categoria_key == "devolucao"   # 1.2.1
+    assert _soma(grupo, comps) == extrato
+
+
+def test_complemento_disputa_nunca_lancada_so_resultado():
+    """Nunca entrou: NÃO cria par fantasma — só o resultado real do banco."""
+    from app.services.complemento import plan_complemento
+    comps = plan_complemento("2", {"status": "refunded", "status_detail": "bpp_refunded"},
+                             {}, -36.40, "2026-03-01")
+    assert len(comps) == 1
+    assert comps[0].motivo == "disputa_resultado" and comps[0].valor == -36.40
+
+
+def test_complemento_disputa_nunca_lancada_sem_caixa_nada():
+    from app.services.complemento import plan_complemento
+    comps = plan_complemento("3", {"status": "cancelled", "status_detail": ""},
+                             {}, 0.0, "2026-03-01")
+    assert comps == []
+
+
+def test_complemento_api_cega_vira_divida_ml():
+    """Caso 6,46: banco creditou menos do que a API inteira diz."""
+    from app.services.complemento import plan_complemento
+    grupo = {"receita": 18.33, "comissao": -1.63}    # net lançado 16.70
+    comps = plan_complemento("148949991586", {"status": "approved", "status_detail": "accredited"},
+                             grupo, 10.24, "2026-03-18")
+    assert len(comps) == 1
+    assert comps[0].categoria == "divida_ml" and comps[0].valor == -6.46
+    assert comps[0].ca_categoria_key == "comissao_ml"
+    assert _soma(grupo, comps) == 10.24
+
+
+def test_complemento_refund_parcial_pelo_extrato():
+    from app.services.complemento import plan_complemento
+    grupo = {"receita": 200.0, "comissao": -30.0, "partial_refund": -50.0}  # net 120
+    comps = plan_complemento("4", {"status": "approved", "status_detail": "partially_refunded"},
+                             grupo, 110.0, "2026-04-10")
+    assert len(comps) == 1
+    assert comps[0].categoria == "estorno_parcial" and comps[0].valor == -10.0
+    assert _soma(grupo, comps) == 110.0
+
+
+def test_complemento_inelegivel_nao_lanca():
+    from app.services.complemento import plan_complemento
+    comps = plan_complemento("5", {"status": "approved", "status_detail": ""},
+                             {"receita": 100.0}, 0.0, "2026-05-01", elegivel=False)
+    assert comps == []

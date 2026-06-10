@@ -247,28 +247,23 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
         # Tratar como venda normal (receita + despesas, sem estorno).
         logger.info(f"Payment {payment_id} charged_back+reimbursed, treating as approved (no estorno)")
         await _process_approved(seller, payment, existing_event_types)
-    elif status == "refunded" and payment.get("status_detail") in ("bpp_refunded", "bpp_covered"):
-        # BPP: ML refunded buyer from ML's pocket. Seller keeps money,
-        # but DRE must reflect the full cycle: receita + devolução + estorno taxa/frete.
-        # Net effect is zero, but the entries are needed for accurate DRE reporting.
-        logger.info(
-            "Payment %s %s, processing as refund for DRE accuracy (receita + devolução + estornos)",
-            payment_id, payment.get("status_detail"),
-        )
-        await _process_refunded(seller, payment, existing_event_types)
-    elif status == "refunded" and payment.get("status_detail") == "by_admin":
-        # Kit split: ML cancelled original and created new payments for each package.
-        # Capture both receita + estorno so DRE reflects ML "Vendas brutas" total.
-        # _process_refunded creates sale_approved if missing, then refund_created (net zero).
-        logger.info(f"Payment {payment_id} refunded/by_admin, processing as refund (receita + estorno)")
-        await _process_refunded(seller, payment, existing_event_types)
-    elif status in ("refunded", "charged_back"):
-        await _process_refunded(seller, payment, existing_event_types)
-    elif status == "cancelled":
-        # Cancelled sales (by_payer/expired): ML still counts these in "Vendas brutas".
-        # Record receita + estorno (same category as devolução) for DRE accuracy. Net zero in cash.
-        logger.info(f"Payment {payment_id} cancelled, processing as refund (receita + estorno)")
-        await _process_refunded(seller, payment, existing_event_types)
+    elif status in ("refunded", "charged_back", "cancelled"):
+        # POLÍTICA (decisão do dono, jun/2026): disputa/cancelamento "nunca virou venda".
+        # - Se a venda JÁ ENTROU (sale_approved no ledger): processa o estorno —
+        #   cancelamento real do que foi lançado.
+        # - Se NUNCA ENTROU: NÃO cria o par receita+estorno fantasma (antes era criado
+        #   p/ DRE bater com "Vendas brutas" do painel ML — a ponte DRE↔painel explica
+        #   essa diferença agora). Movimento real de caixa (bpp/chargeback que liberou
+        #   e estornou) entra pela lane do extrato (trio/complemento) com categoria
+        #   de resultado de disputa.
+        if "sale_approved" in existing_event_types:
+            await _process_refunded(seller, payment, existing_event_types)
+        else:
+            logger.info(
+                "Payment %s %s/%s never entered as sale, skipping phantom pair "
+                "(cash legs handled by extrato lane)",
+                payment_id, status, payment.get("status_detail"),
+            )
     elif status == "rejected":
         # Rejected: payment attempts that never succeeded (card declined, high risk, etc).
         # Never were real sales — ML dashboard also excludes these from "Vendas brutas".
