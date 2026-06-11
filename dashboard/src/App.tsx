@@ -1173,6 +1173,7 @@ function App() {
             approveSeller={admin.approveSeller}
             updateSellerConfig={admin.updateSellerConfig}
             rejectSeller={admin.rejectSeller}
+            disconnectCA={admin.disconnectCA}
             syncStatus={admin.syncStatus}
             triggerSync={admin.triggerSync}
             caAccounts={admin.caAccounts}

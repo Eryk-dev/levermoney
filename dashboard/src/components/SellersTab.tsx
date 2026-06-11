@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { formatBRL } from '../utils/dataParser';
-import { RefreshCw, Check, X, Settings, Copy, ArrowUpCircle, RotateCcw } from 'lucide-react';
+import { RefreshCw, Check, X, Settings, Copy, ArrowUpCircle, RotateCcw, Unplug } from 'lucide-react';
 import type { CaAccount, CaCostCenter, ActivateSellerConfig, UpgradeToCAConfig, UpgradeToCAResult, BackfillStatus } from '../hooks/useAdmin';
 import type { RevenueLine } from '../types';
 import styles from './AdminPanel.module.css';
@@ -64,6 +64,7 @@ export interface SellersTabProps {
     ca_centro_custo_variavel?: string;
   }) => Promise<void>;
   rejectSeller: (id: string) => Promise<void>;
+  disconnectCA: (slug: string) => Promise<{ status: string; error?: string }>;
   syncStatus: { last_sync: string | null; results: SyncResult[] };
   triggerSync: () => Promise<void>;
   caAccounts: CaAccount[];
@@ -377,6 +378,7 @@ export function SellersTab({
   approveSeller,
   updateSellerConfig,
   rejectSeller,
+  disconnectCA,
   syncStatus,
   triggerSync,
   caAccounts,
@@ -712,6 +714,32 @@ export function SellersTab({
     await retryBackfill(slug);
   };
 
+  // ── Disconnect CA ─────────────────────────────────────────
+
+  const [disconnectingSlug, setDisconnectingSlug] = useState<string | null>(null);
+  const [disconnectError, setDisconnectError] = useState<string | null>(null);
+
+  const handleDisconnectCA = async (s: Seller) => {
+    const name = s.dashboard_empresa || s.name;
+    const ok = window.confirm(
+      `Desconectar "${name}" do Conta Azul?\n\n` +
+      'O seller volta para o modo somente-dashboard e a configuracao CA ' +
+      '(conta, centro de custo, data de inicio) e removida. ' +
+      'O historico de lancamentos e extratos e preservado.',
+    );
+    if (!ok) return;
+    setDisconnectError(null);
+    setDisconnectingSlug(s.slug);
+    try {
+      const result = await disconnectCA(s.slug);
+      if (result.status !== 'ok') {
+        setDisconnectError(`Falha ao desconectar ${name}: ${result.error || 'erro desconhecido'}`);
+      }
+    } finally {
+      setDisconnectingSlug(null);
+    }
+  };
+
   return (
     <>
       {/* Utilities: install link + sync, side by side */}
@@ -785,6 +813,9 @@ export function SellersTab({
           {activeSellers.length} ativos
           {pendingSellers.length > 0 && ` · ${pendingSellers.length} aguardando ativacao`}
         </p>
+        {disconnectError && (
+          <div className={styles.uploadErrorBox}>{disconnectError}</div>
+        )}
         <div className={styles.sellerList}>
           {orderedSellers.map(rawSeller => {
             const s = getSellerBackfillStatus(rawSeller);
@@ -839,7 +870,7 @@ export function SellersTab({
                   )}
                   {isActive && (
                     <>
-                      {isDashboardOnly && (
+                      {isDashboardOnly ? (
                         <button
                           type="button"
                           className={styles.upgradeBtn}
@@ -847,6 +878,17 @@ export function SellersTab({
                           title="Upgrade para Conta Azul"
                         >
                           <ArrowUpCircle size={14} /> Upgrade CA
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.rejectBtn}
+                          onClick={() => void handleDisconnectCA(s)}
+                          disabled={disconnectingSlug !== null}
+                          title="Desconectar do Conta Azul (volta para somente-dashboard)"
+                        >
+                          <Unplug size={14} />
+                          {disconnectingSlug === s.slug ? 'Desconectando...' : 'Desconectar CA'}
                         </button>
                       )}
                       <button

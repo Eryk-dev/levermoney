@@ -198,6 +198,25 @@ export function useAdmin() {
     await loadSellers();
   }, [token, headers, loadSellers]);
 
+  const disconnectCA = useCallback(async (slug: string): Promise<{ status: string; error?: string }> => {
+    if (!token) return { status: 'error', error: 'not authenticated' };
+    try {
+      const res = await fetch(`${API_BASE}/admin/sellers/${slug}/disconnect-ca`, {
+        method: 'POST',
+        headers: headers(),
+      });
+      if (res.status === 401) { logout(); return { status: 'error', error: 'unauthorized' }; }
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        return { status: 'error', error: detail?.detail || `HTTP ${res.status}` };
+      }
+      await loadSellers();
+      return { status: 'ok' };
+    } catch (e) {
+      return { status: 'error', error: e instanceof Error ? e.message : 'network error' };
+    }
+  }, [token, headers, logout, loadSellers]);
+
   const triggerSync = useCallback(async () => {
     if (!token) return;
     const res = await fetch(`${API_BASE}/admin/sync/trigger`, {
@@ -474,6 +493,7 @@ export function useAdmin() {
     approveSeller,
     updateSellerConfig,
     rejectSeller,
+    disconnectCA,
     syncStatus,
     triggerSync,
     loadSellers,
