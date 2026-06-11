@@ -95,7 +95,9 @@ dash/
 │   │   ├── RevenueLinesManager.tsx   # Gestao de linhas de receita
 │   │   ├── Select.tsx                # Dropdown simples
 │   │   ├── AdminLogin.tsx            # Login admin
-│   │   ├── AdminPanel.tsx            # Painel admin (tabs Sellers/Despesas)
+│   │   ├── AdminPanel.tsx            # Painel admin (shell de tabs Sellers/Despesas/Extratos)
+│   │   ├── SellersTab.tsx            # Tab Sellers (onboarding, sync, modais activate/config/upgrade)
+│   │   ├── ExtratoTab.tsx            # Tab Extratos (upload CSV + cobertura por mes + historico)
 │   │   └── ExpensesExportTab.tsx     # Export de despesas + backup GDrive + historico
 │   └── assets/
 │       └── logo.svg
@@ -883,7 +885,7 @@ Se alguma resposta for **NAO**, pare e revise.
 - `src/hooks/useExpenses.ts` — hook de API (stats/export/batches/redownload)
 - `src/components/ExpensesExportTab.tsx` — componente principal (seller cards grid)
 - `src/components/ExpensesExportTab.module.css` — estilos
-- `src/components/AdminPanel.tsx` — tab `sellers`/`expenses`
+- `src/components/AdminPanel.tsx` — shell de tabs `sellers`/`expenses`/`extratos` (conteudo da tab Sellers em `SellersTab.tsx`)
 
 ### Contratos de API usados no frontend
 - `GET /expenses/{seller}/stats?status_filter=...`:

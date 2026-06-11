@@ -5,15 +5,7 @@ import styles from './ExtratoTab.module.css';
 
 // ── Types ────────────────────────────────────────────────────────
 
-interface Seller {
-  slug: string;
-  name: string;
-  dashboard_empresa?: string;
-  active: boolean;
-}
-
 interface ExtratoTabProps {
-  sellers: Seller[];
   onLogout: () => void;
 }
 
