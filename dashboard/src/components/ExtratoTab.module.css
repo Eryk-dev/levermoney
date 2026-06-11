@@ -1,135 +1,172 @@
-/* ── Layout ───────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════
+   EXTRATOS — upload e cobertura por seller.
+   Cards limpos com barra de progresso de cobertura e chips de mês.
+   Tokens herdados do AdminPanel container.
+   ════════════════════════════════════════════════════════════════ */
 
 .wrapper {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
-/* ── Seller cards grid ──────────────────────────────── */
+.loading {
+  font-size: var(--text-xs);
+  color: var(--a-text-3);
+  padding: var(--space-4) 0;
+}
 
 .sellerGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: var(--space-3);
+}
+
+@media (max-width: 720px) {
+  .sellerGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .sellerCard {
-  background: var(--surface);
-  border-radius: var(--space-2);
-  padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  border: 1px solid var(--border, rgba(0,0,0,0.08));
+  padding: var(--space-5);
+  background: var(--a-surface);
+  border: 1px solid var(--a-border);
+  border-radius: var(--a-radius, 12px);
+  box-shadow: var(--a-shadow-sm);
 }
 
-.sellerCardComplete {
-  opacity: 0.65;
-}
+/* ── Cabeçalho ──────────────────────────────────────────────── */
 
 .sellerHeader {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .sellerName {
-  margin: 0;
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--ink);
+  color: var(--a-text);
+  margin: 0;
 }
 
 .badgeRow {
   display: flex;
-  gap: var(--space-1);
-  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-/* ── Badges ──────────────────────────────────────────── */
-
 .badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 9999px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: lowercase;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .badgeComplete {
-  background: #d1fae5;
-  color: #065f46;
+  color: var(--a-green);
+  background: var(--a-green-bg);
 }
 
 .badgePartial {
-  background: #fef3c7;
-  color: #92400e;
+  color: var(--a-amber);
+  background: var(--a-amber-bg);
 }
 
 .badgeMissing {
-  background: #fee2e2;
-  color: #991b1b;
+  color: var(--a-red);
+  background: var(--a-red-bg);
 }
 
 .badgeWarning {
-  background: #fee2e2;
-  color: #991b1b;
+  color: var(--a-amber);
+  background: var(--a-amber-bg);
 }
 
 .badgeGdrive {
-  background: #dbeafe;
-  color: #1e40af;
+  color: var(--a-accent-text);
+  background: var(--a-accent-bg);
 }
 
-/* ── Stat items ──────────────────────────────────────── */
+/* ── Progresso de cobertura ─────────────────────────────────── */
 
-.statItem {
+.coverageRow {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: var(--space-3);
 }
 
-.statLabel {
+.coverageBarWrap {
+  flex: 1;
+  height: 6px;
+  background: var(--a-surface-3);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.coverageBarFill {
+  height: 100%;
+  background: var(--a-amber);
+  border-radius: 6px;
+  transition: width 300ms ease;
+}
+
+.coverageBarComplete {
+  background: var(--a-green);
+}
+
+.coverageLabel {
   font-size: var(--text-xs);
-  color: var(--ink-muted);
-}
-
-.statValue {
-  font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
+  color: var(--a-text-2);
+  white-space: nowrap;
 }
 
-/* ── Months grid ─────────────────────────────────────── */
+/* ── Chips de mês ───────────────────────────────────────────── */
 
 .monthsGrid {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .monthChip {
-  display: inline-block;
-  padding: 2px 6px;
-  border-radius: var(--space-1);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 5px 8px;
+  border-radius: 6px;
   font-variant-numeric: tabular-nums;
 }
 
 .monthOk {
-  background: #d1fae5;
-  color: #065f46;
+  color: var(--a-green);
+  background: var(--a-green-bg);
 }
 
 .monthMissing {
-  background: #fee2e2;
-  color: #991b1b;
+  color: var(--a-text-3);
+  background: transparent;
+  border: 1px dashed var(--a-border);
+  padding: 4px 7px;
 }
 
-/* ── Upload ──────────────────────────────────────────── */
+.startDate {
+  font-size: 11px;
+  color: var(--a-text-3);
+}
+
+/* ── Upload ─────────────────────────────────────────────────── */
 
 .uploadRow {
   display: flex;
@@ -142,15 +179,21 @@
 }
 
 .uploadBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
   padding: var(--space-2) var(--space-3);
+  background: var(--a-text);
+  color: var(--a-surface);
+  border: 1px solid var(--a-text);
+  border-radius: 8px;
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
-  font-weight: 600;
-  border: none;
-  border-radius: var(--space-1);
-  background: var(--ink);
-  color: var(--paper, #fff);
+  font-weight: 550;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity 150ms ease;
 }
 
 .uploadBtn:hover:not(:disabled) {
@@ -158,62 +201,68 @@
 }
 
 .uploadBtn:disabled {
-  opacity: 0.35;
-  cursor: default;
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-/* ── Result box ──────────────────────────────────────── */
+/* ── Resultado / erro ───────────────────────────────────────── */
 
 .resultBox {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
   flex-wrap: wrap;
-  font-size: var(--text-xs);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--a-green-bg);
+  border-radius: 8px;
 }
 
 .resultDetail {
   font-size: var(--text-xs);
-  color: var(--ink-muted);
+  color: var(--a-text-2);
 }
-
-/* ── Error box ───────────────────────────────────────── */
 
 .errorBox {
-  background: #fee2e2;
-  color: #991b1b;
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--space-1);
+  background: var(--a-red-bg);
+  border-radius: 8px;
   font-size: var(--text-xs);
+  color: var(--a-red);
 }
 
-/* ── History (collapsible) ───────────────────────────── */
+/* ── Histórico ──────────────────────────────────────────────── */
 
 .historySection {
-  border-top: 1px solid var(--border, rgba(0,0,0,0.08));
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--a-border-soft);
   padding-top: var(--space-2);
+  margin-top: auto;
 }
 
 .historyToggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  align-self: flex-start;
   background: none;
   border: none;
   padding: var(--space-1) 0;
+  font-family: var(--font-sans);
   font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--ink-muted);
+  font-weight: 500;
+  color: var(--a-text-2);
   cursor: pointer;
+  transition: color 150ms ease;
 }
 
 .historyToggle:hover {
-  color: var(--ink);
+  color: var(--a-text);
 }
 
 .chevron {
   display: inline-block;
-  transition: transform 0.15s;
+  transition: transform 150ms ease;
   font-size: 10px;
 }
 
@@ -222,7 +271,7 @@
 }
 
 .historyContent {
-  margin-top: var(--space-2);
+  padding-top: var(--space-2);
   overflow-x: auto;
 }
 
@@ -232,62 +281,59 @@
   font-size: var(--text-xs);
 }
 
-.historyTable th,
-.historyTable td {
+.historyTable th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--a-text-3);
   text-align: left;
   padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--a-border);
+}
+
+.historyTable td {
+  font-variant-numeric: tabular-nums;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--a-border-soft);
+  color: var(--a-text-2);
   white-space: nowrap;
 }
 
-.historyTable th {
-  font-weight: 600;
-  color: var(--ink-muted);
-  border-bottom: 1px solid var(--border, rgba(0,0,0,0.08));
-}
-
-.historyTable tr:not(:last-child) td {
-  border-bottom: 1px solid var(--border, rgba(0,0,0,0.04));
+.historyTable tr:last-child td {
+  border-bottom: none;
 }
 
 .filenameCell {
-  max-width: 140px;
+  max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: monospace;
-  font-size: var(--text-xs);
 }
-
-/* ── Status badge ────────────────────────────────────── */
 
 .statusBadge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 9999px;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: lowercase;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--a-text-2);
+  background: var(--a-surface-3);
 }
 
-.statusBadge[data-status="completed"] {
-  background: #d1fae5;
-  color: #065f46;
+.statusBadge[data-status='success'],
+.statusBadge[data-status='ok'],
+.statusBadge[data-status='ingested'] {
+  color: var(--a-green);
+  background: var(--a-green-bg);
 }
 
-.statusBadge[data-status="processing"] {
-  background: #dbeafe;
-  color: #1e40af;
+.statusBadge[data-status='partial'] {
+  color: var(--a-amber);
+  background: var(--a-amber-bg);
 }
 
-.statusBadge[data-status="failed"],
-.statusBadge[data-status="error"] {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-/* ── Loading ─────────────────────────────────────────── */
-
-.loading {
-  font-size: var(--text-xs);
-  color: var(--ink-muted);
-  padding: var(--space-3);
+.statusBadge[data-status='error'],
+.statusBadge[data-status='failed'] {
+  color: var(--a-red);
+  background: var(--a-red-bg);
 }

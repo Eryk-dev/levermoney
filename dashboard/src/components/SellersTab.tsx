@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { formatBRL } from '../utils/dataParser';
-import { RefreshCw, Check, X, Zap, Settings, Copy, ArrowUpCircle, RotateCcw } from 'lucide-react';
+import { RefreshCw, Check, X, Settings, Copy, ArrowUpCircle, RotateCcw } from 'lucide-react';
 import type { CaAccount, CaCostCenter, ActivateSellerConfig, UpgradeToCAConfig, UpgradeToCAResult, BackfillStatus } from '../hooks/useAdmin';
 import type { RevenueLine } from '../types';
 import styles from './AdminPanel.module.css';
@@ -79,6 +79,14 @@ export interface SellersTabProps {
 }
 
 const NEW_LINE_VALUE = '__new__';
+
+const STATUS_LABELS: Record<string, string> = {
+  active: 'Ativo',
+  pending_approval: 'Pendente',
+  pending: 'Pendente',
+  rejected: 'Rejeitado',
+  disconnected: 'Desconectado',
+};
 
 interface ConfigForm {
   id: string;
@@ -357,7 +365,7 @@ function BackfillIndicator({
 function IntegrationBadge({ seller }: { seller: Seller }) {
   const mode = seller.integration_mode;
   if (mode === 'dashboard_ca') {
-    return <span className={styles.badgeCA}>CA</span>;
+    return <span className={styles.badgeCA}>Conta Azul</span>;
   }
   return <span className={styles.badgeDashboard}>Dashboard</span>;
 }
@@ -406,6 +414,19 @@ export function SellersTab({
     const set = new Set(revenueLines.map((l) => l.segmento));
     return [...set].sort();
   }, [revenueLines]);
+
+  // Unified list: pending first (action required), then active, then the rest
+  const orderedSellers = useMemo(() => {
+    const rank = (s: Seller) =>
+      s.onboarding_status === 'pending_approval' ? 0
+        : s.onboarding_status === 'active' ? 1
+          : 2;
+    return [...sellers].sort((a, b) => {
+      const r = rank(a) - rank(b);
+      if (r !== 0) return r;
+      return (a.dashboard_empresa || a.name).localeCompare(b.dashboard_empresa || b.name);
+    });
+  }, [sellers]);
 
   // Load install link on mount
   useEffect(() => {
@@ -693,107 +714,162 @@ export function SellersTab({
 
   return (
     <>
-      {/* Install Link Section */}
-      <section className={styles.section}>
-        <h3>Link de Conexao ML</h3>
-        <p className={styles.installLinkHint}>
-          Copie este link e envie para o seller via WhatsApp para que ele autorize o Mercado Livre.
-        </p>
-        <div className={styles.installLinkRow}>
-          <input
-            type="text"
-            className={styles.installLinkInput}
-            value={installLink}
-            readOnly
-            placeholder="Carregando..."
-          />
-          <button
-            type="button"
-            className={styles.copyBtn}
-            onClick={handleCopyLink}
-            disabled={!installLink}
-          >
-            <Copy size={14} />
-            {linkCopied ? 'Copiado!' : 'Copiar'}
-          </button>
-        </div>
-        {linkCopied && <span className={styles.copiedMsg}>Link copiado!</span>}
-      </section>
-
-      {/* Sync Status */}
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h3>Sync Faturamento</h3>
-          <button
-            type="button"
-            className={styles.syncBtn}
-            onClick={handleSync}
-            disabled={syncing}
-          >
-            <RefreshCw size={14} className={syncing ? styles.spinning : ''} />
-            {syncing ? 'Sincronizando...' : 'Sync Agora'}
-          </button>
-        </div>
-        {syncStatus.last_sync && (
-          <p className={styles.lastSync}>
-            Ultimo sync: {new Date(syncStatus.last_sync).toLocaleString('pt-BR')}
-          </p>
-        )}
-        {syncStatus.results.length > 0 && (
-          <div className={styles.syncResults}>
-            {syncStatus.results.map((r, i) => (
-              <div key={i} className={`${styles.syncRow} ${styles[`sync_${r.status}`] || ''}`}>
-                <span className={styles.syncEmpresa}>{r.empresa}</span>
-                <span className={styles.syncVal}>{r.valor ? formatBRL(r.valor) : '-'}</span>
-                <span className={styles.syncOrders}>{r.orders ?? 0} pedidos</span>
-                <span className={`${styles.syncStatus} ${r.status === 'synced' ? styles.statusOk : ''}`}>
-                  {r.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Pending Sellers */}
-      {pendingSellers.length > 0 && (
+      {/* Utilities: install link + sync, side by side */}
+      <div className={styles.utilityGrid}>
         <section className={styles.section}>
-          <h3>Sellers Pendentes ({pendingSellers.length})</h3>
-          <div className={styles.sellerList}>
-            {pendingSellers.map(s => (
-              <div key={s.id} className={styles.sellerCard}>
-                <div className={styles.sellerInfo}>
-                  <strong>{s.name}</strong>
-                  <span className={styles.sellerSlug}>{s.slug}</span>
-                  {s.email && <span className={styles.sellerEmail}>{s.email}</span>}
-                </div>
-                <div className={styles.sellerActions}>
-                  <button
-                    type="button"
-                    className={styles.approveBtn}
-                    onClick={() => openActivationForm(s)}
-                  >
-                    <Check size={14} /> Ativar
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.rejectBtn}
-                    onClick={() => rejectSeller(s.id)}
-                  >
-                    <X size={14} /> Rejeitar
-                  </button>
-                </div>
-              </div>
-            ))}
+          <h3>Conectar novo seller</h3>
+          <p className={styles.sectionHint}>
+            Envie este link para o seller autorizar o Mercado Livre.
+          </p>
+          <div className={styles.installLinkRow}>
+            <input
+              type="text"
+              className={styles.installLinkInput}
+              value={installLink}
+              readOnly
+              placeholder="Carregando..."
+            />
+            <button
+              type="button"
+              className={styles.copyBtn}
+              onClick={handleCopyLink}
+              disabled={!installLink}
+            >
+              <Copy size={14} />
+              {linkCopied ? 'Copiado!' : 'Copiar'}
+            </button>
           </div>
         </section>
-      )}
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h3>Sync de faturamento</h3>
+            <button
+              type="button"
+              className={styles.syncBtn}
+              onClick={handleSync}
+              disabled={syncing}
+            >
+              <RefreshCw size={14} className={syncing ? styles.spinning : ''} />
+              {syncing ? 'Sincronizando...' : 'Sincronizar'}
+            </button>
+          </div>
+          {syncStatus.last_sync ? (
+            <p className={styles.lastSync}>
+              Ultimo sync: {new Date(syncStatus.last_sync).toLocaleString('pt-BR')}
+            </p>
+          ) : (
+            <p className={styles.lastSync}>Nenhum sync registrado.</p>
+          )}
+          {syncStatus.results.length > 0 && (
+            <div className={styles.syncResults}>
+              {syncStatus.results.map((r, i) => (
+                <div key={i} className={`${styles.syncRow} ${styles[`sync_${r.status}`] || ''}`}>
+                  <span className={styles.syncEmpresa}>{r.empresa}</span>
+                  <span className={styles.syncVal}>{r.valor ? formatBRL(r.valor) : '-'}</span>
+                  <span className={styles.syncOrders}>{r.orders ?? 0} pedidos</span>
+                  <span className={`${styles.syncStatus} ${r.status === 'synced' ? styles.statusOk : ''}`}>
+                    {r.status === 'synced' ? 'ok' : r.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* Unified sellers list: pending first, then active, then the rest */}
+      <section className={styles.section}>
+        <h3>Sellers</h3>
+        <p className={styles.sectionHint}>
+          {activeSellers.length} ativos
+          {pendingSellers.length > 0 && ` · ${pendingSellers.length} aguardando ativacao`}
+        </p>
+        <div className={styles.sellerList}>
+          {orderedSellers.map(rawSeller => {
+            const s = getSellerBackfillStatus(rawSeller);
+            const isPending = s.onboarding_status === 'pending_approval';
+            const isActive = s.onboarding_status === 'active';
+            const isDashboardOnly = !s.integration_mode || s.integration_mode === 'dashboard_only';
+
+            return (
+              <div
+                key={s.id}
+                className={`${styles.sellerCard} ${styles[`status_${s.onboarding_status}`] || ''}`}
+              >
+                <div className={styles.sellerInfo}>
+                  <div className={styles.sellerNameRow}>
+                    <strong>{s.dashboard_empresa || s.name}</strong>
+                    {isActive ? (
+                      <IntegrationBadge seller={s} />
+                    ) : (
+                      <span className={styles.statusBadge}>
+                        {STATUS_LABELS[s.onboarding_status] || s.onboarding_status}
+                      </span>
+                    )}
+                  </div>
+                  <span className={styles.sellerSlug}>{s.slug}</span>
+                  {isPending && s.email && <span className={styles.sellerEmail}>{s.email}</span>}
+                  {isActive && (s.dashboard_grupo || s.ml_user_id) && (
+                    <span className={styles.sellerMeta}>
+                      {s.dashboard_grupo && `${s.dashboard_grupo} / ${s.dashboard_segmento}`}
+                      {s.ml_user_id ? `${s.dashboard_grupo ? ' · ' : ''}ML ${s.ml_user_id}` : ''}
+                    </span>
+                  )}
+                  {isActive && <BackfillIndicator seller={s} onRetry={handleRetryBackfill} />}
+                </div>
+                <div className={styles.sellerActions}>
+                  {isPending && (
+                    <>
+                      <button
+                        type="button"
+                        className={styles.approveBtn}
+                        onClick={() => openActivationForm(s)}
+                      >
+                        <Check size={14} /> Ativar
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.rejectBtn}
+                        onClick={() => rejectSeller(s.id)}
+                      >
+                        <X size={14} /> Rejeitar
+                      </button>
+                    </>
+                  )}
+                  {isActive && (
+                    <>
+                      {isDashboardOnly && (
+                        <button
+                          type="button"
+                          className={styles.upgradeBtn}
+                          onClick={() => openUpgradeForm(s)}
+                          title="Upgrade para Conta Azul"
+                        >
+                          <ArrowUpCircle size={14} /> Upgrade CA
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={styles.editBtn}
+                        onClick={() => openEditForm(s)}
+                      >
+                        <Settings size={14} /> Configurar
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       {/* V3 Activation Form Modal */}
       {activationForm && (
         <div className={styles.modal}>
           <div className={styles.modalContent}>
-            <h3>Ativar Seller: {activationForm.sellerName}</h3>
+            <h3>Ativar seller: {activationForm.sellerName}</h3>
 
             {/* Name field */}
             <label className={styles.formLabel}>
@@ -902,19 +978,19 @@ export function SellersTab({
             <div className={styles.modalActions}>
               <button
                 type="button"
-                className={styles.approveBtn}
-                onClick={handleActivationSubmit}
-                disabled={activating || !isCAModeValid}
-              >
-                {activating ? 'Ativando...' : 'Ativar'}
-              </button>
-              <button
-                type="button"
-                className={styles.rejectBtn}
+                className={styles.btnSecondary}
                 onClick={() => setActivationForm(null)}
                 disabled={activating}
               >
                 Cancelar
+              </button>
+              <button
+                type="button"
+                className={styles.approveBtn}
+                onClick={handleActivationSubmit}
+                disabled={activating || !isCAModeValid}
+              >
+                {activating ? 'Ativando...' : 'Ativar seller'}
               </button>
             </div>
           </div>
@@ -925,7 +1001,7 @@ export function SellersTab({
       {configForm && (
         <div className={styles.modal}>
           <div className={styles.modalContent}>
-            <h3>Configurar Seller</h3>
+            <h3>Configurar seller</h3>
 
             <LineSelectorField
               value={configForm.selectedLine}
@@ -985,10 +1061,12 @@ export function SellersTab({
             />
 
             <div className={styles.modalActions}>
+              <button type="button" className={styles.btnSecondary} onClick={() => setConfigForm(null)}>
+                Cancelar
+              </button>
               <button type="button" className={styles.approveBtn} onClick={handleSubmit}>
                 Salvar
               </button>
-              <button type="button" className={styles.rejectBtn} onClick={() => setConfigForm(null)}>Cancelar</button>
             </div>
           </div>
         </div>
@@ -1036,7 +1114,7 @@ export function SellersTab({
               />
               <button
                 type="button"
-                className={`${styles.editBtn} ${styles.fileSelectBtn}`}
+                className={`${styles.btnSecondary} ${styles.fileSelectBtn}`}
                 onClick={() => upgradeFileInputRef.current?.click()}
               >
                 Selecionar arquivos CSV...
@@ -1074,90 +1152,24 @@ export function SellersTab({
             <div className={styles.modalActions}>
               <button
                 type="button"
-                className={styles.approveBtn}
-                onClick={handleUpgradeSubmit}
-                disabled={upgrading || !upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel || upgradeForm.files.length === 0}
-              >
-                {upgrading ? 'Processando extrato...' : 'Upload Extrato e Iniciar Backfill'}
-              </button>
-              <button
-                type="button"
-                className={styles.rejectBtn}
+                className={styles.btnSecondary}
                 onClick={() => setUpgradeForm(null)}
                 disabled={upgrading}
               >
                 Cancelar
               </button>
+              <button
+                type="button"
+                className={styles.approveBtn}
+                onClick={handleUpgradeSubmit}
+                disabled={upgrading || !upgradeForm.ca_conta_bancaria || !upgradeForm.ca_centro_custo_variavel || upgradeForm.files.length === 0}
+              >
+                {upgrading ? 'Processando extrato...' : 'Upload e iniciar backfill'}
+              </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* Active Sellers */}
-      <section className={styles.section}>
-        <h3>Sellers Ativos ({activeSellers.length})</h3>
-        <div className={styles.sellerList}>
-          {activeSellers.map(rawSeller => {
-            const s = getSellerBackfillStatus(rawSeller);
-            const isDashboardOnly = !s.integration_mode || s.integration_mode === 'dashboard_only';
-            return (
-              <div key={s.id} className={styles.sellerCard}>
-                <div className={styles.sellerInfo}>
-                  <div className={styles.sellerNameRow}>
-                    <strong>{s.dashboard_empresa || s.name}</strong>
-                    <IntegrationBadge seller={s} />
-                  </div>
-                  <span className={styles.sellerSlug}>{s.slug}</span>
-                  <span className={styles.sellerMeta}>
-                    {s.dashboard_grupo && `${s.dashboard_grupo} / ${s.dashboard_segmento}`}
-                    {s.ml_user_id && ` | ML: ${s.ml_user_id}`}
-                  </span>
-                  {/* Backfill status indicator */}
-                  <BackfillIndicator seller={s} onRetry={handleRetryBackfill} />
-                </div>
-                <div className={styles.sellerActions}>
-                  {isDashboardOnly && (
-                    <button
-                      type="button"
-                      className={styles.upgradeBtn}
-                      onClick={() => openUpgradeForm(s)}
-                      title="Upgrade para Conta Azul"
-                    >
-                      <ArrowUpCircle size={14} /> Upgrade CA
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className={styles.editBtn}
-                    onClick={() => openEditForm(s)}
-                  >
-                    <Settings size={14} /> Configurar
-                  </button>
-                  <div className={styles.sellerBadge}>
-                    <Zap size={12} /> {s.source || 'ml'}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* All Sellers Summary */}
-      <section className={styles.section}>
-        <h3>Todos os Sellers ({sellers.length})</h3>
-        <div className={styles.sellerList}>
-          {sellers.map(s => (
-            <div key={s.id} className={`${styles.sellerCard} ${styles[`status_${s.onboarding_status}`] || ''}`}>
-              <div className={styles.sellerInfo}>
-                <strong>{s.name}</strong>
-                <span className={styles.sellerSlug}>{s.slug}</span>
-              </div>
-              <span className={styles.statusBadge}>{s.onboarding_status}</span>
-            </div>
-          ))}
-        </div>
-      </section>
     </>
   );
 }

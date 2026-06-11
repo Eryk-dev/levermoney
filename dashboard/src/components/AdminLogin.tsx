@@ -25,7 +25,8 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
   return (
     <div className={styles.container}>
       <form className={styles.form} onSubmit={handleSubmit}>
-        <h2 className={styles.title}>Admin</h2>
+        <h2 className={styles.title}>Painel Admin</h2>
+        <span className={styles.overline}>Acesso restrito · Lever Money</span>
         <input
           type="password"
           className={styles.input}

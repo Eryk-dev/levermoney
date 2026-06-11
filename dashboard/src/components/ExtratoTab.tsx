@@ -164,47 +164,48 @@ export function ExtratoTab({ onLogout }: ExtratoTabProps) {
             const result = uploadResults.get(seller.slug);
             const error = uploadErrors.get(seller.slug);
 
+            const uploadedCount = seller.months_needed.filter((m) =>
+              seller.months_uploaded.includes(m),
+            ).length;
+            const totalMonths = seller.months_needed.length;
+            const coveragePct = totalMonths > 0 ? Math.round((uploadedCount / totalMonths) * 100) : 0;
+
             return (
-              <div
-                key={seller.slug}
-                className={`${styles.sellerCard} ${seller.coverage_status === 'complete' ? styles.sellerCardComplete : ''}`}
-              >
-                {/* Header: name + badges */}
+              <div key={seller.slug} className={styles.sellerCard}>
+                {/* Header: name + coverage badge */}
                 <div className={styles.sellerHeader}>
                   <h3 className={styles.sellerName}>
                     {seller.dashboard_empresa || seller.name || seller.slug}
                   </h3>
-                  <div className={styles.badgeRow}>
-                    <span
-                      className={`${styles.badge} ${
-                        seller.coverage_status === 'complete'
-                          ? styles.badgeComplete
-                          : seller.coverage_status === 'partial'
-                            ? styles.badgePartial
-                            : styles.badgeMissing
-                      }`}
-                    >
-                      {seller.coverage_status === 'complete'
-                        ? 'completo'
+                  <span
+                    className={`${styles.badge} ${
+                      seller.coverage_status === 'complete'
+                        ? styles.badgeComplete
                         : seller.coverage_status === 'partial'
-                          ? 'parcial'
-                          : 'faltante'}
-                    </span>
-                    {seller.extrato_missing && (
-                      <span className={`${styles.badge} ${styles.badgeWarning}`}>
-                        sem extrato
-                      </span>
-                    )}
-                  </div>
+                          ? styles.badgePartial
+                          : styles.badgeMissing
+                    }`}
+                  >
+                    {seller.coverage_status === 'complete'
+                      ? 'Completo'
+                      : seller.coverage_status === 'partial'
+                        ? 'Parcial'
+                        : 'Faltante'}
+                  </span>
                 </div>
 
-                {/* ca_start_date */}
-                {seller.ca_start_date && (
-                  <div className={styles.statItem}>
-                    <span className={styles.statLabel}>CA desde</span>
-                    <span className={styles.statValue}>{seller.ca_start_date}</span>
+                {/* Coverage progress */}
+                <div className={styles.coverageRow}>
+                  <div className={styles.coverageBarWrap}>
+                    <div
+                      className={`${styles.coverageBarFill} ${seller.coverage_status === 'complete' ? styles.coverageBarComplete : ''}`}
+                      style={{ width: `${coveragePct}%` }}
+                    />
                   </div>
-                )}
+                  <span className={styles.coverageLabel}>
+                    {uploadedCount} de {totalMonths} meses
+                  </span>
+                </div>
 
                 {/* Months grid */}
                 <div className={styles.monthsGrid}>
@@ -214,12 +215,20 @@ export function ExtratoTab({ onLogout }: ExtratoTabProps) {
                       <span
                         key={month}
                         className={`${styles.monthChip} ${isUploaded ? styles.monthOk : styles.monthMissing}`}
+                        title={isUploaded ? 'Extrato enviado' : 'Mes faltante'}
                       >
                         {formatMonth(month)}
                       </span>
                     );
                   })}
                 </div>
+
+                {/* ca_start_date */}
+                {seller.ca_start_date && (
+                  <span className={styles.startDate}>
+                    Conta Azul desde {seller.ca_start_date}
+                  </span>
+                )}
 
                 {/* Upload button */}
                 <div className={styles.uploadRow}>
@@ -246,7 +255,7 @@ export function ExtratoTab({ onLogout }: ExtratoTabProps) {
                       if (input) input.click();
                     }}
                   >
-                    {isUploading ? 'Enviando...' : 'Upload CSVs'}
+                    {isUploading ? 'Enviando...' : 'Enviar extratos CSV'}
                   </button>
                 </div>
 
