@@ -247,28 +247,23 @@ async def process_payment_webhook(seller_slug: str, payment_id: int, payment_dat
         # Tratar como venda normal (receita + despesas, sem estorno).
         logger.info(f"Payment {payment_id} charged_back+reimbursed, treating as approved (no estorno)")
         await _process_approved(seller, payment, existing_event_types)
-    elif status == "refunded" and payment.get("status_detail") in ("bpp_refunded", "bpp_covered"):
-        # BPP: ML refunded buyer from ML's pocket. Seller keeps money,
-        # but DRE must reflect the full cycle: receita + devolução + estorno taxa/frete.
-        # Net effect is zero, but the entries are needed for accurate DRE reporting.
-        logger.info(
-            "Payment %s %s, processing as refund for DRE accuracy (receita + devolução + estornos)",
-            payment_id, payment.get("status_detail"),
-        )
-        await _process_refunded(seller, payment, existing_event_types)
-    elif status == "refunded" and payment.get("status_detail") == "by_admin":
-        # Kit split: ML cancelled original and created new payments for each package.
-        # Capture both receita + estorno so DRE reflects ML "Vendas brutas" total.
-        # _process_refunded creates sale_approved if missing, then refund_created (net zero).
-        logger.info(f"Payment {payment_id} refunded/by_admin, processing as refund (receita + estorno)")
-        await _process_refunded(seller, payment, existing_event_types)
-    elif status in ("refunded", "charged_back"):
-        await _process_refunded(seller, payment, existing_event_types)
-    elif status == "cancelled":
-        # Cancelled sales (by_payer/expired): ML still counts these in "Vendas brutas".
-        # Record receita + estorno (same category as devolução) for DRE accuracy. Net zero in cash.
-        logger.info(f"Payment {payment_id} cancelled, processing as refund (receita + estorno)")
-        await _process_refunded(seller, payment, existing_event_types)
+    elif status in ("refunded", "charged_back", "cancelled"):
+        # POLÍTICA (decisão do dono, jun/2026): disputa/cancelamento "nunca virou venda".
+        # - Se a venda JÁ ENTROU (sale_approved no ledger): processa o estorno —
+        #   cancelamento real do que foi lançado.
+        # - Se NUNCA ENTROU: NÃO cria o par receita+estorno fantasma (antes era criado
+        #   p/ DRE bater com "Vendas brutas" do painel ML — a ponte DRE↔painel explica
+        #   essa diferença agora). Movimento real de caixa (bpp/chargeback que liberou
+        #   e estornou) entra pela lane do extrato (trio/complemento) com categoria
+        #   de resultado de disputa.
+        if "sale_approved" in existing_event_types:
+            await _process_refunded(seller, payment, existing_event_types)
+        else:
+            logger.info(
+                "Payment %s %s/%s never entered as sale, skipping phantom pair "
+                "(cash legs handled by extrato lane)",
+                payment_id, status, payment.get("status_detail"),
+            )
     elif status == "rejected":
         # Rejected: payment attempts that never succeeded (card declined, high risk, etc).
         # Never were real sales — ML dashboard also excludes these from "Vendas brutas".
@@ -439,6 +434,37 @@ async def _process_approved(seller: dict, payment: dict, existing_event_types: s
             except Exception as e:
                 logger.warning("Payment %s: subsidy_credited recorded but enqueue_receita failed: %s", payment_id, e)
             logger.info("Payment %s: ML subsidy detected R$%.2f, enqueued receita 1.3.7", payment_id, subsidy)
+
+    # E) DESPESA - Taxa ML oculta (net < calculado → ML descontou mais que charges_details mostra).
+    # Sem esse lançamento o líquido no CA fica MAIOR que o net liberado e o caixa não bate.
+    # O breakdown fino é reconciliado depois pelo release_report_validator; aqui garantimos o net.
+    hidden_fee = round(reconciled_net - net, 2) if net_diff < 0 else 0.0
+    if hidden_fee >= 0.01:
+        hidden_payload = _build_despesa_payload(
+            seller, competencia, money_release_date, hidden_fee,
+            f"Taxa ML adicional - Payment {payment_id}",
+            f"calc_net={reconciled_net}, net_real={net}, taxa_oculta={hidden_fee}",
+            CA_CATEGORIES["comissao_ml"],
+            f"Taxa ML oculta #{payment_id}",
+        )
+        try:
+            await event_ledger.record_event(
+                seller_slug=seller_slug, ml_payment_id=payment_id,
+                event_type="fee_charged", signed_amount=money.signed_amount("expense", hidden_fee),
+                competencia_date=competencia, event_date=competencia,
+                ml_order_id=order_id, source="processor",
+                idempotency_key=event_ledger.build_idempotency_key(
+                    seller_slug, payment_id, "fee_charged", "hiddenfee"
+                ),
+            )
+        except EventRecordError as e:
+            logger.error("Event ledger fee_charged(hiddenfee) failed for %s: %s", payment_id, e)
+        else:
+            try:
+                await ca_queue.enqueue_comissao(seller_slug, f"{payment_id}_hiddenfee", hidden_payload)
+            except Exception as e:
+                logger.warning("Payment %s: hidden fee recorded but enqueue_comissao failed: %s", payment_id, e)
+            logger.info("Payment %s: hidden ML fee R$%.2f, enqueued despesa 2.8.2", payment_id, hidden_fee)
 
     logger.info(
         f"Payment {payment_id} queued: receita={amount}, comissão={mp_fee}, "

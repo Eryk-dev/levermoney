@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     legacy_daily_google_service_account_json: str = ""
     legacy_daily_google_service_account_file: str = ""
 
+    # Baixa extrato-dirigida (Fase 3-full): rollout por seller
+    # - driven: seller migrado — scheduler por-promessa PULA esses sellers
+    # - write: habilita POSTAR as baixas planejadas (sem a flag, runner é dry-run)
+    baixa_extrato_driven_sellers: str = ""  # slugs comma-separated
+    baixa_extrato_write_sellers: str = ""   # slugs comma-separated
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

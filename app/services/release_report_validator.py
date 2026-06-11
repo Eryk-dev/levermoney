@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from app.db.supabase import get_db
 from app.models.sellers import (
     CA_CATEGORIES,
+    CA_CONTATO_ML,
     get_all_active_sellers,
     get_missing_ca_launch_fields,
     get_seller_config,
@@ -21,11 +22,21 @@ from app.models.sellers import (
 from app.services import ca_queue, ml_api, event_ledger
 from app.services.ca_api import CA_API
 from app.services.event_ledger import EventRecordError
-from app.services.processor import _build_despesa_payload
+from app.services.processor import _build_despesa_payload, _build_evento, _build_parcela
 
 logger = logging.getLogger(__name__)
 
 BRT = timezone(timedelta(hours=-3))
+
+
+def _build_credito_estorno(seller: dict, data_competencia: str, data_vencimento: str,
+                           valor: float, descricao: str, observacao: str) -> dict:
+    """Monta evento conta-a-receber para crédito/estorno de taxa (release < processor)."""
+    conta = seller["ca_conta_bancaria"]
+    contato = seller.get("ca_contato_ml") or CA_CONTATO_ML
+    parcela = _build_parcela(descricao, data_vencimento, conta, valor)
+    return _build_evento(data_competencia, valor, descricao, observacao, contato, conta,
+                         CA_CATEGORIES["estorno_taxa"], seller.get("ca_centro_custo_variavel"), parcela)
 
 # Polling config for report readiness
 POLL_INTERVAL_SECONDS = 10
@@ -339,7 +350,9 @@ async def validate_release_fees_for_seller(
             )
 
         # Shipping adjustment (hidden shipping fee)
-        if shipping_diff >= 0.01:
+        # Só ajusta quando o vendedor de fato tem custo de frete (processor_shipping > 0):
+        # quando o comprador paga o frete, o release traz o frete BRUTO e o diff é espúrio.
+        if shipping_diff >= 0.01 and processor_shipping > 0:
             competencia = (row.get("approval_date") or row["date"])[:10]
             release_date = row["date"][:10]
             if not competencia or competencia == "":
@@ -377,16 +390,81 @@ async def validate_release_fees_for_seller(
                 pid, shipping_diff, processor_shipping, release_shipping,
             )
 
-        # Negative diff (release < processor) — ML charged less than expected
+        # Negative diff (release < processor) — ML cobrou MENOS que o lançado: crédito
+        # contas-a-receber devolvendo o excesso (senão o CA fica com despesa a maior).
         if fee_diff <= -0.01:
             stats["fee_overcharged"] += 1
+            competencia = (row.get("approval_date") or row["date"])[:10] or row["date"][:10]
+            release_date = row["date"][:10]
+            credito = abs(fee_diff)
+            credito_payload = _build_credito_estorno(
+                seller, competencia, release_date, credito,
+                f"Ajuste Comissão (crédito) - Payment {pid}",
+                f"processor={processor_fee}, release={release_fee}, diff={fee_diff}",
+            )
+            await ca_queue.enqueue(
+                seller_slug=seller_slug,
+                job_type="ajuste_fee_credito",
+                ca_endpoint=f"{CA_API}/v1/financeiro/eventos-financeiros/contas-a-receber",
+                ca_payload=credito_payload,
+                idempotency_key=f"{seller_slug}:{pid}:ajuste_fee_credito",
+                group_id=f"{seller_slug}:{pid}:ajustes",
+                priority=25,
+            )
+            try:
+                await event_ledger.record_event(
+                    seller_slug=seller_slug, ml_payment_id=pid,
+                    event_type="adjustment_fee", signed_amount=credito,
+                    competencia_date=competencia, event_date=release_date,
+                    source="release_report_validator",
+                    metadata={"processor_fee": processor_fee, "release_fee": release_fee,
+                              "direction": "credit"},
+                )
+            except EventRecordError as e:
+                logger.error("Event ledger adjustment_fee(credit) failed for %s: %s", pid, e)
+            adjustments_made += 1
+            stats["fee_credits"] = stats.get("fee_credits", 0) + 1
             logger.info(
-                "Payment %s: processor fee higher than release (processor=%.2f, release=%.2f, diff=%.2f)",
-                pid, processor_fee, release_fee, fee_diff,
+                "Payment %s: fee credit R$%.2f (processor=%.2f, release=%.2f)",
+                pid, credito, processor_fee, release_fee,
             )
 
-        if shipping_diff <= -0.01:
+        if shipping_diff <= -0.01 and processor_shipping > 0:
             stats["shipping_overcharged"] += 1
+            competencia = (row.get("approval_date") or row["date"])[:10] or row["date"][:10]
+            release_date = row["date"][:10]
+            credito = abs(shipping_diff)
+            credito_payload = _build_credito_estorno(
+                seller, competencia, release_date, credito,
+                f"Ajuste Frete (crédito) - Payment {pid}",
+                f"processor={processor_shipping}, release={release_shipping}, diff={shipping_diff}",
+            )
+            await ca_queue.enqueue(
+                seller_slug=seller_slug,
+                job_type="ajuste_frete_credito",
+                ca_endpoint=f"{CA_API}/v1/financeiro/eventos-financeiros/contas-a-receber",
+                ca_payload=credito_payload,
+                idempotency_key=f"{seller_slug}:{pid}:ajuste_frete_credito",
+                group_id=f"{seller_slug}:{pid}:ajustes",
+                priority=25,
+            )
+            try:
+                await event_ledger.record_event(
+                    seller_slug=seller_slug, ml_payment_id=pid,
+                    event_type="adjustment_shipping", signed_amount=credito,
+                    competencia_date=competencia, event_date=release_date,
+                    source="release_report_validator",
+                    metadata={"processor_shipping": processor_shipping,
+                              "release_shipping": release_shipping, "direction": "credit"},
+                )
+            except EventRecordError as e:
+                logger.error("Event ledger adjustment_shipping(credit) failed for %s: %s", pid, e)
+            adjustments_made += 1
+            stats["shipping_credits"] = stats.get("shipping_credits", 0) + 1
+            logger.info(
+                "Payment %s: shipping credit R$%.2f (processor=%.2f, release=%.2f)",
+                pid, credito, processor_shipping, release_shipping,
+            )
 
         # Mark payment as fee_adjusted in release_report_fees
         if adjustments_made > 0:

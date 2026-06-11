@@ -1,0 +1,375 @@
+INITIAL_BALANCE;CREDITS;DEBITS;FINAL_BALANCE
+2.026,43;57.496,96;-55.171,34;4.352,05
+
+RELEASE_DATE;TRANSACTION_TYPE;REFERENCE_ID;TRANSACTION_NET_AMOUNT;PARTIAL_BALANCE
+01-05-2026;Pix enviado LILLIAN DA ROCHA;156458018477;-350,00;1.676,43
+01-05-2026;Pagamento com Código QR Pix PEDRO HENRIQUE VIANA BORGES;155604279118;60,65;1.737,08
+01-05-2026;Liberação de dinheiro ;154614203383;90,01;1.827,09
+01-05-2026;Dinheiro recebido ;154943349014;151,21;1.978,30
+01-05-2026;Pagamento com Código QR Pix FABIANO NICHELE;154327868251;362,53;2.340,83
+01-05-2026;Liberação de dinheiro ;153899238017;10,46;2.351,29
+01-05-2026;Liberação de dinheiro ;154848819933;408,40;2.759,69
+01-05-2026;Bônus por envio Mercado Envios;155604188728;10,90;2.770,59
+01-05-2026;Liberação de dinheiro ;155662195994;237,33;3.007,92
+02-05-2026;Liberação de dinheiro ;155945634936;372,06;3.379,98
+02-05-2026;Liberação de dinheiro ;155979744848;84,15;3.464,13
+02-05-2026;Liberação de dinheiro ;155006964995;134,29;3.598,42
+02-05-2026;Liberação de dinheiro ;155916685156;97,53;3.695,95
+02-05-2026;Liberação de dinheiro ;155719697558;90,49;3.786,44
+02-05-2026;Liberação de dinheiro ;154906415899;593,62;4.380,06
+03-05-2026;Pagamento com Código QR Pix Amanda Mercedes Ortega Orta;156176755336;73,09;4.453,15
+03-05-2026;Liberação de dinheiro ;155250743079;224,74;4.677,89
+03-05-2026;Dinheiro retido Reclamações e devoluções;155250743079;-224,74;4.453,15
+04-05-2026;Pix recebido Leonardo Ferreira Cruz Maia;156097359468;86,09;4.539,24
+04-05-2026;Dinheiro retido Reclamações e devoluções;156097359468;-86,09;4.453,15
+04-05-2026;Liberação de dinheiro ;155022579023;399,17;4.852,32
+04-05-2026;Reembolso Envío cancelado a Lilian Barbosa Oliveira;157659759840;86,22;4.938,54
+04-05-2026;Liberação de dinheiro ;157659759840;428,68;5.367,22
+04-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157659759840;-428,68;4.938,54
+04-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157659759840;-86,22;4.852,32
+04-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;152142750934;-9,99;4.842,33
+04-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;151409038507;-78,87;4.763,46
+04-05-2026;Reembolso ;151409038507;28,31;4.791,77
+04-05-2026;Dinheiro retido Reclamações e devoluções;154055715545;-181,26;4.610,51
+05-05-2026;Débito por dívida Envio do Mercado Livre;155257248361;-42,30;4.568,21
+05-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;151245542503;-899,90;3.668,31
+05-05-2026;Entrada de dinheiro ;151245542503;107,99;3.776,30
+05-05-2026;Reembolso Reclamações e devoluções;151245542503;744,21;4.520,51
+05-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;156930530271;-1.414,90;3.105,61
+05-05-2026;Pagamento com Código QR Pix MARCOS H S DE ALBUQUERUQR;156930530271;1.192,25;4.297,86
+05-05-2026;Reembolso Envío cancelado a MARCOS H S DE ALBUQUERUQR;156930530271;222,65;4.520,51
+05-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;156097359468;-118,90;4.401,61
+05-05-2026;Entrada de dinheiro ;156097359468;14,27;4.415,88
+05-05-2026;Reembolso Reclamações e devoluções;156097359468;86,09;4.501,97
+05-05-2026;Liberação de dinheiro ;154499304307;197,76;4.699,73
+05-05-2026;Liberação de dinheiro ;155353402857;90,01;4.789,74
+05-05-2026;Liberação de dinheiro ;156234157234;293,40;5.083,14
+05-05-2026;Liberação de dinheiro ;155345005105;1.120,57;6.203,71
+05-05-2026;Pagamento com Código QR Pix Silvio De Souza ribeiro;154905390291;46,26;6.249,97
+05-05-2026;Liberação de dinheiro ;155861620848;10,66;6.260,63
+06-05-2026;Dinheiro retido Reclamações e devoluções;154605876828;-426,89;5.833,74
+06-05-2026;Pagamento Mercado Libre;157961304632;-252,00;5.581,74
+06-05-2026;Dinheiro recebido ;155874243929;73,09;5.654,83
+06-05-2026;Pagamento com Código QR Pix ARILDO PINTO CERQUEIRA;154264708655;96,09;5.750,92
+06-05-2026;Dinheiro retido Reclamações e devoluções;154264708655;-96,09;5.654,83
+06-05-2026;Liberação de dinheiro ;154908157047;475,05;6.129,88
+06-05-2026;Pagamento de conta Itaú Unibanco  S.A.;158006900994;-1.900,24;4.229,64
+06-05-2026;Liberação de dinheiro ;155816694861;107,77;4.337,41
+06-05-2026;Dinheiro recebido ;155611442569;311,47;4.648,88
+06-05-2026;Dinheiro recebido ;155961367980;1.137,47;5.786,35
+06-05-2026;Liberação de dinheiro ;155744302009;20,58;5.806,93
+06-05-2026;Débito por dívida Envio do Mercado Livre;156097359468;-30,90;5.776,03
+06-05-2026;Pix enviado 141 Air Comercio de Pecas Ltda;158045256694;-2.000,00;3.776,03
+06-05-2026;Pagamento com QR Pix SALVY LTDA;157276769025;-149,50;3.626,53
+06-05-2026;Liberação de dinheiro cancelada Venda cancelada;155257248361;-57,24;3.569,29
+06-05-2026;Reembolso Compra garantida;155257248361;220,83;3.790,12
+06-05-2026;Liberação de dinheiro cancelada Venda cancelada;155257248361;42,30;3.832,42
+07-05-2026;Liberação de dinheiro cancelada Venda cancelada;151410054476;-10,44;3.821,98
+07-05-2026;Reembolso Compra garantida;151410054476;86,99;3.908,97
+07-05-2026;Liberação de dinheiro cancelada Venda cancelada;151410054476;26,50;3.935,47
+07-05-2026;Pagamento com Código QR Pix PAVIRROL ENGENHARIA LTDA;155517260333;428,81;4.364,28
+07-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157375426979;-189,90;4.174,38
+07-05-2026;Liberação de dinheiro ;157375426979;133,81;4.308,19
+07-05-2026;Reembolso ;157375426979;56,09;4.364,28
+07-05-2026;Pix enviado Rivelino Gomes Oliveira dos Santos;158146230348;-2.017,82;2.346,46
+07-05-2026;Liberação de dinheiro ;156463945786;39,34;2.385,80
+07-05-2026;Dinheiro recebido ;155843974595;39,50;2.425,30
+07-05-2026;Liberação de dinheiro ;155908063040;1.441,53;3.866,83
+07-05-2026;Débito por dívida Envio do Mercado Livre;155250743079;-49,30;3.817,53
+07-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;155250743079;-289,00;3.528,53
+07-05-2026;Entrada de dinheiro ;155250743079;34,68;3.563,21
+07-05-2026;Reembolso Reclamações e devoluções;155250743079;224,74;3.787,95
+07-05-2026;Liberação de dinheiro ;155875273029;298,41;4.086,36
+07-05-2026;Dinheiro recebido ;156657183166;60,57;4.146,93
+07-05-2026;Pagamento com Código QR Pix ELETROMECANICA SAO JORGE LTDA;156807564694;237,33;4.384,26
+07-05-2026;Liberação de dinheiro ;155994627747;1.527,13;5.911,39
+07-05-2026;Liberação de dinheiro ;155893168321;1.216,73;7.128,12
+07-05-2026;Dinheiro retido Reclamações e devoluções;155893168321;-1.216,73;5.911,39
+07-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157433853255;-19,90;5.891,49
+07-05-2026;Pagamento com Código QR Pix Jefferson José da Silva Pinto;157433853255;10,02;5.901,51
+07-05-2026;Reembolso Envío cancelado a Jefferson José da Silva Pinto;157433853255;9,88;5.911,39
+08-05-2026;Pagamento Supabase;158292088104;-175,67;5.735,72
+08-05-2026;Pagamento com Código QR Pix SEBASTIAO DOS SANTOS;156840614632;200,50;5.936,22
+08-05-2026;Liberação de dinheiro ;155909682449;513,65;6.449,87
+08-05-2026;Débito por dívida Envio do Mercado Livre;154605876828;-52,50;6.397,37
+08-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;155893168321;-1.414,90;4.982,47
+08-05-2026;Entrada de dinheiro ;155893168321;169,79;5.152,26
+08-05-2026;Reembolso Reclamações e devoluções;155893168321;1.216,73;6.368,99
+08-05-2026;Liberação de dinheiro ;155591314865;224,74;6.593,73
+08-05-2026;Liberação de dinheiro ;155811814362;10,68;6.604,41
+08-05-2026;Pagamento com Código QR Pix SILVANIO VAZ DA ROCHA;155894800591;93,69;6.698,10
+08-05-2026;Liberação de dinheiro ;156712839932;131,65;6.829,75
+08-05-2026;Liberação de dinheiro ;156838738646;681,06;7.510,81
+08-05-2026;Liberação de dinheiro ;156780011008;173,61;7.684,42
+08-05-2026;Liberação de dinheiro ;155999588345;140,65;7.825,07
+08-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;158384714908;-45,00;7.780,07
+08-05-2026;Reembolso Envío cancelado a Marciano Ferreira Miranda;158384714908;12,89;7.792,96
+08-05-2026;Liberação de dinheiro ;158384714908;32,11;7.825,07
+08-05-2026;Débito por dívida Envio do Mercado Livre;155893168321;-47,30;7.777,77
+09-05-2026;Liberação de dinheiro ;156287214216;222,82;8.000,59
+10-05-2026;Pagamento com Código QR Pix FLAZIO VALONIO DOS SANTOS BEZERRA;155677320529;100,01;8.100,60
+10-05-2026;Pagamento com Código QR Pix BRUNO GUERRA DE QUEIROZ;156972493940;445,53;8.546,13
+10-05-2026;Pagamento com Código QR Pix NILVO BERNARDI;156396087504;558,65;9.104,78
+10-05-2026;Pagamento de conta Itaú Unibanco  S.A.;158657597008;-1.308,19;7.796,59
+10-05-2026;Pagamento de conta Banco do Brasil S.A.;158657641108;-1.483,66;6.312,93
+10-05-2026;Pagamento de conta Cora;158657596014;-119,90;6.193,03
+10-05-2026;Pagamento de conta Banco do Brasil S.A.;157885972057;-682,93;5.510,10
+10-05-2026;Liberação de dinheiro ;156707621582;234,28;5.744,38
+10-05-2026;Pix enviado Marcelo do Nascimento Miranda;157905396951;-120,00;5.624,38
+10-05-2026;Pix enviado Eryk Marcelo Ribeiro Miranda;157908847723;-3.500,00;2.124,38
+10-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157796730368;-1.650,90;473,48
+10-05-2026;Pagamento com Código QR Pix JVS PARTICIPACOES LTDA;157796730368;1.405,09;1.878,57
+10-05-2026;Reembolso Envío cancelado a JVS PARTICIPACOES LTDA;157796730368;245,81;2.124,38
+10-05-2026;Liberação de dinheiro ;157065359568;171,69;2.296,07
+10-05-2026;Liberação de dinheiro ;157199632830;60,65;2.356,72
+11-05-2026;Pix enviado R C D Papelaria e Informatica Ltda;158763675908;-16,00;2.340,72
+11-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157488220669;-134,90;2.205,82
+11-05-2026;Liberação de dinheiro ;157488220669;97,53;2.303,35
+11-05-2026;Reembolso ;157488220669;37,37;2.340,72
+11-05-2026;Liberação de dinheiro ;156965545458;43,08;2.383,80
+11-05-2026;Pix enviado Rivelino Gomes Oliveira dos Santos;158836866750;-200,00;2.183,80
+12-05-2026;Liberação de dinheiro ;155898438920;495,41;2.679,21
+12-05-2026;Pagamento com Código QR Pix Valtenir Silva Santana;155460221873;222,82;2.902,03
+12-05-2026;Dinheiro recebido ;156953651454;328,49;3.230,52
+13-05-2026;Pagamento com Código QR Pix 65 849 811 MANOEL FIRMINO DOS SANTOS;156380934964;10,02;3.240,54
+13-05-2026;Débito por dívida/dinheiro retido ;158745994722;-42,45;3.198,09
+13-05-2026;Entrada de dinheiro ;158745994722;5,11;3.203,20
+13-05-2026;Liberação de dinheiro ;157246886142;1.405,09;4.608,29
+13-05-2026;Liberação de dinheiro ;155744285047;33,49;4.641,78
+13-05-2026;Pagamento de conta Banco do Brasil S.A.;159146125250;-2.661,79;1.979,99
+13-05-2026;Liberação de dinheiro ;156523069549;139,97;2.119,96
+14-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;158316754559;-32,00;2.087,96
+14-05-2026;Dinheiro recebido ;158316754559;19,91;2.107,87
+14-05-2026;Entrada de dinheiro ;158316754559;12,09;2.119,96
+14-05-2026;Liberação de dinheiro ;155480539153;98,97;2.218,93
+14-05-2026;Pagamento de conta Banco do Brasil S.A.;159248764116;-1.186,03;1.032,90
+14-05-2026;Pagamento de conta IUGU Instituição de Pagamentos;158474270789;-181,23;851,67
+14-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157950728813;-139,90;711,77
+14-05-2026;Pagamento com Código QR Pix CRISLAINE PINHEIRO DE SOUZA;157950728813;100,49;812,26
+14-05-2026;Reembolso Envío cancelado a CRISLAINE PINHEIRO DE SOUZA;157950728813;39,41;851,67
+14-05-2026;Liberação de dinheiro ;157842018796;200,50;1.052,17
+14-05-2026;Pagamento com Código QR Pix ALVACIR ZUFFO;157274608148;1.001,77;2.053,94
+14-05-2026;Liberação de dinheiro ;157267778132;364,41;2.418,35
+14-05-2026;Liberação de dinheiro ;157365826398;97,53;2.515,88
+14-05-2026;Dinheiro recebido ;157096527793;219,53;2.735,41
+14-05-2026;Liberação de dinheiro ;156594108447;393,61;3.129,02
+15-05-2026;Pagamento de conta Itaú Unibanco  S.A.;158610559753;-1.267,33;1.861,69
+15-05-2026;Pagamento com Código QR Pix LIONS TECNO TECNOLOGIA E CONSTRUCAO LTDA;158033686374;118,71;1.980,40
+15-05-2026;Pagamento com Código QR Pix Vinnicius de Carvalho;156860574699;1.501,13;3.481,53
+15-05-2026;Pagamento com Código QR Pix THIAGO DE SOUZA SILVA 32383287865;156542971547;17,94;3.499,47
+15-05-2026;Pagamento com QR Pix NUCLEO DE INFORMACAO E COORDENACAO DO PONTO BR - NIC .BR;158652118627;-112,00;3.387,47
+15-05-2026;Liberação de dinheiro ;157356111706;85,21;3.472,68
+15-05-2026;Pagamento com Código QR Pix JAIME CARLOS MEINERZ;156773822277;39,62;3.512,30
+15-05-2026;Pagamento com Código QR Pix 57.814.442 NATALIA ADRIELLE DE SOUZA CORDEIRO AMANCIO;157667916774;9,80;3.522,10
+15-05-2026;Dinheiro retido Reclamações e devoluções;157667916774;-9,80;3.512,30
+15-05-2026;Liberação de dinheiro ;157083039643;121,93;3.634,23
+15-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;158618887781;-49,90;3.584,33
+15-05-2026;Pagamento com Código QR Pix LUCAS RICARDO SOARES LEITE;158618887781;36,16;3.620,49
+15-05-2026;Entrada de dinheiro ;158618887781;13,74;3.634,23
+15-05-2026;Pix enviado Eryk Marcelo Ribeiro Miranda;158711928547;-500,00;3.134,23
+16-05-2026;Reembolso Reclamações e devoluções;154264708655;96,09;3.230,32
+16-05-2026;Liberação de dinheiro ;158784806317;769,38;3.999,70
+16-05-2026;Pagamento com Código QR Pix Marianna de Oliveira Guarnieri;157266993949;116,21;4.115,91
+16-05-2026;Dinheiro retido Reclamações e devoluções;157266993949;-116,21;3.999,70
+16-05-2026;Pagamento com Código QR Pix GLOBO COMERCIO DE RACOES;156913270027;58,81;4.058,51
+16-05-2026;Liberação de dinheiro ;157282534845;200,50;4.259,01
+16-05-2026;Liberação de dinheiro ;156425996801;20,29;4.279,30
+16-05-2026;Liberação de dinheiro ;158107478096;372,21;4.651,51
+16-05-2026;Pagamento com Código QR Pix GUSTAVO DOS SANTOS ALVES GUIMARAES;157358598301;78,77;4.730,28
+17-05-2026;Liberação de dinheiro ;157287158255;64,93;4.795,21
+17-05-2026;Liberação de dinheiro ;157286975745;9,99;4.805,20
+17-05-2026;Liberação de dinheiro ;157284292785;60,65;4.865,85
+17-05-2026;Pagamento com Código QR Pix JOEL BISPO DOS SANTOS;157732708218;198,34;5.064,19
+17-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;158541934169;-118,90;4.945,29
+17-05-2026;Pagamento com Código QR Pix Lucas Barbosa Dantas Melo;158541934169;78,77;5.024,06
+17-05-2026;Reembolso Envío cancelado a Lucas Barbosa Dantas Melo;158541934169;40,13;5.064,19
+18-05-2026;Débito por dívida Envio do Mercado Livre;154055715545;-49,30;5.014,89
+18-05-2026;Liberação de dinheiro ;157431163631;9,99;5.024,88
+18-05-2026;Liberação de dinheiro ;158200840342;23,50;5.048,38
+18-05-2026;Liberação de dinheiro ;158247250430;9,91;5.058,29
+18-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;154605876828;-520,90;4.537,39
+18-05-2026;Entrada de dinheiro ;154605876828;62,51;4.599,90
+18-05-2026;Reembolso Reclamações e devoluções;154605876828;426,89;5.026,79
+18-05-2026;Liberação de dinheiro cancelada Venda cancelada;154605876828;52,50;5.079,29
+18-05-2026;Débito por dívida Envio do Mercado Livre;157824129665;-24,70;5.054,59
+18-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157824129665;-91,90;4.962,69
+18-05-2026;Pagamento com Código QR Pix CAMILA DA SILVA DEBUS;157824129665;66,05;5.028,74
+18-05-2026;Entrada de dinheiro ;157824129665;11,03;5.039,77
+18-05-2026;Liberação de dinheiro ;156963554153;100,01;5.139,78
+19-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;158970066667;-134,90;5.004,88
+19-05-2026;Liberação de dinheiro ;158970066667;97,53;5.102,41
+19-05-2026;Reembolso ;158970066667;37,37;5.139,78
+19-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157266993949;-160,90;4.978,88
+19-05-2026;Entrada de dinheiro ;157266993949;19,31;4.998,19
+19-05-2026;Reembolso Reclamações e devoluções;157266993949;116,21;5.114,40
+19-05-2026;Pagamento de conta Itaú Unibanco  S.A.;159977883516;-2.197,64;2.916,76
+19-05-2026;Liberação de dinheiro ;158132681622;612,45;3.529,21
+19-05-2026;Liberação de dinheiro ;158254093248;139,97;3.669,18
+19-05-2026;Liberação de dinheiro ;158288159572;25,99;3.695,17
+19-05-2026;Liberação de dinheiro ;157517830669;53,62;3.748,79
+19-05-2026;Pagamento com Código QR Pix 22797142 VIRGILIO AUGUSTO RIBEIRO OLIVEIRA;157466647815;163,93;3.912,72
+19-05-2026;Pagamento com Código QR Pix Gabriel Lucas dos Santos;157395225761;50,55;3.963,27
+19-05-2026;Liberação de dinheiro ;158129332994;73,09;4.036,36
+19-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;159616916648;-402,90;3.633,46
+19-05-2026;Liberação de dinheiro ;159616916648;324,97;3.958,43
+19-05-2026;Reembolso Envío cancelado a Antonio Emeison Gomes Silva;159616916648;77,93;4.036,36
+20-05-2026;Débito por dívida Envio do Mercado Livre;157266993949;-42,30;3.994,06
+20-05-2026;Reembolso Envío cancelado a ARILDO PINTO CERQUEIRA;154264708655;22,62;4.016,68
+20-05-2026;Pagamento com Código QR Pix ADILSON CLAUDIO DA SILVA;158050213694;24,78;4.041,46
+20-05-2026;Dinheiro retido Reclamações e devoluções;158050213694;-24,78;4.016,68
+20-05-2026;Pagamento com Código QR Pix ALISSON RODRIGUES ANDRADE;158427883574;219,53;4.236,21
+20-05-2026;Liberação de dinheiro ;158597390176;32,11;4.268,32
+20-05-2026;Dinheiro retido Reclamações e devoluções;158597390176;-32,11;4.236,21
+20-05-2026;Pix enviado Rivelino Gomes Oliveira dos Santos;159407795617;-1.242,00;2.994,21
+20-05-2026;Pagamento com QR Pix CAIXA ECONOMICA FEDERAL;160188005024;-272,43;2.721,78
+20-05-2026;Pagamento de conta DARF - CÓDIGO DE  BARRA;159409691179;-297,24;2.424,54
+20-05-2026;Pagamento com QR Pix MINISTERIO DA FAZENDA;160187803618;-305,52;2.119,02
+20-05-2026;Pagamento de conta Itaú Unibanco  S.A.;159409909037;-2.025,89;93,13
+20-05-2026;Liberação de dinheiro ;157316586809;207,75;300,88
+20-05-2026;Liberação de dinheiro ;157316551043;16,99;317,87
+20-05-2026;Pagamento com Código QR Pix 50.599.593 SILVIO CESAR GONZAGA JUNIOR;157525150859;100,01;417,88
+20-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;154055715545;-236,90;180,98
+20-05-2026;Entrada de dinheiro ;154055715545;26,06;207,04
+20-05-2026;Reembolso Reclamações e devoluções;154055715545;181,26;388,30
+20-05-2026;Liberação de dinheiro cancelada Venda cancelada;154055715545;49,30;437,60
+21-05-2026;Reembolso Reclamações e devoluções;158597390176;32,11;469,71
+21-05-2026;Dinheiro retido Reclamações e devoluções;157517830669;-53,62;416,09
+21-05-2026;Reembolso Envío cancelado a ADEMIR ROGERIO DA SILVA;148421182175;21,18;437,27
+21-05-2026;Reembolso ;143793233547;22,45;459,72
+21-05-2026;Reembolso Envío cancelado a Thiago Diniz Fernandes;140806214821;15,96;475,68
+21-05-2026;Liberação de dinheiro ;158745994722;59,89;535,57
+21-05-2026;Liberação de dinheiro ;158287801812;224,74;760,31
+21-05-2026;Liberação de dinheiro ;158085178255;32,11;792,42
+21-05-2026;Liberação de dinheiro ;157916130049;64,22;856,64
+22-05-2026;Débito por dívida Faturas vencidas do Mercado Livre;3125580945;-842,89;13,75
+22-05-2026;Liberação de dinheiro ;158833961928;27,73;41,48
+22-05-2026;Liberação de dinheiro ;158061772369;9,99;51,47
+22-05-2026;Liberação de dinheiro ;158210706376;87,41;138,88
+22-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;159749420524;-138,88;0,00
+22-05-2026;Liberação de dinheiro ;159749420524;98,97;98,97
+22-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;159749420524;-13,03;85,94
+22-05-2026;Reembolso Envío cancelado a Daniel Pereira Gomes;159749420524;52,94;138,88
+22-05-2026;Liberação de dinheiro ;158072509949;96,34;235,22
+22-05-2026;Liberação de dinheiro ;158238243689;39,62;274,84
+22-05-2026;Liberação de dinheiro ;158807519980;32,11;306,95
+22-05-2026;Liberação de dinheiro ;158864321134;423,90;730,85
+22-05-2026;Pagamento com Código QR Pix ILTON LUCIO BONEAR JUNIOR;157382867611;24,78;755,63
+22-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;159014659578;-149,90;605,73
+22-05-2026;Liberação de dinheiro ;159014659578;112,17;717,90
+22-05-2026;Entrada de dinheiro ;159014659578;17,99;735,89
+22-05-2026;Liberação de dinheiro ;158864004086;84,15;820,04
+22-05-2026;Pix recebido NETPARTS COMERCIO DE PECAS LTDA;160570709262;4.500,00;5.320,04
+22-05-2026;Pagamento Cartão de crédito;160570824328;-4.475,62;844,42
+22-05-2026;Pix recebido ERYK MARCELO RIBEIRO MIRANDA;159792840017;270,00;1.114,42
+22-05-2026;Pix recebido ERYK MARCELO RIBEIRO MIRANDA;159797408225;50,00;1.164,42
+22-05-2026;Pagamento de conta Itaú Unibanco  S.A.;160582116796;-1.150,12;14,30
+22-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;159797788617;-14,30;0,00
+22-05-2026;Pagamento com Código QR Pix AGOSTINHO VALDOMIRO MACHADO;159797788617;26,93;26,93
+22-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;159797788617;-26,93;0,00
+22-05-2026;Reembolso Envío cancelado a AGOSTINHO VALDOMIRO MACHADO;159797788617;21,76;21,76
+22-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;159797788617;-7,46;14,30
+22-05-2026;Pix recebido ONIX GESTAO E CONSULTORIA EMPRESARIAL LTDA;159815200811;2.890,96;2.905,26
+22-05-2026;Pix enviado Eryk Marcelo Ribeiro Miranda;160598491936;-2.890,00;15,26
+23-05-2026;Pagamento com Código QR Pix JORGE FERNANDO CARDOSO;158769628160;65,36;80,62
+23-05-2026;Dinheiro recebido ;157574809317;234,28;314,90
+23-05-2026;Liberação de dinheiro ;158026758593;32,11;347,01
+23-05-2026;Liberação de dinheiro ;159119984558;197,76;544,77
+23-05-2026;Liberação de dinheiro ;158014734655;32,11;576,88
+24-05-2026;Pagamento com Código QR Pix 11 727 865 FERNANDA ALBERTO;159267331366;1.095,33;1.672,21
+24-05-2026;Liberação de dinheiro ;158314503823;1.305,01;2.977,22
+24-05-2026;Liberação de dinheiro ;159106529736;50,71;3.027,93
+24-05-2026;Dinheiro retido Reclamações e devoluções;159106529736;-50,71;2.977,22
+24-05-2026;Liberação de dinheiro ;158492574773;93,69;3.070,91
+24-05-2026;Dinheiro retido Reclamações e devoluções;158492574773;-93,69;2.977,22
+24-05-2026;Liberação de dinheiro ;158469852547;94,86;3.072,08
+25-05-2026;Pagamento de conta Banco do Brasil S.A.;160903785496;-236,08;2.836,00
+25-05-2026;Pagamento de conta Celcoin Instituição de Pagamento S.A;160903695968;-384,48;2.451,52
+25-05-2026;Pagamento de conta Itaú Unibanco  S.A.;160903799918;-131,00;2.320,52
+25-05-2026;Entrada de dinheiro ;159106529736;12,22;2.332,74
+25-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;159106529736;-81,89;2.250,85
+25-05-2026;Reembolso Reclamações e devoluções;159106529736;50,71;2.301,56
+25-05-2026;Liberação de dinheiro ;158886858718;153,21;2.454,77
+25-05-2026;Reembolso Envío cancelado a BAURU BUSINESS LTDA;151245542503;47,70;2.502,47
+25-05-2026;Liberação de dinheiro cancelada Venda cancelada;151245542503;79,50;2.581,97
+25-05-2026;Reembolso Envío cancelado a Maria Cecilia Rodrigues Alves Guadanhin;159106529736;18,96;2.600,93
+25-05-2026;Reembolso Envío cancelado a Flavio Santana Oliveira;155250743079;29,58;2.630,51
+25-05-2026;Liberação de dinheiro cancelada Venda cancelada;155250743079;49,30;2.679,81
+25-05-2026;Reembolso Envío cancelado a Leonardo Ferreira Cruz Maia;156097359468;18,54;2.698,35
+25-05-2026;Cancelamento de Pix recebido Leonardo Ferreira Cruz Maia;156097359468;30,90;2.729,25
+25-05-2026;Liberação de dinheiro cancelada Venda cancelada;153633973324;8,90;2.738,15
+26-05-2026;Reembolso Reclamações e devoluções;158492574773;93,69;2.831,84
+26-05-2026;Reembolso Reclamações e devoluções;157667916774;9,80;2.841,64
+26-05-2026;Liberação de dinheiro ;159482475982;225,71;3.067,35
+26-05-2026;Dinheiro recebido ;158507621631;97,53;3.164,88
+26-05-2026;Pagamento com Código QR Pix RS P C A PECAS LTDA EPP;158347692473;1.405,09;4.569,97
+26-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;159262291787;-188,90;4.381,07
+26-05-2026;Liberação de dinheiro ;159262291787;132,97;4.514,04
+26-05-2026;Reembolso ;159262291787;55,93;4.569,97
+26-05-2026;Liberação de dinheiro ;158912426956;977,33;5.547,30
+26-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;157517830669;-115,80;5.431,50
+26-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;158288159572;-25,99;5.405,51
+26-05-2026;Reembolso ;157517830669;62,18;5.467,69
+26-05-2026;Reembolso Reclamações e devoluções;157517830669;53,62;5.521,31
+26-05-2026;Liberação de dinheiro ;158624423427;90,57;5.611,88
+26-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;158934807431;-160,90;5.450,98
+26-05-2026;Liberação de dinheiro ;158934807431;116,69;5.567,67
+26-05-2026;Reembolso ;158934807431;44,21;5.611,88
+26-05-2026;Liberação de dinheiro ;158464290215;98,97;5.710,85
+26-05-2026;Pagamento com Código QR Pix CRISTIANO FERREIRA MAGALHAES;159335824552;20,29;5.731,14
+26-05-2026;Dinheiro recebido ;159331004360;74,00;5.805,14
+27-05-2026;Reembolso Reclamações e devoluções;158050213694;24,78;5.829,92
+27-05-2026;Pagamento Notion labs, inc.;161183585524;-124,73;5.705,19
+27-05-2026;Liberação de dinheiro ;157668267107;10,02;5.715,21
+27-05-2026;Pagamento com Código QR Pix Adma Linhares dos Santos;158469589339;130,89;5.846,10
+27-05-2026;Bônus por envio Mercado Envios;158994973891;10,90;5.857,00
+27-05-2026;Liberação de dinheiro ;158994858283;32,58;5.889,58
+27-05-2026;Liberação de dinheiro ;159277915202;88,91;5.978,49
+27-05-2026;Pagamento com Código QR Pix JEAN CARLOS DA SILVA;158783632577;92,82;6.071,31
+27-05-2026;Dinheiro recebido ;158884863976;10,46;6.081,77
+27-05-2026;Pagamento com QR Pix CIA BEAL DE ALIMENTOS;160493664503;-122,82;5.958,95
+28-05-2026;Liberação de dinheiro ;158577603077;221,59;6.180,54
+28-05-2026;Liberação de dinheiro ;159062189560;60,65;6.241,19
+28-05-2026;Pagamento de conta Itaú Unibanco  S.A.;160584478759;-1.837,74;4.403,45
+28-05-2026;Liberação de dinheiro ;159829395252;130,89;4.534,34
+28-05-2026;Liberação de dinheiro ;158374504977;10,66;4.545,00
+28-05-2026;Dinheiro retido Reclamações e devoluções;159482475982;-225,71;4.319,29
+28-05-2026;Liberação de dinheiro ;158644945985;224,74;4.544,03
+28-05-2026;Dinheiro retido Reclamações e devoluções;158904669258;-32,11;4.511,92
+28-05-2026;Liberação de dinheiro ;158904669258;32,11;4.544,03
+29-05-2026;Liberação de dinheiro ;159866093590;235,71;4.779,74
+29-05-2026;Dinheiro retido Reclamações e devoluções;159866093590;-235,71;4.544,03
+29-05-2026;Liberação de dinheiro ;159866111420;185,90;4.729,93
+29-05-2026;Dinheiro retido Reclamações e devoluções;159866111420;-185,90;4.544,03
+29-05-2026;Pagamento de conta Itaú Unibanco  S.A.;161507497516;-1.865,29;2.678,74
+29-05-2026;Liberação de dinheiro ;159966040752;104,68;2.783,42
+29-05-2026;Pagamento com Código QR Pix Nestor Magno de Souza;159668858908;9,91;2.793,33
+29-05-2026;Liberação de dinheiro ;158633509609;92,82;2.886,15
+29-05-2026;Liberação de dinheiro ;159113857599;90,17;2.976,32
+29-05-2026;Liberação de dinheiro ;159301536405;92,52;3.068,84
+29-05-2026;Liberação de dinheiro ;159896123530;89,70;3.158,54
+29-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;160739003675;-14,99;3.143,55
+29-05-2026;Liberação de dinheiro ;160739003675;14,99;3.158,54
+29-05-2026;Liberação de dinheiro ;161529998014;25,65;3.184,19
+29-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;161529998014;-54,90;3.129,29
+29-05-2026;Reembolso ;161529998014;29,25;3.158,54
+29-05-2026;Liberação de dinheiro ;159913250272;60,65;3.219,19
+29-05-2026;Liberação de dinheiro ;159347960552;330,25;3.549,44
+29-05-2026;Pix enviado Rivelino Gomes Oliveira dos Santos;160785390725;-609,00;2.940,44
+30-05-2026;Pagamento com QR Pix POSTO TIO ZICO II LTDA.;161657408364;-36,48;2.903,96
+30-05-2026;Liberação de dinheiro ;160044999012;98,97;3.002,93
+30-05-2026;Liberação de dinheiro ;160159533200;46,14;3.049,07
+30-05-2026;Pagamento com Código QR Pix CRISTINA PEDRELLI;159971627492;88,65;3.137,72
+30-05-2026;Liberação de dinheiro ;160076264296;197,76;3.335,48
+30-05-2026;Liberação de dinheiro ;159308751295;89,70;3.425,18
+30-05-2026;Liberação de dinheiro ;160148215458;38,26;3.463,44
+30-05-2026;Liberação de dinheiro ;158854053102;32,11;3.495,55
+31-05-2026;Pagamento com Código QR Pix Linnemayer Gonzaga Novaes De Queiroz Oliveira;159888758766;92,82;3.588,37
+31-05-2026;Liberação de dinheiro ;159303984563;580,17;4.168,54
+31-05-2026;Pagamento com Código QR Pix FELIPE FABIO SILVA VIEIRA;160604958032;109,81;4.278,35
+31-05-2026;Débito por dívida Devoluções e reclamações no Mercado Livre;161045330909;-464,27;3.814,08
+31-05-2026;Liberação de dinheiro ;161045330909;371,67;4.185,75
+31-05-2026;Reembolso Envío cancelado a Welington Paulino De Oliveira;161045330909;92,60;4.278,35
+31-05-2026;Liberação de dinheiro ;159670913677;84,73;4.363,08
+31-05-2026;Pix enviado Eryk Marcelo Ribeiro Miranda;161865394394;-70,00;4.293,08
+31-05-2026;Liberação de dinheiro ;160420374830;5,98;4.299,06
+31-05-2026;Liberação de dinheiro ;160420257928;52,99;4.352,05

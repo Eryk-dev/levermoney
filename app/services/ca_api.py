@@ -464,7 +464,12 @@ async def listar_categorias() -> list:
 
 
 async def criar_baixa(parcela_id: str, data_pagamento: str, valor: float, conta_financeira: str) -> dict:
-    """POST /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa"""
+    """POST /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa
+
+    Retorna o objeto da baixa criada (BaixaCriacaoResponseDTO) com `id` e `versao`
+    — diferente dos eventos financeiros (que devolvem `protocolo`). Persistir o
+    `id` permite PATCH/DELETE posteriores (retrofit/correção).
+    """
     payload = {
         "data_pagamento": data_pagamento,
         "composicao_valor": {
@@ -477,3 +482,82 @@ async def criar_baixa(parcela_id: str, data_pagamento: str, valor: float, conta_
         headers=await _headers(), json=payload,
     )
     return resp.json()
+
+
+async def buscar_parcela(parcela_id: str) -> dict:
+    """GET /v1/financeiro/eventos-financeiros/parcelas/{id} — detalhe da parcela
+    (descricao, vencimento, valor, status)."""
+    resp = await _request_with_retry(
+        "get", f"{CA_API}/v1/financeiro/eventos-financeiros/parcelas/{parcela_id}",
+        headers=await _headers(),
+    )
+    return resp.json()
+
+
+async def saldo_atual(conta_financeira_id: str) -> dict:
+    """GET /v1/conta-financeira/{id}/saldo-atual — saldo absoluto da conta no CA.
+
+    Base do portão P1: comparar com o PARTIAL_BALANCE/FINAL_BALANCE do extrato MP.
+    """
+    resp = await _request_with_retry(
+        "get", f"{CA_API}/v1/conta-financeira/{conta_financeira_id}/saldo-atual",
+        headers=await _headers(),
+    )
+    return resp.json()
+
+
+async def listar_baixas(parcela_id: str) -> list:
+    """GET /v1/financeiro/eventos-financeiros/parcelas/{id}/baixa — baixas da parcela."""
+    resp = await _request_with_retry(
+        "get", f"{CA_API}/v1/financeiro/eventos-financeiros/parcelas/{parcela_id}/baixa",
+        headers=await _headers(),
+    )
+    data = resp.json()
+    return data if isinstance(data, list) else []
+
+
+async def buscar_baixa(baixa_id: str) -> dict:
+    """GET /v1/financeiro/eventos-financeiros/parcelas/baixa/{baixa_id} — detalhe
+    (inclui versao p/ optimistic lock e id_reconciliacao)."""
+    resp = await _request_with_retry(
+        "get", f"{CA_API}/v1/financeiro/eventos-financeiros/parcelas/baixa/{baixa_id}",
+        headers=await _headers(),
+    )
+    return resp.json()
+
+
+async def atualizar_baixa(baixa_id: str, versao: int, data_pagamento: str | None = None,
+                          valor: float | None = None, conta_financeira: str | None = None,
+                          observacao: str | None = None) -> dict:
+    """PATCH /v1/financeiro/eventos-financeiros/parcelas/baixa/{baixa_id}
+
+    `versao` obrigatória (optimistic lock) — obter via buscar_baixa/listar_baixas.
+    Só envia os campos fornecidos.
+    """
+    payload: dict = {"versao": versao}
+    if data_pagamento is not None:
+        payload["data_pagamento"] = data_pagamento
+    if valor is not None:
+        payload["composicao_valor"] = {"valor_bruto": valor}
+    if conta_financeira is not None:
+        payload["conta_financeira"] = conta_financeira
+    if observacao is not None:
+        payload["observacao"] = observacao
+    resp = await _request_with_retry(
+        "patch", f"{CA_API}/v1/financeiro/eventos-financeiros/parcelas/baixa/{baixa_id}",
+        headers=await _headers(), json=payload,
+    )
+    return resp.json()
+
+
+async def deletar_baixa(baixa_id: str) -> bool:
+    """DELETE /v1/financeiro/eventos-financeiros/parcelas/baixa/{baixa_id}
+
+    Exclui a baixa — a parcela volta a EM_ABERTO. Usar com cautela (retrofit /
+    cancela-antes-de-liberar baixado indevidamente).
+    """
+    resp = await _request_with_retry(
+        "delete", f"{CA_API}/v1/financeiro/eventos-financeiros/parcelas/baixa/{baixa_id}",
+        headers=await _headers(),
+    )
+    return resp.status_code == 200
